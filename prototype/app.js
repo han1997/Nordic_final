@@ -45,6 +45,7 @@ const ICONS = {
   bell:    '<path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M13.7 19.5a2 2 0 0 1-3.4 0"/>',
   shield:  '<path d="M12 3.6l7 2.6v5.4c0 4.3-3 7.3-7 8.8-4-1.5-7-4.5-7-8.8V6.2z"/>',
   play2:   '<circle cx="12" cy="12" r="8.4"/><path d="M10.2 8.8l5.6 3.2-5.6 3.2z" fill="currentColor" stroke="none"/>',
+  theme:   '<circle cx="12" cy="12" r="8.2"/><path d="M12 3.8v16.4" /><path d="M12 3.8a8.2 8.2 0 0 0 0 16.4z" fill="currentColor" stroke="none"/>',
 };
 
 function ic(name, size = 22, cls = '') {
@@ -67,12 +68,12 @@ const SERVER = {
 };
 
 const ALBUMS = [
-  { id: 'a1', name: '可能',                   artist: '程响',         year: 2022, count: 8,  c1: '#3A2A46', c2: '#151020', accent: '#B98BFF', mark: '可能' },
-  { id: 'a2', name: 'Ultraviolet',            artist: '3LAU',         year: 2018, count: 1,  c1: '#1E2A5E', c2: '#0C1024', accent: '#6E8BFF', mark: 'UV' },
-  { id: 'a3', name: '秋色',                   artist: '拾光乐队',      year: 2021, count: 11, c1: '#5A3B22', c2: '#1E1409', accent: '#E0A45C', mark: '秋色' },
-  { id: 'a4', name: 'Islands',                artist: 'King Crimson', year: 1971, count: 6,  c1: '#123832', c2: '#08171A', accent: '#4FD8C4', mark: 'Is' },
-  { id: 'a5', name: '山丘',                   artist: '李宗盛',        year: 2013, count: 5,  c1: '#4A2E2A', c2: '#180F0E', accent: '#E0796A', mark: '山丘' },
-  { id: 'a6', name: 'Random Access Memories', artist: 'Daft Punk',    year: 2013, count: 13, c1: '#3B3B3B', c2: '#111111', accent: '#E8D9A0', mark: 'RAM' },
+  { id: 'a1', name: '可能',                   artist: '程响',         year: 2022, count: 8,  c1: '#43305A', c2: '#140F22', accent: '#B891FF', mark: '可能' },
+  { id: 'a2', name: 'Ultraviolet',            artist: '3LAU',         year: 2018, count: 1,  c1: '#233573', c2: '#0A1029', accent: '#7C96FF', mark: 'UV' },
+  { id: 'a3', name: '秋色',                   artist: '拾光乐队',      year: 2021, count: 11, c1: '#6B4526', c2: '#1F1207', accent: '#EFA85F', mark: '秋色' },
+  { id: 'a4', name: 'Islands',                artist: 'King Crimson', year: 1971, count: 6,  c1: '#12544A', c2: '#061A1B', accent: '#4DE0C8', mark: 'Is' },
+  { id: 'a5', name: '山丘',                   artist: '李宗盛',        year: 2013, count: 5,  c1: '#5C3630', c2: '#1A0E0C', accent: '#F08A76', mark: '山丘' },
+  { id: 'a6', name: 'Random Access Memories', artist: 'Daft Punk',    year: 2013, count: 13, c1: '#4A4A4A', c2: '#101010', accent: '#F2E3A8', mark: 'RAM' },
 ];
 
 const SONGS = [
@@ -84,12 +85,12 @@ const SONGS = [
 ];
 
 const ARTISTS = [
-  { id: 'ar1', name: '程响',         albums: 6,  songs: 42, c1: '#3A2A46', c2: '#151020', accent: '#B98BFF' },
-  { id: 'ar2', name: '陈奕迅',       albums: 24, songs: 310, c1: '#22304A', c2: '#0D1220', accent: '#6E8BFF' },
-  { id: 'ar3', name: '李宗盛',       albums: 12, songs: 128, c1: '#4A2E2A', c2: '#180F0E', accent: '#E0796A' },
-  { id: 'ar4', name: 'King Crimson', albums: 9,  songs: 86, c1: '#123832', c2: '#08171A', accent: '#4FD8C4' },
-  { id: 'ar5', name: '3LAU',         albums: 3,  songs: 24, c1: '#1E2A5E', c2: '#0C1024', accent: '#6E8BFF' },
-  { id: 'ar6', name: '柳爽',         albums: 4,  songs: 37, c1: '#2E2438', c2: '#120E1A', accent: '#9E7BFF' },
+  { id: 'ar1', name: '程响',         albums: 6,  songs: 42,  c1: '#43305A', c2: '#140F22', accent: '#B891FF' },
+  { id: 'ar2', name: '陈奕迅',       albums: 24, songs: 310, c1: '#26365C', c2: '#0A0F1F', accent: '#7C96FF' },
+  { id: 'ar3', name: '李宗盛',       albums: 12, songs: 128, c1: '#5C3630', c2: '#1A0E0C', accent: '#F08A76' },
+  { id: 'ar4', name: 'King Crimson', albums: 9,  songs: 86,  c1: '#12544A', c2: '#061A1B', accent: '#4DE0C8' },
+  { id: 'ar5', name: '3LAU',         albums: 3,  songs: 24,  c1: '#233573', c2: '#0A1029', accent: '#7C96FF' },
+  { id: 'ar6', name: '柳爽',         albums: 4,  songs: 37,  c1: '#38294A', c2: '#130E1C', accent: '#A88BFF' },
 ];
 
 const PLAYLISTS = [
@@ -116,6 +117,7 @@ const QUALITIES = [
 ];
 
 const STATE = {
+  theme: 'dark',
   quality: 'medium',
   routeId: 'lan',
   view: 'servers',
@@ -127,6 +129,39 @@ const STATE = {
   history: [],
 };
 
+const THEMES = [
+  { id: 'dark',  name: '深色', desc: '近黑底,靠光晕撑层次' },
+  { id: 'light', name: '浅色', desc: '浅灰底,靠留白与描边' },
+];
+
+/* ---- 强调色 ----
+   --accent      画描边 / 光晕 / 选中底色,保留封面原色
+   --accent-safe 只用来画文字。浅色底上,黄 / 绿 / 青这类高亮色对比度不够,
+                 压深一档再用;深色底原样使用。 */
+const ACCENT_CEIL = 168;
+
+function safeAccent(hex) {
+  if (STATE.theme !== 'light') return hex;
+  const m = /^#([0-9A-Fa-f]{6})$/.exec(String(hex || '').trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  for (let i = 0; i < 8 && Math.max(r, g, b) > ACCENT_CEIL; i++) {
+    r = Math.round(r * 0.86); g = Math.round(g * 0.86); b = Math.round(b * 0.86);
+  }
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
+function accentVars(accent) {
+  const a = accent || '#7C8CFF';
+  return `--accent:${a};--accent-safe:${safeAccent(a)};`;
+}
+
+function applyTheme(id) {
+  STATE.theme = id === 'light' ? 'light' : 'dark';
+  document.body.dataset.theme = STATE.theme;
+}
+
 /* ---------------- 小工具 ---------------- */
 
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -137,7 +172,7 @@ const currentAlbum = () => albumOf(currentSong());
 
 function cover(item, cls = '', mark = null, extra = '') {
   const accent = item.accent || '#7C8CFF';
-  const style = `--c1:${item.c1};--c2:${item.c2};--accent:${accent};${extra}`;
+  const style = `--c1:${item.c1};--c2:${item.c2};${accentVars(accent)}${extra}`;
   const m = String(mark ?? item.mark ?? (item.name || item.title || '').slice(0, 2));
   const len = m.length > 4 ? 4 : m.length;
   return `<div class="cover ${cls}" style="${style}">
@@ -148,7 +183,7 @@ function cover(item, cls = '', mark = null, extra = '') {
 /* 艺人头像块:大初始字 + 渐变 */
 function plate(ar, size = '152px', radius = '26px') {
   return `<div class="artist-tile" style="flex:0 0 ${size}">
-    <div class="plate" style="--c1:${ar.c1};--c2:${ar.c2};--accent:${ar.accent || '#7C8CFF'};height:${size}">
+    <div class="plate" style="--c1:${ar.c1};--c2:${ar.c2};${accentVars(ar.accent)}height:${size}">
       <span>${ar.name.slice(0, 2)}</span>
     </div>
   </div>`;
@@ -170,7 +205,7 @@ function statusbar() {
 
 /* 组装一整台手机:外框 + 灵动岛 + 状态栏 + 内容 */
 function shell(inner, opts = {}) {
-  const accent = opts.accent ? `--accent:${opts.accent};` : '';
+  const accent = opts.accent ? accentVars(opts.accent) : '';
   const c1 = opts.c1 ? `--c1:${opts.c1};` : '';
   const home = opts.home ? '<div class="home-ind"></div>' : '';
   return `<div class="phone">
@@ -182,12 +217,11 @@ function shell(inner, opts = {}) {
 
 /* 沉浸式页面的氛围背景(跟随当前封面取色) */
 function ambient(album) {
-  return `<div class="ambient" style="--accent:${album.accent};--c1:${album.c1}"></div>`;
+  return `<div class="ambient" style="${accentVars(album.accent)}--c1:${album.c1}"></div>`;
 }
 
 function tabbar(active) {
   const tabs = [
-    ['servers',  'server', '服务器'],
     ['library',  'book',   '音乐库'],
     ['search',   'search', '搜索'],
     ['settings', 'gear',   '设置'],
@@ -242,12 +276,11 @@ function routeRows(routes, withCheck, pageAccent) {
 function screenServers() {
   const best = SERVER.routes.filter((r) => r.state === 'ok').sort((a, b) => a.ping - b.ping)[0];
   return `<div class="appbar">
+      <button class="icon-btn" data-back>${ic('back', 22)}</button>
       <div>
         <div class="h1">服务器</div>
-        <div class="sub">1 个已连接 · 3 条线路</div>
+        <div class="sub">1 个已连接 · ${SERVER.routes.length} 条线路</div>
       </div>
-      <span class="spacer"></span>
-      <button class="icon-btn quiet" data-go="settings">${ic('gear', 21)}</button>
     </div>
     <div class="scroll">
       <div class="server-hero">
@@ -426,7 +459,7 @@ function screenLibrary(tab = 'albums') {
   let body = '';
 
   if (tab === 'albums') {
-    body = `<div class="hero-card" style="--accent:${curA.accent}">
+    body = `<div class="hero-card" style="${accentVars(curA.accent)}">
         ${cover(curA, '', curA.mark, 'width:92px;height:92px;border-radius:20px')}
         <div class="grow" style="min-width:0">
           <div class="label">继续收听</div>
@@ -451,7 +484,7 @@ function screenLibrary(tab = 'albums') {
     body = `<div class="section"><h2>常听艺人</h2><span class="count">${ARTISTS.length} 位</span></div>
       <div class="rail"><div class="rail-track">${ARTISTS.slice(0, 4).map((ar) => `
         <div class="artist-tile" data-artist="${ar.id}">
-          <div class="plate" style="--c1:${ar.c1};--c2:${ar.c2};--accent:${ar.accent}"><span>${ar.name.slice(0, 2)}</span></div>
+          <div class="plate" style="--c1:${ar.c1};--c2:${ar.c2};${accentVars(ar.accent)}"><span>${ar.name.slice(0, 2)}</span></div>
           <div><div class="name">${ar.name}</div><div class="meta">${ar.albums} 张专辑</div></div>
         </div>`).join('')}</div></div>
       <div class="section"><h2>全部艺人</h2></div>
@@ -547,7 +580,7 @@ function screenArtist(id) {
     </div>
     <div class="scroll">
       <div style="padding:var(--s2) var(--s5) var(--s5);display:flex;align-items:center;gap:var(--s4);position:relative;z-index:1">
-        <div class="plate" style="--c1:${ar.c1};--c2:${ar.c2};--accent:${ar.accent};
+        <div class="plate" style="--c1:${ar.c1};--c2:${ar.c2};${accentVars(ar.accent)}
           width:104px;height:104px;flex:0 0 auto;border-radius:30px;display:grid;place-items:center;position:relative;overflow:hidden;
           background-image:radial-gradient(90% 76% at 22% 10%,color-mix(in srgb,${ar.accent} 58%,transparent),transparent 64%),
           linear-gradient(150deg,${ar.c1},${ar.c2});box-shadow:inset 0 1px 0 rgba(255,255,255,.15)">
@@ -671,7 +704,7 @@ function sheetQueue() {
           const on = s.id === cur.id;
           const a = albumOf(s);
           return `<div class="row ${on ? 'playing' : ''}" data-song="${s.id}">
-            <span style="width:18px;flex:0 0 auto;display:flex;color:var(--accent)">${on ? ic('wave', 16) : ''}</span>
+            <span style="width:18px;flex:0 0 auto;display:flex;color:var(--accent-safe)">${on ? ic('wave', 16) : ''}</span>
             ${cover(a, '', s.title.slice(0, 2), 'width:46px;height:46px;border-radius:12px')}
             <div class="grow"><div class="line1">${s.title}</div><div class="line2">${s.artist}</div></div>
             <span class="trail">${mmss(s.dur)}</span>
@@ -774,11 +807,24 @@ function screenSettings() {
     [['bell', '播放时后台运行', '通知栏与锁屏可控制'], 'on'],
     [['download', '仅 Wi-Fi 下载', '避免消耗移动流量'], 'off'],
   ];
+  const themeRow = `
+      <div class="section" style="padding-top:var(--s2)"><h2>外观</h2></div>
+      <div class="card" style="margin:0 var(--s5)">
+        <div class="row" style="cursor:default">
+          <span class="set-icon">${ic('theme', 18)}</span>
+          <div class="grow"><div class="line1">主题</div><div class="line2">深色 / 浅色,跟随当前封面取色</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="segmented" style="margin:var(--s3) var(--s4) var(--s3)">
+          ${THEMES.map((t) => `<button data-theme="${t.id}" aria-selected="${STATE.theme === t.id}">${t.name}</button>`).join('')}
+        </div>
+      </div>`;
   return `<div class="appbar">
       <div><div class="h1">设置</div><div class="sub">Nordic 原型 v1</div></div>
     </div>
     <div class="scroll">
-      <div class="section" style="padding-top:var(--s2)"><h2>播放</h2></div>
+      ${themeRow}
+      <div class="section"><h2>播放</h2></div>
       <div class="card" style="margin:0 var(--s5)">
         ${rows.map(([[icon, t, d], v], i) => `
           ${i ? '<div class="divider"></div>' : ''}
@@ -796,7 +842,8 @@ function screenSettings() {
       <div class="card" style="margin:0 var(--s5)">
         <div class="row" data-go="servers">
           <span class="set-icon">${ic('server', 18)}</span>
-          <div class="grow"><div class="line1">${SERVER.name}</div><div class="line2">${SERVER.kind} · ${SERVER.routes.length} 条线路</div></div>
+          <div class="grow"><div class="line1">${SERVER.name}</div>
+            <div class="line2"><span class="dot ok"></span>${SERVER.kind} · ${SERVER.routes.length} 条线路 · 自动择优</div></div>
           ${ic('chevron', 18)}
         </div>
         <div class="divider"></div>
@@ -858,19 +905,37 @@ const BOARD = [
   ['设置',            '播放 / 服务器 / 隐私', () => shell(screenSettings())],
 ];
 
+function boardFrames() {
+  return BOARD.map(([title, sub, fn]) => `
+    <div class="board-col">
+      <div class="frame-label"><b>${title}</b>${sub ? `<i>${sub}</i>` : ''}</div>
+      ${fn()}
+    </div>`).join('');
+}
+
 function renderBoard(root) {
+  const prev = STATE.theme;
+  const dark = (STATE.theme = 'dark', boardFrames());
+  const light = (STATE.theme = 'light', boardFrames());
+  STATE.theme = prev;
   root.innerHTML = `
     <div class="board-wrap">
       <div class="board-head">
         <h1>Nordic — 音乐播放器原型</h1>
-        <p>手机竖屏,16 屏。底色近黑偏冷,强调色<b>从当前封面里提取</b> —— 每张专辑驱动界面的光晕、进度条与选中态,所以每张专辑有自己的气质。
-          这是并排铺开的设计板;<b>要点击走完整条链路,请开 <a href="player.html">player.html</a></b>。</p>
+        <p>手机竖屏,16 屏,<b>深色 / 浅色两套</b>。强调色<b>从当前封面里提取</b> —— 每张专辑驱动界面的光晕、进度条与选中态,
+          所以每张专辑有自己的气质。深色靠发光撑层次,浅色把发光几乎关掉、改用留白与描边;两套共用同一份结构,差异全部落在 token 上。
+          这是并排铺开的设计板;<b>要点击走完整条链路,请开 <a href="player.html">player.html</a></b>,那边的设置里可以实时切换主题。</p>
       </div>
-      <div class="board">${BOARD.map(([title, sub, fn]) => `
-        <div class="board-col">
-          <div class="frame-label"><b>${title}</b>${sub ? `<i>${sub}</i>` : ''}</div>
-          ${fn()}
-        </div>`).join('')}</div>
+
+      <section class="board-sec" data-theme="dark">
+        <div class="board-sec-head"><h2>深色</h2><span>近黑底 · 封面光晕 · 强调色不压深</span></div>
+        <div class="board">${dark}</div>
+      </section>
+
+      <section class="board-sec" data-theme="light">
+        <div class="board-sec-head"><h2>浅色</h2><span>浅灰底 · 留白与描边 · 高亮强调色自动压深以保证对比度</span></div>
+        <div class="board">${light}</div>
+      </section>
     </div>`;
 }
 
@@ -900,8 +965,8 @@ function renderStage(root) {
       STATE.view = prev.view;
       STATE.params = prev.params || {};
     } else {
-      STATE.view = 'servers';
-      STATE.params = {};
+      STATE.view = 'library';
+      STATE.params = { lib: 'albums' };
     }
     STATE.overlay = '';
     render();
@@ -919,6 +984,12 @@ function renderStage(root) {
           <li>播放页里点「队列」「歌词」看对应界面</li>
         </ol>
         <div style="border-top:1px solid var(--line);padding-top:16px">
+          <h2 style="margin-bottom:8px">主题</h2>
+          <div class="segmented" style="margin-bottom:16px">
+            ${THEMES.map((t) => `<button data-theme="${t.id}" aria-selected="${STATE.theme === t.id}">${t.name}</button>`).join('')}
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--line);padding-top:16px">
           <h2 style="margin-bottom:6px">随封面取色</h2>
           每张专辑给界面一套自己的强调色:
           <div class="swatches" id="sw"></div>
@@ -934,7 +1005,7 @@ function renderStage(root) {
     `<span class="sw" title="${a.name}" style="background:linear-gradient(148deg,${a.c1},${a.accent})"></span>`).join('');
 
   slot().addEventListener('click', (e) => {
-    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-sheet],[data-act]');
+    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-theme],[data-sheet],[data-act]');
     if (t) {
       const d = t.dataset;
       if (d.back !== undefined) return back();
@@ -944,6 +1015,7 @@ function renderStage(root) {
       if (d.album) { STATE.albumId = d.album; return go('album', { album: d.album }); }
       if (d.artist) { STATE.artistId = d.artist; return go('artist', { artist: d.artist }); }
       if (d.route) { STATE.routeId = d.route; return render(); }
+      if (d.theme) { applyTheme(d.theme); return render(); }
       if (d.quality) { STATE.quality = d.quality; STATE.overlay = ''; return render(); }
       if (d.sheet) { STATE.overlay = STATE.overlay === d.sheet ? '' : d.sheet; return render(); }
       if (d.go) return go(d.go);
@@ -973,6 +1045,7 @@ function renderStage(root) {
 /* ---------------- 启动 ---------------- */
 
 window.addEventListener('DOMContentLoaded', () => {
+  applyTheme(STATE.theme);
   if (document.body.dataset.mode === 'board') renderBoard(document.body);
   else renderStage(document.body);
 });
