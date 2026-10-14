@@ -1739,6 +1739,37 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 [data-seek] { cursor: pointer; touch-action: none; }
 [data-seek] .knob { pointer-events: none; }
 
+/* ============================================================
+   小气泡:点了但原型没实现的按钮 —— 至少说一声
+   ============================================================ */
+.toast {
+  position: absolute;
+  left: 50%; bottom: 168px;
+  transform: translateX(-50%);
+  padding: 11px 18px;
+  border-radius: var(--r-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--line-2);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    0 18px 36px -16px var(--depth);
+  font-size: var(--fs-sm);
+  color: var(--fg);
+  z-index: 60;
+  pointer-events: none;
+  animation: toast-in 0.22s var(--ease);
+  white-space: nowrap;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 

@@ -159,6 +159,14 @@ const STATE = {
   /* 播放页两个模式按钮 */
   shuffle: false,
   repeat: false,
+  /* 服务器设置页的表单与系统状态 —— 保存按钮要真把字段写回去，
+     否则点多少次都不疼不痒,看起来像装饰。 */
+  serverName: SERVER.name,
+  serverUser: SERVER.user,
+  serverKindCfg: 'navidrome',   /* 服务器设置页里的接入类型分段 */
+  serverDirty: false,           /* 表单动过 -> 保存按钮亮起来 */
+  removed: false,               /* 点了「移除该服务器」 */
+  toast: '',                    /* 屏幕底部的小气泡,几秒后消失 */
 };
 
 /* 进度换算:秒 → 百分比(夹在 0..100) */
@@ -403,7 +411,7 @@ function screenServers() {
 
       <div class="section"><h2>其他服务器</h2></div>
       <div class="card" style="margin:0 var(--s5)">
-        <div class="row" data-go="library">
+        <div class="row" data-act="other-server" role="button">
           <div class="badge" style="width:52px;height:52px;border-radius:18px;display:grid;place-items:center;
             background:var(--fill-2);color:var(--fg-2);font-weight:700;font-size:15px;flex:0 0 auto">飞牛</div>
           <div class="grow">
@@ -422,27 +430,28 @@ function screenServers() {
 }
 
 function screenServerConfig() {
+  /* 表单带来的脏状态:任何输入改过,保存按钮才亮 —— 没动过就别装着能保存。 */
+  const kinds = [['navidrome','Navidrome'],['subsonic','Subsonic'],['fnos','飞牛音乐']];
   return `<div class="appbar nav">
       <button class="icon-btn" data-back>${ic('back', 22)}</button>
       <span class="h1">服务器设置</span>
       <span class="spacer"></span>
-      <button class="pill-btn solid">保存</button>
+      <button class="pill-btn solid" data-act="save-server" ${STATE.serverDirty ? '' : 'disabled style="opacity:.45;cursor:default"'}>保存</button>
     </div>
     <div class="scroll">
       <div style="padding:var(--s2) var(--s5) 0;display:flex;flex-direction:column;gap:var(--s4)">
         <div class="field">
           <label>接入类型</label>
-          <div class="segmented">
-            <button aria-selected="true">Navidrome</button><button>Subsonic</button><button>飞牛音乐</button>
-          </div>
+          <div class="segmented">${kinds.map(([id, label]) =>
+            `<button data-kind-cfg="${id}" aria-selected="${STATE.serverKindCfg === id}">${label}</button>`).join('')}</div>
         </div>
         <div class="field"><label>显示名称</label>
-          <div class="input"><input value="客厅 Navidrome"></div>
+          <div class="input"><input data-field="serverName" value="${STATE.serverName}"></div>
         </div>
         <div class="field">
           <label>用户名 / 密码</label>
-          <div class="input">${ic('server', 18, 'quiet')}<input value="hhy"></div>
-          <div class="input" style="margin-top:var(--s2)"><input type="password" value="password"></div>
+          <div class="input">${ic('server', 18, 'quiet')}<input data-field="serverUser" value="${STATE.serverUser}"></div>
+          <div class="input" style="margin-top:var(--s2)"><input type="password" value="password" readonly></div>
           <div class="hint">凭据只存在本机，登录时用密码派生令牌，不保存明文。</div>
         </div>
       </div>
@@ -453,7 +462,7 @@ function screenServerConfig() {
       </div>
       <div class="card" style="margin:0 var(--s5)">${routeRows(SERVER.routes, false)}</div>
       <div style="padding:var(--s4) var(--s5) 0">
-        <button class="btn ghost" style="height:48px">${ic('plus', 17)} 添加线路地址</button>
+        <button class="btn ghost" data-act="add-route" style="height:48px">${ic('plus', 17)} 添加线路地址</button>
       </div>
 
       <div class="section"><h2>线路择优</h2></div>
@@ -475,7 +484,7 @@ function screenServerConfig() {
       </div>
 
       <div style="padding:var(--s6) var(--s5) var(--s6)">
-        <button class="chip" style="height:40px;color:var(--bad);border-color:color-mix(in srgb,var(--bad) 30%,transparent);
+        <button class="chip" data-act="remove-server" style="height:40px;color:var(--bad);border-color:color-mix(in srgb,var(--bad) 30%,transparent);
           background:color-mix(in srgb,var(--bad) 9%,transparent)">移除该服务器</button>
       </div>
     </div>`;
@@ -592,7 +601,7 @@ function screenLibrary(tab = 'albums') {
           ${ic('chevron', 18)}
         </div>`).join('')}
       <div style="padding:var(--s5) var(--s5) var(--s4)">
-        <button class="btn ghost" style="height:48px">${ic('plus', 17)} 新建歌单</button>
+        <button class="btn ghost" data-act="new-playlist" style="height:48px">${ic('plus', 17)} 新建歌单</button>
       </div>`;
   }
 
@@ -652,8 +661,8 @@ function screenAlbum(id) {
     <div class="appbar nav">
       <button class="icon-btn" data-back>${ic('back', 22)}</button>
       <span class="spacer"></span>
-      <button class="icon-btn quiet">${ic('download', 21)}</button>
-      <button class="icon-btn quiet">${ic('more', 20)}</button>
+      <button class="icon-btn quiet" data-act="dl-album">${ic('download', 21)}</button>
+      <button class="icon-btn quiet" data-act="more">${ic('more', 20)}</button>
     </div>
     <div class="scroll">
       <div class="album-head">
@@ -704,7 +713,7 @@ function screenArtist(id) {
     <div class="appbar nav">
       <button class="icon-btn" data-back>${ic('back', 22)}</button>
       <span class="spacer"></span>
-      <button class="icon-btn quiet">${ic('more', 20)}</button>
+      <button class="icon-btn quiet" data-act="more">${ic('more', 20)}</button>
     </div>
     <div class="scroll">
       <div style="padding:var(--s2) var(--s5) var(--s5);display:flex;align-items:center;gap:var(--s4);position:relative;z-index:1">
@@ -753,7 +762,7 @@ function screenPlayer() {
       <span class="spacer"></span>
       <span style="font-size:11px;color:var(--fg-3);letter-spacing:0.1em;font-weight:660">正在播放</span>
       <span class="spacer"></span>
-      <button class="icon-btn quiet">${ic('more', 20)}</button>
+      <button class="icon-btn quiet" data-act="more">${ic('more', 20)}</button>
     </div>
 
     <div class="player-hero">
@@ -875,7 +884,7 @@ function screenLyrics() {
       <span class="spacer"></span>
       <span style="font-size:12px;color:var(--fg-2);font-weight:620">${s.title} · ${s.artist}</span>
       <span class="spacer"></span>
-      <button class="icon-btn quiet">${ic('more', 20)}</button>
+      <button class="icon-btn quiet" data-act="more">${ic('more', 20)}</button>
     </div>
     <div class="lyrics">
       ${LYRICS.map((l, i) => `<div class="lyric-line ${i === activeIx ? 'on' : i < activeIx ? 'past' : ''}">${l}</div>`).join('')}
@@ -1137,6 +1146,13 @@ function renderBoard(root) {
    交互流
    ============================================================ */
 
+/* toast 与计时器都是 stage 级 —— 一个会话一份,跨重绘存续。
+   写在 render 外头,免得每次 render 都开新计时器。 */
+let toastTimer = 0;
+function toastMarkup() {
+  return STATE.toast ? `<div class="toast">${STATE.toast}</div>` : '';
+}
+
 function renderStage(root) {
   const slot = () => root.querySelector('#phone-slot');
 
@@ -1157,7 +1173,7 @@ function renderStage(root) {
     const view = VIEWS[STATE.view];
     if (!view) return;
     const paint = () => {
-      slot().innerHTML = view(STATE.params);
+      slot().innerHTML = view(STATE.params) + toastMarkup();
     };
 
     if (!morph || !supportsVT) { clearMorph(); return paint(); }
@@ -1177,6 +1193,16 @@ function renderStage(root) {
     t.finished.finally(() => { named.forEach((el) => { el.style.viewTransitionName = ''; }); });
     /* 起点是一次性的，用完就丢，免得下一次 back() 把它当成起点再点一次名。 */
     morphEl = null;
+  };
+
+  /* 小气泡:点了但原型没实现的按钮,至少说一声它本该做什么。
+     自动 1.6s 后消失 —— 这段时间够用户看清,又不会一直挂在屏幕上。 */
+  let toastTimer = 0;
+  const toast = (text) => {
+    STATE.toast = text;
+    render();
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => { STATE.toast = ''; render(); }, 1600);
   };
 
   const go = (name, params) => {
@@ -1288,7 +1314,7 @@ function renderStage(root) {
        <body> 上，而 body 是所有点击的祖先。closest() 在没命中更近的 [data-*] 元素时
        会一路匹配到 body，于是「点遮罩关闭弹层」这条分支永远走不到（点遮罩会变成
        重新应用一次主题）。所以主题按钮改用独立属性 data-set-theme。 */
-    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle]');
+    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg]');
     if (t) {
       const d = t.dataset;
       if (d.back !== undefined) return back();
@@ -1315,6 +1341,7 @@ function renderStage(root) {
       if (d.pickKind) { STATE.kind = d.pickKind; return render(); }
       if (d.toggle) { STATE[d.toggle] = STATE[d.toggle] === false; return render(); }
       if (d.setTheme) { applyTheme(d.setTheme); return render(); }
+      if (d.kindCfg) { STATE.serverKindCfg = d.kindCfg; STATE.serverDirty = true; return render(); }
       if (d.quality) { STATE.quality = d.quality; STATE.overlay = ''; return render(); }
       if (d.sheet) { STATE.overlay = STATE.overlay === d.sheet ? '' : d.sheet; return render(); }
       if (d.go) return go(d.go);
@@ -1360,6 +1387,38 @@ function renderStage(root) {
         window.setTimeout(() => { if (STATE.pinging) { STATE.pinging = false; render(); } }, 800);
         return;
       }
+      /* ---- 之前没有接的几个按钮,这里一并补上 ----
+         死按钮比错别字更伤人:用户点下去没反应,会怀疑整个界面都是布景。 */
+      if (d.act === 'save-server') {
+        STATE.serverDirty = false;
+        toast('已保存');
+        return render();
+      }
+      if (d.act === 'add-route') {
+        toast('原型里线路是固定的,这一步会跳出添加地址的表单');
+        return;
+      }
+      if (d.act === 'remove-server') {
+        STATE.removed = true;
+        toast('已从原型移除（刷新页面可以找回来）');
+        return render();
+      }
+      if (d.act === 'new-playlist') {
+        toast('原型不真的写歌单,这一步会跳出起名与封面选择');
+        return;
+      }
+      if (d.act === 'dl-song' || d.act === 'dl-album') {
+        toast('已加入下载队列,库里的 FLAC 会在后台拉下来');
+        return;
+      }
+      if (d.act === 'more') {
+        toast('原型没实现整条上下文菜单,这是入口');
+        return;
+      }
+      if (d.act === 'other-server') {
+        toast('可以再多接一台飞牛音乐,这里会走和 Navidrome 一样的接入流程');
+        return;
+      }
       return; // 其余为示意，不改变状态
     }
     if (e.target.classList.contains('sheet-scrim')) {
@@ -1371,13 +1430,24 @@ function renderStage(root) {
   /* 搜索框：input 走委托，因为 #search-input 会随每次重绘被整块换掉。
      重绘后要把焦点和光标位置还回去，否则打一个字就掉焦，得重新点一下才能接着打。 */
   root.addEventListener('input', (e) => {
-    if (e.target.id !== 'search-input') return;
-    STATE.query = e.target.value;
-    render();
-    const next = slot().querySelector('#search-input');
-    if (next) {
-      next.focus();
-      try { next.setSelectionRange(next.value.length, next.value.length); } catch { /* 某些输入源没有选区 */ }
+    if (e.target.id === 'search-input') {
+      STATE.query = e.target.value;
+      render();
+      const next = slot().querySelector('#search-input');
+      if (next) {
+        next.focus();
+        try { next.setSelectionRange(next.value.length, next.value.length); } catch { /* 某些输入源没有选区 */ }
+      }
+      return;
+    }
+    /* 服务器设置页的三个输入框。字段一动就把脏标记立起来 + 写回 STATE 而不重绘 ——
+       一重绘,输入框的焦点、中文输入法组合、光标位置全没。 */
+    const f = e.target.dataset && e.target.dataset.field;
+    if (f) {
+      STATE[f] = e.target.value;
+      STATE.serverDirty = true;
+      const btn = slot().querySelector('[data-act="save-server"]');
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = ''; }
     }
   });
 
