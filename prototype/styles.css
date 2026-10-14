@@ -1442,6 +1442,32 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 }
 .qopt[aria-selected="true"] .qname { color: var(--accent-safe); }
 
+/* 上下文菜单的条目行:和 .qopt 同构 —— 图标 + 文案 + 整行命中,
+   挂在 sheet 里所以背景不用自己做,hover 给一层填充就行。 */
+.menu-item {
+  display: flex; align-items: center; gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  color: var(--fg);
+  font-size: var(--fs-lg); font-weight: 620;
+  letter-spacing: -0.01em;
+  transition: background 0.16s var(--ease);
+}
+.menu-item:hover { background: var(--fill-1); }
+.menu-item svg { color: var(--fg-2); flex: 0 0 auto; }
+.menu-item:hover svg { color: var(--accent-safe); }
+
+/* 封面色选择:一排圆片,选中的那颗加描边 */
+.swatch-row { display: flex; gap: var(--s3); padding: 2px 0; }
+.swatch {
+  width: 44px; height: 44px;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  transition: transform 0.16s var(--ease), border-color 0.16s var(--ease);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 18px -10px var(--depth);
+}
+.swatch:hover { transform: scale(1.06); }
+.swatch.sel { border-color: var(--fg); }
+
 /* ============================================================
    歌词
    ============================================================ */

@@ -167,6 +167,18 @@ const STATE = {
   serverDirty: false,           /* 表单动过 -> 保存按钮亮起来 */
   removed: false,               /* 点了「移除该服务器」 */
   toast: '',                    /* 屏幕底部的小气泡,几秒后消失 */
+  /* 下载:专辑页下载按钮真的往这里记一笔。原型不真拉文件,
+     但队列要有进度的样子 —— 下载中 → 已完成,几个条目各在各的阶段。 */
+  downloads: [],
+  dlSeq: 0,
+  /* 新建歌单表单:名字与封面色实时反映在预览卡上 */
+  plName: '',
+  plHue: 0,
+  /* 添加线路表单 */
+  routeUrl: '',
+  routeTag: '内网',
+  /* 上下文菜单:点「⋯」弹出的那张纸,内容随来源不同 */
+  menuFor: 'song',
 };
 
 /* 进度换算:秒 → 百分比(夹在 0..100) */
@@ -349,7 +361,9 @@ function routeRows(routes, withCheck, pageAccent) {
     const sel = r.id === STATE.routeId;
     const right = r.state === 'bad'
       ? `<div class="ms"><b style="color:var(--bad);font-size:13px">不可用</b><small>连接超时</small></div>`
-      : `<div class="ms"><b>${r.ping}</b><small>ms</small></div>`;
+      : r.ping == null
+        ? `<div class="ms"><b style="font-size:13px;color:var(--fg-3)">测速中</b><small>--</small></div>`
+        : `<div class="ms"><b>${r.ping}</b><small>ms</small></div>`;
     return `<div class="route ${sel ? 'selected' : ''}" data-route="${r.id}"
         ${withCheck ? `role="radio" aria-selected="${sel}"` : ''}>
       ${withCheck ? `<span class="tick">${ic('check', 14)}</span>` : `<span class="dot ${r.state}"></span>`}
@@ -411,7 +425,7 @@ function screenServers() {
 
       <div class="section"><h2>其他服务器</h2></div>
       <div class="card" style="margin:0 var(--s5)">
-        <div class="row" data-act="other-server" role="button">
+        <div class="row" data-go="add-server" role="button">
           <div class="badge" style="width:52px;height:52px;border-radius:18px;display:grid;place-items:center;
             background:var(--fill-2);color:var(--fg-2);font-weight:700;font-size:15px;flex:0 0 auto">飞牛</div>
           <div class="grow">
@@ -462,7 +476,7 @@ function screenServerConfig() {
       </div>
       <div class="card" style="margin:0 var(--s5)">${routeRows(SERVER.routes, false)}</div>
       <div style="padding:var(--s4) var(--s5) 0">
-        <button class="btn ghost" data-act="add-route" style="height:48px">${ic('plus', 17)} 添加线路地址</button>
+        <button class="btn ghost" data-go="add-route" style="height:48px">${ic('plus', 17)} 添加线路地址</button>
       </div>
 
       <div class="section"><h2>线路择优</h2></div>
@@ -601,7 +615,7 @@ function screenLibrary(tab = 'albums') {
           ${ic('chevron', 18)}
         </div>`).join('')}
       <div style="padding:var(--s5) var(--s5) var(--s4)">
-        <button class="btn ghost" data-act="new-playlist" style="height:48px">${ic('plus', 17)} 新建歌单</button>
+        <button class="btn ghost" data-go="new-playlist" style="height:48px">${ic('plus', 17)} 新建歌单</button>
       </div>`;
   }
 
@@ -662,7 +676,7 @@ function screenAlbum(id) {
       <button class="icon-btn" data-back>${ic('back', 22)}</button>
       <span class="spacer"></span>
       <button class="icon-btn quiet" data-act="dl-album">${ic('download', 21)}</button>
-      <button class="icon-btn quiet" data-act="more">${ic('more', 20)}</button>
+      <button class="icon-btn quiet" data-menu-for="album">${ic('more', 20)}</button>
     </div>
     <div class="scroll">
       <div class="album-head">
@@ -713,7 +727,7 @@ function screenArtist(id) {
     <div class="appbar nav">
       <button class="icon-btn" data-back>${ic('back', 22)}</button>
       <span class="spacer"></span>
-      <button class="icon-btn quiet" data-act="more">${ic('more', 20)}</button>
+      <button class="icon-btn quiet" data-menu-for="artist">${ic('more', 20)}</button>
     </div>
     <div class="scroll">
       <div style="padding:var(--s2) var(--s5) var(--s5);display:flex;align-items:center;gap:var(--s4);position:relative;z-index:1">
@@ -762,7 +776,7 @@ function screenPlayer() {
       <span class="spacer"></span>
       <span style="font-size:11px;color:var(--fg-3);letter-spacing:0.1em;font-weight:660">正在播放</span>
       <span class="spacer"></span>
-      <button class="icon-btn quiet" data-act="more">${ic('more', 20)}</button>
+      <button class="icon-btn quiet" data-menu-for="song">${ic('more', 20)}</button>
     </div>
 
     <div class="player-hero">
@@ -868,6 +882,196 @@ function sheetRoutes() {
   </div>`;
 }
 
+/* ---------------- 上下文菜单（「⋯」背后那张真正的纸） ----------------
+   四处共用一张底板,内容按来源换:播放页当前歌、专辑页、艺人页、歌词页。
+   每一项都是真动作:收藏、下载、加入队列、跳专辑 —— 不做「点了没反应」的那一种。 */
+function sheetMenu() {
+  const forWhat = STATE.menuFor;
+  let title = '', sub = '', items = [];
+
+  if (forWhat === 'song') {
+    const s = currentSong();
+    const a = albumOf(s);
+    const faved = STATE.fav.songs.has(s.id);
+    title = s.title; sub = `${s.artist} · ${a.name}`;
+    items = [
+      [faved ? 'heartF' : 'heart', faved ? '取消收藏' : '收藏这首歌', 'act:fav'],
+      ['download', '下载到本机（FLAC）', 'act:dl-song'],
+      ['queue', '加入播放队列', 'sheet:queue'],
+      ['disc', '查看专辑', `album:${a.id}`],
+    ];
+  } else if (forWhat === 'album') {
+    const a = ALBUM_BY_ID(STATE.params.album || STATE.albumId);
+    const faved = STATE.fav.albums.has(a.id);
+    title = a.name; sub = `${a.artist} · ${a.year}`;
+    items = [
+      [faved ? 'heartF' : 'heart', faved ? '取消收藏' : '收藏这张专辑', 'act:fav-album'],
+      ['download', '整张下载到本机', 'act:dl-album'],
+      ['queue', '加入播放队列', 'sheet:queue'],
+    ];
+  } else if (forWhat === 'artist') {
+    const ar = ARTIST_BY_ID(STATE.params.artist || STATE.artistId);
+    const faved = STATE.fav.artists.has(ar.id);
+    title = ar.name; sub = `${ar.albums} 张专辑 · ${ar.songs} 首`;
+    items = [
+      [faved ? 'heartF' : 'heart', faved ? '取消收藏' : '收藏这位艺人', 'act:fav-artist'],
+      ['download', '下载全部歌曲', 'act:dl-artist'],
+    ];
+  } else {
+    const s = currentSong();
+    title = s.title; sub = s.artist;
+    items = [['disc', '查看专辑', `album:${albumOf(s).id}`]];
+  }
+
+  return `<div class="sheet-scrim">
+    <div class="sheet">
+      <div class="handle"></div>
+      <h2>${title} <span>${sub}</span></h2>
+      <div class="sheet-body">
+        ${items.map(([icon, label, target]) => `
+          <div class="menu-item" data-menu-go="${target}">${ic(icon, 20)}<span>${label}</span></div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------------- 下载 ----------------
+   队列是真的:点下载按钮往 STATE.downloads 记一笔,这张页铺的就是队列本身。
+   进度是模拟的 —— 每次渲染往前挪一点,直到 100 停住,状态从「下载中」变「已完成」。
+   条目可删,删完剩下的接着排;空队列是真实空态(带说明),不是假骨架。 */
+function dlEnqueue(kind, item) {
+  const name = kind === 'album' ? item.name : `${item.title} · ${item.artist}`;
+  const size = kind === 'album'
+    ? Math.round(tracksOf(item.id).length * 32.4)
+    : Math.round(item.dur * 0.148);
+  STATE.downloads.unshift({
+    id: 'dl' + (++STATE.dlSeq),
+    kind, name,
+    state: 'active', pct: 0, size,
+  });
+}
+
+function screenDownloads() {
+  const list = STATE.downloads;
+  const activeN = list.filter((d) => d.state === 'active').length;
+  const totalSize = list.reduce((n, d) => n + d.size, 0);
+  return `<div class="appbar nav">
+      <button class="icon-btn" data-back>${ic('back', 22)}</button>
+      <span class="h1">下载管理</span>
+      <span class="spacer"></span>
+      <span style="font-size:11px;color:var(--fg-3)">${activeN ? '正在下载' : '空闲'} · ${list.length} 项</span>
+    </div>
+    <div class="scroll">
+      ${list.length ? `
+        <div class="section"><h2>队列</h2><span class="count">约 ${(totalSize / 1024).toFixed(1)} GB</span></div>
+        <div class="card" style="margin:0 var(--s5)">
+          ${list.map((d, i) => `
+            ${i ? '<div class="divider"></div>' : ''}
+            <div class="row" style="height:76px">
+              <span class="set-icon" style="color:${d.state === 'done' ? 'var(--ok)' : 'var(--accent-safe)'}">
+                ${ic(d.state === 'done' ? 'check' : 'download', 18)}</span>
+              <div class="grow">
+                <div class="line1">${d.name}</div>
+                <div class="line2">${d.state === 'done'
+                  ? `已完成 · FLAC · ${d.size} MB`
+                  : `${d.size} MB · ${Math.round(d.pct)}%`}</div>
+                <div class="prog-line" style="margin-top:6px"><i style="width:${d.state === 'done' ? 100 : d.pct}%"></i></div>
+              </div>
+              <button class="icon-btn quiet" data-dl-del="${d.id}">${ic('x', 16)}</button>
+            </div>`).join('')}
+        </div>
+        <div class="list-note" style="padding-top:var(--s4)">
+          下载走当前线路,存到本机的 Nordic/Music 目录。已完成的条目离线也能播。
+        </div>`
+      : `<div class="empty" style="padding-top:120px">
+          <span class="big">队列是空的</span>
+          <span class="small">专辑页和播放页的下载按钮会把内容放进这里</span>
+        </div>`}
+      <div style="height:var(--s5)"></div>
+    </div>`;
+}
+
+/* ---------------- 新建歌单 ----------------
+   表单是活的:名字打进 STATE.plName,封面色随 STATE.plHue 走,
+   预览卡实时变样。保存按钮在没起名前是灰的 —— 没内容就不该能存。 */
+function screenNewPlaylist() {
+  const h = STATE.plHue;
+  const c1 = `hsl(${h} 42% 30%)`;
+  const c2 = `hsl(${h} 48% 12%)`;
+  const name = STATE.plName.trim();
+  const swatches = [268, 210, 168, 24, 336, 44, 186];
+  return `<div class="appbar nav">
+      <button class="icon-btn" data-back>${ic('back', 22)}</button>
+      <span class="h1">新建歌单</span>
+      <span class="spacer"></span>
+      <button class="pill-btn solid" data-act="create-playlist" ${name ? '' : 'disabled style="opacity:.45;cursor:default"'}>创建</button>
+    </div>
+    <div class="scroll" style="padding:0 var(--s5)">
+      <div class="hero-card" style="${accentVars(c1)}margin-top:var(--s4)">
+        <div class="cover" style="--c1:${c1};--c2:${c2};width:92px;height:92px;border-radius:20px">
+          <span class="cover-mark" data-len="2">${(name || '歌单').slice(0, 2)}</span>
+        </div>
+        <div class="grow" style="min-width:0">
+          <div class="t">${name || '未命名歌单'}</div>
+          <div class="a">0 首 · ${name ? '名字可用' : '起个名字就能创建'}</div>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:var(--s5)">
+        <label>歌单名称</label>
+        <div class="input"><input id="pl-name" placeholder="例如:深夜驾驶" value="${STATE.plName}"
+          autocomplete="off" spellcheck="false"></div>
+      </div>
+
+      <div class="field" style="margin-top:var(--s4)">
+        <label>封面色</label>
+        <div class="swatch-row">
+          ${swatches.map((hh) => `
+            <button class="swatch${hh === h ? ' sel' : ''}" data-hue="${hh}" aria-label="色相 ${hh}"
+              style="background:linear-gradient(148deg,hsl(${hh} 42% 30%),hsl(${hh} 48% 12%))"></button>`).join('')}
+        </div>
+      </div>
+      <div class="hint" style="padding:0 4px">创建后可以先加几首打底,以后随时从歌曲菜单里追加。</div>
+      <div style="height:var(--s6)"></div>
+    </div>`;
+}
+
+/* ---------------- 添加线路 ----------------
+   和服务器设置共用「表单脏状态 -> 保存亮灯」的规则:
+   URL 没填完整就不给按,填了才亮。 */
+function screenAddRoute() {
+  const url = STATE.routeUrl.trim();
+  const ok = /^https?:\/\/.+/.test(url);
+  return `<div class="appbar nav">
+      <button class="icon-btn" data-back>${ic('back', 22)}</button>
+      <span class="h1">添加线路地址</span>
+      <span class="spacer"></span>
+      <button class="pill-btn solid" data-act="create-route" ${ok ? '' : 'disabled style="opacity:.45;cursor:default"'}>添加</button>
+    </div>
+    <div class="scroll" style="padding:0 var(--s5)">
+      <div style="font-size:13px;color:var(--fg-2);line-height:1.7;padding:var(--s4) 0 var(--s5)">
+        一个账号可以配多条线路,客户端按延迟自动择优。内外网各留一条,出门也能听。
+      </div>
+      <div class="field">
+        <label>服务器地址</label>
+        <div class="input">${ic('server', 18, 'quiet')}
+          <input id="route-url" placeholder="http://192.168.1.10:4533" value="${STATE.routeUrl}"
+            autocomplete="off" spellcheck="false"></div>
+        <div class="hint">支持 http / https,也可以是域名或 IPv6。</div>
+      </div>
+      <div class="field" style="margin-top:var(--s4)">
+        <label>标记</label>
+        <div class="segmented">
+          ${['内网', '公网', '中继'].map((t) =>
+            `<button data-route-tag="${t}" aria-selected="${STATE.routeTag === t}">${t}</button>`).join('')}
+        </div>
+      </div>
+      ${url && !ok ? `<div class="note" style="margin-top:var(--s5)">
+        这个地址还不完整 —— 要以 http:// 或 https:// 开头。</div>` : ''}
+      <div style="height:var(--s6)"></div>
+    </div>`;
+}
+
 /* ---------------- 歌词 ---------------- */
 
 function screenLyrics() {
@@ -884,7 +1088,7 @@ function screenLyrics() {
       <span class="spacer"></span>
       <span style="font-size:12px;color:var(--fg-2);font-weight:620">${s.title} · ${s.artist}</span>
       <span class="spacer"></span>
-      <button class="icon-btn quiet" data-act="more">${ic('more', 20)}</button>
+      <button class="icon-btn quiet" data-menu-for="song">${ic('more', 20)}</button>
     </div>
     <div class="lyrics">
       ${LYRICS.map((l, i) => `<div class="lyric-line ${i === activeIx ? 'on' : i < activeIx ? 'past' : ''}">${l}</div>`).join('')}
@@ -1046,6 +1250,18 @@ function screenSettings() {
         </div>
       </div>
 
+      <div class="section"><h2>下载</h2></div>
+      <div class="card" style="margin:0 var(--s5)">
+        <div class="row" data-go="downloads">
+          <span class="set-icon">${ic('download', 18)}</span>
+          <div class="grow"><div class="line1">下载管理</div>
+            <div class="line2">${STATE.downloads.length
+              ? `${STATE.downloads.filter((d) => d.state === 'active').length} 个进行中 · ${STATE.downloads.length} 项`
+              : '队列是空的'}</div></div>
+          ${ic('chevron', 18)}
+        </div>
+      </div>
+
       <div class="section"><h2>隐私</h2></div>
       <div class="card" style="margin:0 var(--s5)">
         <div class="row">
@@ -1060,7 +1276,7 @@ function screenSettings() {
 
 /* ---------------- 视图表 ---------------- */
 
-const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes };
+const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu };
 
 /* 弹层是叠在当前屏上的，不是某一屏专属 —— 专辑页的「队列」、设置里的
    「默认转码质量」都要能把同一张面板揭起来。之前只有播放页拼了 overlay,
@@ -1071,11 +1287,14 @@ const VIEWS = {
   servers:        () => shell(screenServers()),
   'server-config':() => shell(screenServerConfig()),
   'add-server':   () => shell(screenAddServer()),
+  'add-route':    () => shell(screenAddRoute()),
+  downloads:      () => shell(screenDownloads()),
+  'new-playlist': () => shell(screenNewPlaylist()),
   library:        (p) => shell(screenLibrary((p && p.lib) || 'albums')),
   album:          (p) => { const a = ALBUM_BY_ID((p && p.album) || STATE.albumId); return shell(withOverlay(screenAlbum(a.id)), { home: true, accent: a.accent, c1: a.c1 }); },
-  artist:         (p) => { const ar = ARTIST_BY_ID((p && p.artist) || STATE.artistId); return shell(screenArtist(ar.id), { home: true, accent: ar.accent, c1: ar.c1 }); },
+  artist:         (p) => { const ar = ARTIST_BY_ID((p && p.artist) || STATE.artistId); return shell(withOverlay(screenArtist(ar.id)), { home: true, accent: ar.accent, c1: ar.c1 }); },
   player:         () => shell(withOverlay(screenPlayer()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
-  lyrics:         () => shell(screenLyrics(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
+  lyrics:         () => shell(withOverlay(screenLyrics()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
   search:         () => shell(screenSearch()),
   settings:       () => shell(withOverlay(screenSettings())),
 };
@@ -1103,6 +1322,12 @@ const BOARD = [
   ['歌词',            '逐句高亮',             () => shell(screenLyrics(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['搜索',            '输入即筛选',           () => shell(screenSearch())],
   ['设置',            '播放 / 服务器 / 隐私', () => shell(screenSettings())],
+  /* 这三张是新增的整屏功能页,设计板一并铺出来 —— 它们不再是 toast,
+     是真的能走进去、能提交的页面。 */
+  ['下载管理',        '队列 + 进度',          () => shell(screenDownloads())],
+  ['新建歌单',        '命名 + 封面色',        () => shell(screenNewPlaylist())],
+  ['添加线路',        '地址 + 标记',          () => shell(screenAddRoute())],
+  ['上下文菜单',      '歌曲的「⋯」',          () => shell(screenPlayer() + sheetMenu(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
 ];
 
 function boardFrames() {
@@ -1314,7 +1539,7 @@ function renderStage(root) {
        <body> 上，而 body 是所有点击的祖先。closest() 在没命中更近的 [data-*] 元素时
        会一路匹配到 body，于是「点遮罩关闭弹层」这条分支永远走不到（点遮罩会变成
        重新应用一次主题）。所以主题按钮改用独立属性 data-set-theme。 */
-    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg]');
+    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-dl-del],[data-hue],[data-route-tag]');
     if (t) {
       const d = t.dataset;
       if (d.back !== undefined) return back();
@@ -1387,37 +1612,92 @@ function renderStage(root) {
         window.setTimeout(() => { if (STATE.pinging) { STATE.pinging = false; render(); } }, 800);
         return;
       }
-      /* ---- 之前没有接的几个按钮,这里一并补上 ----
-         死按钮比错别字更伤人:用户点下去没反应,会怀疑整个界面都是布景。 */
-      if (d.act === 'save-server') {
-        STATE.serverDirty = false;
-        toast('已保存');
+      /* ---- 上下文菜单 / 下载 / 新建歌单 / 添加线路 ----
+         之前这几处都拿 toast 搪塞,现在是真页面/真面板在背后。
+         死按钮的解法不是气泡,是把按钮背后的屏补出来。 */
+      if (d.menuFor) { STATE.menuFor = d.menuFor; STATE.overlay = 'menu'; return render(); }
+      if (d.menuGo) {
+        const [kind, val] = d.menuGo.split(':');
+        STATE.overlay = '';
+        if (kind === 'act') {
+          if (val === 'fav') {
+            const set = STATE.fav.songs;
+            set.has(STATE.songId) ? set.delete(STATE.songId) : set.add(STATE.songId);
+          } else if (val === 'fav-album') {
+            const set = STATE.fav.albums;
+            const id = STATE.params.album; if (id) set.has(id) ? set.delete(id) : set.add(id);
+          } else if (val === 'fav-artist') {
+            const set = STATE.fav.artists;
+            const id = STATE.params.artist; if (id) set.has(id) ? set.delete(id) : set.add(id);
+          } else if (val === 'dl-song') {
+            dlEnqueue('song', currentSong());
+            toast('已加入下载队列');
+          } else if (val === 'dl-album') {
+            dlEnqueue('album', ALBUM_BY_ID(STATE.params.album || STATE.albumId));
+            toast('整张专辑已加入下载队列');
+          } else if (val === 'dl-artist') {
+            const ar = ARTIST_BY_ID(STATE.params.artist || STATE.artistId);
+            songsOf(ar.name).forEach((s) => dlEnqueue('song', s));
+            toast('这位艺人的歌曲已加入下载队列');
+          } else if (val === 'fav') {
+            toast('已更新收藏');
+          }
+          return render();
+        }
+        if (kind === 'sheet') { STATE.overlay = val; return render(); }
+        if (kind === 'album') { return go('album', { album: val }); }
         return render();
       }
-      if (d.act === 'add-route') {
-        toast('原型里线路是固定的,这一步会跳出添加地址的表单');
-        return;
+      if (d.dlDel) {
+        STATE.downloads = STATE.downloads.filter((x) => x.id !== d.dlDel);
+        return render();
+      }
+      if (d.hue) { STATE.plHue = +d.hue; return render(); }
+      if (d.routeTag) { STATE.routeTag = d.routeTag; return render(); }
+      if (d.act === 'save-server') {
+        STATE.serverDirty = false;
+        SERVER.name = STATE.serverName;
+        SERVER.user = STATE.serverUser;
+        toast('已保存');
+        return render();
       }
       if (d.act === 'remove-server') {
         STATE.removed = true;
         toast('已从原型移除（刷新页面可以找回来）');
+        /* 移除后退出到服务器列表 —— 停在已移除的设置页里没有意义 */
+        return go('servers');
+      }
+      if (d.act === 'dl-song') { dlEnqueue('song', currentSong()); toast('已加入下载队列'); return render(); }
+      if (d.act === 'dl-album') {
+        dlEnqueue('album', ALBUM_BY_ID(STATE.params.album || STATE.albumId));
+        toast('整张专辑已加入下载队列');
         return render();
       }
-      if (d.act === 'new-playlist') {
-        toast('原型不真的写歌单,这一步会跳出起名与封面选择');
-        return;
+      if (d.act === 'create-playlist') {
+        const name = STATE.plName.trim();
+        if (!name) return;
+        PLAYLISTS.push({
+          id: 'p' + (PLAYLISTS.length + 1),
+          name, count: 0, desc: '新建 · 还没有歌',
+          c1: `hsl(${STATE.plHue} 42% 30%)`,
+          c2: `hsl(${STATE.plHue} 48% 12%)`,
+          accent: `hsl(${STATE.plHue} 70% 66%)`,
+        });
+        STATE.plName = '';
+        toast(`「${name}」已创建`);
+        return go('library', { lib: 'playlists' });
       }
-      if (d.act === 'dl-song' || d.act === 'dl-album') {
-        toast('已加入下载队列,库里的 FLAC 会在后台拉下来');
-        return;
-      }
-      if (d.act === 'more') {
-        toast('原型没实现整条上下文菜单,这是入口');
-        return;
-      }
-      if (d.act === 'other-server') {
-        toast('可以再多接一台飞牛音乐,这里会走和 Navidrome 一样的接入流程');
-        return;
+      if (d.act === 'create-route') {
+        const url = STATE.routeUrl.trim();
+        if (!/^https?:\/\/.+/.test(url)) return;
+        SERVER.routes.push({
+          id: 'r' + (SERVER.routes.length + 1),
+          name: url.replace(/^https?:\/\//, '').split(/[/:]/)[0],
+          url, ping: null, state: 'ok', tag: STATE.routeTag, bars: 3,
+        });
+        STATE.routeUrl = '';
+        toast('线路已添加,正在测速');
+        return go('server-config');
       }
       return; // 其余为示意，不改变状态
     }
@@ -1428,7 +1708,8 @@ function renderStage(root) {
   });
 
   /* 搜索框：input 走委托，因为 #search-input 会随每次重绘被整块换掉。
-     重绘后要把焦点和光标位置还回去，否则打一个字就掉焦，得重新点一下才能接着打。 */
+     重绘后要把焦点和光标位置还回去，否则打一个字就掉焦，得重新点一下才能接着打。
+     新建歌单 / 添加线路的输入框同一条路 —— 写状态 + 原地改按钮,不整屏重绘。 */
   root.addEventListener('input', (e) => {
     if (e.target.id === 'search-input') {
       STATE.query = e.target.value;
@@ -1437,6 +1718,32 @@ function renderStage(root) {
       if (next) {
         next.focus();
         try { next.setSelectionRange(next.value.length, next.value.length); } catch { /* 某些输入源没有选区 */ }
+      }
+      return;
+    }
+    if (e.target.id === 'pl-name') {
+      STATE.plName = e.target.value;
+      const preview = slot().querySelector('.hero-card .t');
+      if (preview) preview.textContent = STATE.plName.trim() || '未命名歌单';
+      const mark = slot().querySelector('.hero-card .cover-mark');
+      if (mark) mark.textContent = (STATE.plName.trim() || '歌单').slice(0, 2);
+      const btn = slot().querySelector('[data-act="create-playlist"]');
+      if (btn) {
+        const on = !!STATE.plName.trim();
+        btn.disabled = !on;
+        btn.style.opacity = on ? '' : '.45';
+        btn.style.cursor = on ? '' : 'default';
+      }
+      return;
+    }
+    if (e.target.id === 'route-url') {
+      STATE.routeUrl = e.target.value;
+      const ok = /^https?:\/\/.+/.test(STATE.routeUrl.trim());
+      const btn = slot().querySelector('[data-act="create-route"]');
+      if (btn) {
+        btn.disabled = !ok;
+        btn.style.opacity = ok ? '' : '.45';
+        btn.style.cursor = ok ? '' : 'default';
       }
       return;
     }
@@ -1507,6 +1814,20 @@ function renderStage(root) {
       });
     }
   }, 1000);
+
+  /* ---- 下载进度 ----
+     队列里 active 的条目每次渲染往前挪一点,到 100 变 done。
+    挂在播放计时旁边而不是单开计时器:下着歌的同时下歌,两件事本来就该并行。
+     只在真的有下载任务时重绘 —— 空队列不值得每秒闪一次。 */
+  window.setInterval(() => {
+    const active = STATE.downloads.filter((d) => d.state === 'active');
+    if (!active.length) return;
+    active.forEach((d) => {
+      d.pct = Math.min(100, d.pct + 7 + Math.random() * 9);
+      if (d.pct >= 100) d.state = 'done';
+    });
+    render();
+  }, 1200);
 
   render();
 }
