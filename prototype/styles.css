@@ -587,6 +587,72 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 .cover .cover-mark[data-len="3"] { font-size: 19cqw; }
 .cover .cover-mark[data-len="4"] { font-size: 15cqw; }
 
+/* ---- 封面版式(只在大封面上长出来) ----
+   同一张封面要在四个尺寸下都成立:列表 52px、播放坞 46px、网格半屏、播放页满屏。
+   小尺寸用首字最清楚,大尺寸下面排版才有存在感 —— 靠容器查询按实际宽度切换,
+   而不是给每处调用点传不同的参数。 */
+.cover .cover-art,
+.cover .cover-ring { display: none; }
+
+@container (min-width: 128px) {
+  .cover .cover-mark { display: none; }
+
+  .cover .cover-art {
+    display: block;
+    position: absolute; inset: 0;
+    padding: 11%;
+    z-index: 2;
+  }
+  .cover .art-word {
+    font-weight: 780;
+    letter-spacing: -0.045em;
+    line-height: 0.94;
+    color: var(--mark);
+    text-shadow: 0 2px 14px var(--mark-sh);
+    /* 长标题要能折行,不能撑破封面 */
+    overflow-wrap: break-word;
+  }
+  .cover .art-by {
+    position: absolute;
+    left: 11%; right: 11%; bottom: 10%;
+    font-size: 2.6cqw;
+    font-weight: 620;
+    letter-spacing: 0.02em;
+    color: color-mix(in srgb, var(--mark) 74%, transparent);
+  }
+  /* 字号随封面宽度走,四档按标题长短挑 */
+  .cover-art[data-size="0"] .art-word { font-size: 26cqw; }
+  .cover-art[data-size="1"] .art-word { font-size: 17cqw; }
+  .cover-art[data-size="2"] .art-word { font-size: 12.5cqw; }
+  .cover-art[data-size="3"] .art-word { font-size: 9.5cqw; }
+
+  /* 版式 0:居中,标题压在中间,靠一圈暗角收边 */
+  .cover-art[data-layout="0"] { display: grid; place-items: center; text-align: center; padding: 14%; }
+  .cover-art[data-layout="0"] .art-by { position: static; margin-top: 5%; }
+  .cover-art[data-layout="0"] .art-word { text-shadow: 0 4px 24px var(--mark-sh); }
+
+  /* 版式 1:左上角排,底部一条横线压住 */
+  .cover-art[data-layout="1"] { display: flex; flex-direction: column; }
+  .cover-art[data-layout="1"] .art-word { margin-top: 4%; }
+
+  /* 版式 2:标题沉到底部,上方留空给光晕 */
+  .cover-art[data-layout="2"] { display: flex; flex-direction: column; justify-content: flex-end; }
+  .cover-art[data-layout="2"] .art-by { position: static; margin-top: 4%; }
+
+  /* 唱片中心的标识环:给大封面一点「实体唱片」的结构感 */
+  .cover .cover-ring {
+    display: block;
+    position: absolute;
+    right: 8%; top: 8%;
+    width: 17%; aspect-ratio: 1 / 1;
+    border-radius: var(--r-full);
+    border: 1px solid color-mix(in srgb, var(--mark) 34%, transparent);
+    box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--mark) 12%, transparent);
+    z-index: 2;
+  }
+  .cover-art[data-layout="1"] .cover-ring { top: auto; bottom: 8%; }
+}
+
 /* ============================================================
    列表行
    ============================================================ */
@@ -1078,6 +1144,62 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   position: relative;
   z-index: 1;
 }
+
+/* ---- 唱片 ----
+   封面背后露出一截黑胶盘面,并且随播放状态缓慢自转 —— 静止的渐变色块再怎么
+   调也只是色块,转起来才有「在放」的感觉。 */
+.hero-stack {
+  position: relative;
+  width: 100%;
+  /* 封面收一档并整体左移,给右边的唱片让出可见宽度。右边距挤出的 18px 位移
+     让盘面能露出约 50px —— 只露 30px 的话看着像封面旁边蹭了一道黑影,
+     读不出是唱片。 */
+  max-width: 250px;
+  margin-right: 36px;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+}
+.hero-stack .cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 30px;
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 44px 80px -28px var(--depth),
+              0 0 90px -20px color-mix(in srgb, var(--accent) 42%, transparent),
+              inset 0 1px 0 var(--rim);
+}
+.vinyl {
+  position: absolute;
+  /* 锚在封面右缘,只露出一截。右边缘要留在手机屏内,否则会被 .phone 的
+     overflow:hidden 直接裁掉。 */
+  right: -50px;
+  width: 88%;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--r-full);
+  z-index: 1;
+  background:
+    repeating-radial-gradient(circle at 50% 50%,
+      rgba(255, 255, 255, 0.045) 0 1px,
+      transparent 1px 3px),
+    radial-gradient(circle at 50% 50%, #1A1A20 0 17%, #0B0B0F 30%, #15151A 62%, #08080B 100%);
+  box-shadow: 0 34px 64px -26px var(--depth),
+              inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  animation: spin 16s linear infinite;
+}
+/* 盘心与标签。转速刻意压慢 —— 真实黑胶 33⅓ 转,一帧一顿反而晕。 */
+.vinyl i {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 30%; aspect-ratio: 1 / 1;
+  margin: -15% 0 0 -15%;
+  border-radius: var(--r-full);
+  background:
+    radial-gradient(circle at 50% 50%, var(--accent) 0 26%, transparent 27%),
+    linear-gradient(150deg, var(--c1), var(--c2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
 .player-hero .cover {
   width: 100%;
   max-width: 300px;
@@ -1515,4 +1637,34 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+
+  /* 把唱片转速压成 0.01ms 只是让它每帧绕一整圈,看着像卡住,其实仍在全速重绘 ——
+     真正该做的是停掉。 */
+  .vinyl { animation: none !important; }
+
+  /* 系统性关闭视图过渡:否则每次跳转都会闪一下 0.01ms 的位移,还不如不出过渡。 */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important; }
+}
+
+/* ============================================================
+   封面共享元素过渡
+   ============================================================ */
+
+/* 整页交叉淡出,缓动放长一点,避免和封面的位移打架 */
+::view-transition-old(root) { animation-duration: 0.34s; animation-timing-function: var(--ease); }
+::view-transition-new(root) { animation-duration: 0.34s; animation-timing-function: var(--ease); }
+
+/* 封面本身不做淡入淡出,只做位移与缩放 —— 两个快照叠加会在半途发灰。
+   用 overflow:clip 而不是 hidden:圆角在动画过程中要真的裁掉溢出的封面版式文字。 */
+::view-transition-group(cover-art) {
+  animation-duration: 0.46s;
+  animation-timing-function: var(--ease);
+  overflow: clip;
+}
+::view-transition-old(cover-art),
+::view-transition-new(cover-art) {
+  animation: none;
+  mix-blend-mode: normal;
 }

@@ -167,16 +167,41 @@ function applyTheme(id) {
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 const albumOf   = (s) => ALBUMS.find((x) => x.id === s.albumId) || ALBUMS[0];
+const ALBUM_BY_ID  = (id) => ALBUMS.find((x) => x.id === id) || ALBUMS[0];
+const ARTIST_BY_ID = (id) => ARTISTS.find((x) => x.id === id) || ARTISTS[0];
 const currentSong = () => SONGS.find((x) => x.id === STATE.songId) || SONGS[0];
 const currentAlbum = () => albumOf(currentSong());
+
+/* 版式散列:同一批封面要有各自的长相,不能六张一个模子。 */
+function coverSeed(item) {
+  const k = String(item.id || item.name || item.title || '');
+  let n = 0;
+  for (let i = 0; i < k.length; i++) n = (n * 31 + k.charCodeAt(i)) % 997;
+  return n;
+}
 
 function cover(item, cls = '', mark = null, extra = '') {
   const accent = item.accent || '#7C8CFF';
   const style = `--c1:${item.c1};--c2:${item.c2};${accentVars(accent)}${extra}`;
   const m = String(mark ?? item.mark ?? (item.name || item.title || '').slice(0, 2));
   const len = m.length > 4 ? 4 : m.length;
-  return `<div class="cover ${cls}" style="${style}">
+
+  /* 大封面上把专辑名当成封面的排版元素排出来,而不是只丢两个首字 ——
+     首字只在小尺寸下成立(列表行 52px、播放坞 46px),一放大到网格与播放页
+     就成了占位图。这里给三种版式,按 id 散列挑一种,再按名字长短定字号档。
+     显不显示交给容器查询:同一个 .cover,尺寸够大才长出这层排版。 */
+  const title = String(item.name || item.title || '');
+  const by = String(item.artist || (item.count ? item.count + ' 首' : ''));
+  const seed = coverSeed(item);
+  const size = title.length <= 4 ? 0 : title.length <= 8 ? 1 : title.length <= 14 ? 2 : 3;
+
+  return `<div class="cover ${cls}" style="${style}" data-art="${item.id || ''}">
     <span class="cover-mark" data-len="${len}">${m}</span>
+    <div class="cover-art" data-layout="${seed % 3}" data-size="${size}">
+      <div class="art-word">${title}</div>
+      ${by ? `<div class="art-by">${by}</div>` : ''}
+    </div>
+    <span class="cover-ring" aria-hidden="true"></span>
   </div>`;
 }
 
@@ -203,7 +228,10 @@ function statusbar() {
   </div>`;
 }
 
-/* 组装一整台手机:外框 + 灵动岛 + 状态栏 + 内容 */
+/* 组装一整台手机:外框 + 灵动岛 + 状态栏 + 内容。
+   accent 要写在 .screen 上而不是只写在氛围层里 —— 沉浸式页面的进度条、播放键、
+   选中胶囊都在氛围层的兄弟节点上,变量挂在氛围层上的话它们一个也继承不到,
+   会退回 :root 的默认紫。这正是「随封面取色」看上去只对了一半的原因。 */
 function shell(inner, opts = {}) {
   const accent = opts.accent ? accentVars(opts.accent) : '';
   const c1 = opts.c1 ? `--c1:${opts.c1};` : '';
@@ -470,7 +498,7 @@ function screenLibrary(tab = 'albums') {
       </div>
       <div class="section"><h2>全部专辑</h2><span class="count">${ALBUMS.length} 张</span></div>
       <div class="grid-covers">${ALBUMS.slice(0, 4).map((a) => `
-        <div class="album-tile" data-album="${a.id}">
+        <div class="album-tile" data-album="${a.id}" data-morph>
           ${cover(a, 'sq', a.mark)}
           <div><div class="name">${a.name}</div><div class="meta">${a.artist} · ${a.year}</div></div>
         </div>`).join('')}</div>
@@ -633,7 +661,12 @@ function screenPlayer(overlay = '') {
       <button class="icon-btn quiet">${ic('more', 20)}</button>
     </div>
 
-    <div class="player-hero">${cover(a, 'sq', a.mark)}</div>
+    <div class="player-hero">
+      <div class="hero-stack">
+        <div class="vinyl" aria-hidden="true"><i></i></div>
+        ${cover(a, 'sq', a.mark)}
+      </div>
+    </div>
 
     <div class="player-info">
       <div class="top-row">
@@ -874,10 +907,10 @@ const VIEWS = {
   'server-config':() => shell(screenServerConfig()),
   'add-server':   () => shell(screenAddServer()),
   library:        (p) => shell(screenLibrary((p && p.lib) || 'albums')),
-  album:          (p) => shell(screenAlbum((p && p.album) || STATE.albumId), { home: true }),
-  artist:         (p) => shell(screenArtist((p && p.artist) || STATE.artistId), { home: true }),
-  player:         () => shell(screenPlayer(STATE.overlay ? sheets[STATE.overlay]() : ''), { home: true }),
-  lyrics:         () => shell(screenLyrics(), { home: true }),
+  album:          (p) => { const a = ALBUM_BY_ID((p && p.album) || STATE.albumId); return shell(screenAlbum(a.id), { home: true, accent: a.accent, c1: a.c1 }); },
+  artist:         (p) => { const ar = ARTIST_BY_ID((p && p.artist) || STATE.artistId); return shell(screenArtist(ar.id), { home: true, accent: ar.accent, c1: ar.c1 }); },
+  player:         () => shell(screenPlayer(STATE.overlay ? sheets[STATE.overlay]() : ''), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
+  lyrics:         () => shell(screenLyrics(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
   search:         () => shell(screenSearch()),
   settings:       () => shell(screenSettings()),
 };
@@ -946,17 +979,52 @@ function renderBoard(root) {
 function renderStage(root) {
   const slot = () => root.querySelector('#phone-slot');
 
-  const render = () => {
+  /* ---- 封面共享元素过渡 ----
+     点专辑封面 → 播放页那一小段「封面飞过去并放大」的动画,用 View Transitions
+     实现,比手写 FLIP 稳(框架自己管跨文档的快照与时长)。
+     关键点:view-transition-name 在同一个状态里只能有一个元素持有,重名会被整条
+     忽略掉,所以不能写死在标记里(网格里有 4 张专辑)。改成点击那一刻给被点的那张
+     临时命名,入场完成后再撤掉 —— 这样任何时刻全局只有一个。 */
+  const supportsVT = typeof document.startViewTransition === 'function';
+  let morphEl = null;
+
+  const clearMorph = () => {
+    if (morphEl) { morphEl.style.viewTransitionName = ''; morphEl = null; }
+  };
+
+  const render = (morph = false) => {
     const view = VIEWS[STATE.view];
-    if (view) slot().innerHTML = view(STATE.params);
+    if (!view) return;
+    const paint = () => {
+      slot().innerHTML = view(STATE.params);
+    };
+
+    if (!morph || !supportsVT) { clearMorph(); return paint(); }
+
+    /* 起名必须在快照之前,撤名必须在快照之后,否则两端拿不到同一对元素。 */
+    const named = [];
+    if (morphEl) { morphEl.style.viewTransitionName = 'cover-art'; named.push(morphEl); }
+
+    const t = document.startViewTransition(() => {
+      paint();
+      /* 播放页与专辑页的大封面在这里点名 —— 名字只在过渡期间挂着。
+         不能图省事写成标记里的静态样式:t.finished 撤名时会连静态值一起抹掉,
+         第一次过渡之后那处封面就再也当不了起点或终点。 */
+      const hero = slot().querySelector('.player-hero .cover, .album-head .cover');
+      if (hero) { hero.style.viewTransitionName = 'cover-art'; named.push(hero); }
+    });
+    t.finished.finally(() => { named.forEach((el) => { el.style.viewTransitionName = ''; }); });
+    /* 起点是一次性的,用完就丢,免得下一次 back() 把它当成起点再点一次名。 */
+    morphEl = null;
   };
 
   const go = (name, params) => {
+    const morph = name === 'player' || name === 'album';
     if (name !== STATE.view) STATE.history.push({ view: STATE.view, params: STATE.params });
     STATE.view = name;
     STATE.params = params || {};
     STATE.overlay = '';
-    render();
+    render(morph);
   };
 
   const back = () => {
@@ -969,7 +1037,7 @@ function renderStage(root) {
       STATE.params = { lib: 'albums' };
     }
     STATE.overlay = '';
-    render();
+    render(true);
   };
 
   root.innerHTML = `
@@ -1017,8 +1085,16 @@ function renderStage(root) {
       if (d.back !== undefined) return back();
       if (d.tab) { STATE.history = []; return go(d.tab); }
       if (d.lib) { STATE.params = { lib: d.lib }; return render(); }
-      if (d.song) { STATE.songId = d.song; return go('player'); }
-      if (d.album) { STATE.albumId = d.album; return go('album', { album: d.album }); }
+      if (d.song) {
+        /* 从顶部播放坞点进播放页时,坞里也有同一张封面 —— 但那块的尺寸太小,
+           飞过去的观感不如不加。只在从列表/网格进来时记录起点。 */
+        morphEl = t.closest('[data-morph]') ? t.querySelector('.cover') : null;
+        STATE.songId = d.song; return go('player');
+      }
+      if (d.album) {
+        morphEl = t.closest('[data-morph]') ? t.querySelector('.cover') : null;
+        STATE.albumId = d.album; return go('album', { album: d.album });
+      }
       if (d.artist) { STATE.artistId = d.artist; return go('artist', { artist: d.artist }); }
       if (d.route) { STATE.routeId = d.route; return render(); }
       if (d.setTheme) { applyTheme(d.setTheme); return render(); }
