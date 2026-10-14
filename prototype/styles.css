@@ -1458,6 +1458,21 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   color: var(--fg);
   text-shadow: 0 0 30px color-mix(in srgb, var(--accent) 60%, transparent);
 }
+/* 已经唱过去的行再暗一点 —— 三段亮度区分出「过去 / 现在 / 未来」,
+   不是只有 on/off 两档,方向感才读得出来。 */
+.lyric-line.past { color: color-mix(in srgb, var(--fg-4) 60%, transparent); }
+/* 高亮右缘那一撮辉光,让当前行有「正在被读到」的方向感 */
+.lyric-line.on { position: relative; }
+.lyric-line.on::after {
+  content: "";
+  position: absolute;
+  right: calc(-1 * var(--s2)); top: 50%;
+  width: 3px; height: 64%;
+  transform: translateY(-50%);
+  border-radius: var(--r-full);
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
 
 /* ============================================================
    搜索

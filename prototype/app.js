@@ -555,7 +555,7 @@ function screenLibrary(tab = 'albums') {
       </div>
       <div class="prog-line" style="margin:0 var(--s5) var(--s5)"><i style="width:${pct}%"></i></div>
       <div class="section"><h2>全部专辑</h2><span class="count">${ALBUMS.length} 张</span></div>
-      <div class="grid-covers">${ALBUMS.slice(0, 4).map((a) => `
+      <div class="grid-covers">${ALBUMS.map((a) => `
         <div class="album-tile" data-album="${a.id}" data-morph>
           ${cover(a, 'sq', a.mark)}
           <div><div class="name">${a.name}</div><div class="meta">${a.artist} · ${a.year}</div></div>
@@ -866,6 +866,9 @@ function screenLyrics() {
   const a = albumOf(s);
   const pct = progressOf(s, STATE.elapsed);
   const elapsed = Math.min(STATE.elapsed, s.dur);
+  /* 歌词随整首歌的进度同步推进:播到哪儿,高亮就挪到哪儿。
+     activeIx 用秒的占比取整 —— 等价于切歌时高亮回到第一行,而不需要单独的状态。 */
+  const activeIx = Math.min(LYRICS.length - 1, Math.floor((elapsed / s.dur) * LYRICS.length));
   return `${ambient(a)}
     <div class="appbar nav">
       <button class="icon-btn" data-back>${ic('back', 22)}</button>
@@ -875,7 +878,7 @@ function screenLyrics() {
       <button class="icon-btn quiet">${ic('more', 20)}</button>
     </div>
     <div class="lyrics">
-      ${LYRICS.map((l, i) => `<div class="lyric-line ${i === 3 ? 'on' : ''}">${l}</div>`).join('')}
+      ${LYRICS.map((l, i) => `<div class="lyric-line ${i === activeIx ? 'on' : i < activeIx ? 'past' : ''}">${l}</div>`).join('')}
     </div>
     <div class="scrub" style="padding-bottom:var(--s5)">
       <div class="track" style="height:5px" data-seek><i style="width:${pct}%"></i></div>
@@ -1205,9 +1208,9 @@ function renderStage(root) {
         <ol>
           <li>服务器页有 3 条线路，已自动选中延迟最低的局域网直连</li>
           <li>点「音乐库」切换 专辑 / 艺人 / 歌曲 / 歌单</li>
-          <li>点专辑或艺人进详情页；点歌曲进播放页</li>
+          <li>点专辑或艺人进详情页；点歌曲进播放页，封面会飞过去</li>
           <li>搜索页可以直接打字，结果是实时筛出来的</li>
-          <li>播放页里点进度条跳转，点「队列」「歌词」进对应界面</li>
+          <li>播放页里拖动进度条；歌词随进度逐句走高亮</li>
           <li>设置里的开关都能点，主题能在深色 / 浅色之间切</li>
         </ol>
         <div style="border-top:1px solid var(--line);padding-top:16px">
