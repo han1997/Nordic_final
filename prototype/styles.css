@@ -172,6 +172,11 @@
 [data-theme="light"] .home-ind { background: rgba(20, 20, 28, 0.26); }
 [data-theme="light"] .statusbar svg { opacity: 0.92; }
 
+/* color 是继承属性,而它只在 body 上声明过一次 —— 于是嵌在深色文档里的浅色区块
+   (设计板的两段就是这样并排的)继承到的仍是白字:token 换了,已经算好的颜色没换。
+   凡是自带 data-theme 的容器,都把文字色就地重算一遍。 */
+[data-theme] { color: var(--fg); }
+
 /* ============================================================
    基础
    ============================================================ */
@@ -770,6 +775,19 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   box-shadow: 0 10px 22px -8px color-mix(in srgb, var(--accent) 80%, transparent);
 }
 
+/* 「继续收听」卡片下面那条细进度。坞里已经有一条,但坞是常驻的,
+   这一条属于这张卡片自己的进度 —— 有它才看得出「继续」是从哪儿继续。 */
+.prog-line {
+  height: 3px; border-radius: var(--r-full);
+  background: var(--fill-3);
+  overflow: hidden;
+}
+.prog-line i {
+  display: block; height: 100%;
+  border-radius: var(--r-full);
+  background: var(--accent);
+}
+
 /* 横滑轨道 */
 .rail { padding: var(--s2) 0 var(--s4); }
 .rail-track {
@@ -1125,13 +1143,28 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   height: 48px; padding: 0 22px;
 }
 
-/* 曲目行 */
+/* 曲目行:专辑页与艺人页共用。左槽留给曲序,播放中的那一首换成跳动的竖条
+   (用 .track-no.bars 让两处宽度对齐,别让行随播放状态左右挪)。 */
 .track-no {
   width: 20px; flex: 0 0 auto; text-align: right;
   font-size: var(--fs-sm); font-variant-numeric: tabular-nums;
   color: var(--fg-4);
 }
+.track-no.bars {
+  width: 24px; text-align: left;
+  height: 15px;
+  color: var(--accent-safe);
+}
 .row.playing .track-no { color: var(--accent-safe); }
+
+/* 「原型只带了这几首」这类说明。放在列表末尾而不是顶部 ——
+   先把内容给出来,再解释为什么少,读起来不像错误提示。 */
+.list-note {
+  padding: var(--s4) var(--s5) 0;
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  color: var(--fg-3);
+}
 
 /* ============================================================
    播放页
@@ -1188,6 +1221,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
               inset 0 1px 0 rgba(255, 255, 255, 0.10);
   animation: spin 16s linear infinite;
 }
+/* 暂停不是把唱片藏起来,是让它停下 —— 转与不转是这一屏唯一能读出播放状态的动效。 */
+.vinyl.paused { animation-play-state: paused; }
 /* 盘心与标签。转速刻意压慢 —— 真实黑胶 33⅓ 转,一帧一顿反而晕。 */
 .vinyl i {
   position: absolute;
@@ -1457,6 +1492,21 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   display: grid; place-items: center;
   color: var(--fg-3);
   background: var(--fill-2);
+  /* 空查询时这枚按钮没有意义,收掉它而不是留一个点了没反应的圆 */
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.18s var(--ease);
+}
+.searchfield .clr.on { opacity: 1; pointer-events: auto; }
+.searchfield .clr:hover { color: var(--fg); background: var(--fill-3); }
+
+/* 搜索的空态 / 无结果态。刻意做成一块留白说明而不是列表骨架 ——
+   有内容的时候是列表,没内容的时候不该看起来像列表加载了一半。 */
+.search-empty {
+  padding: var(--s6) var(--s6) var(--s5);
+  font-size: var(--fs-md);
+  line-height: 1.8;
+  color: var(--fg-3);
+  text-align: center;
 }
 
 .chip-row {
@@ -1634,6 +1684,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   border: 1px solid var(--line-2);
   box-shadow: 0 8px 18px -10px var(--depth);
 }
+
+/* 进度条:拖动由 JS 接管,所以要把浏览器的默认拖动行为与触摸滚动交出去,
+   否则手机上按下去会先滚页面。滑块本身不接指针事件,免得抢走 pointerdown。 */
+[data-seek] { cursor: pointer; touch-action: none; }
+[data-seek] .knob { pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
