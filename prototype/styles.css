@@ -41,6 +41,18 @@
   --glow:    1;                          /* 光晕强度总闸,浅色下压到很低 */
   --glass:   rgba(24, 24, 33, 0.80);     /* Dock / Tabbar 玻璃底 */
   --glass-2: rgba(24, 24, 33, 0.55);     /* 次级玻璃(服务器卡等) */
+
+  /* ---- 磨砂玻璃 ----
+     一层材质,四处复用。底下的楼层越高越不透明,保证文字始终读得清。
+     模糊半径在浅色下要收一点 —— 浅底上大半径模糊会糊成一片,反而显脏。 */
+  --blur:      34px;                     /* 主模糊半径 */
+  --blur-sm:   18px;                     /* 薄玻璃(胶囊 / 输入框) */
+  --glass-3:   rgba(20, 20, 29, 0.62);   /* 面板玻璃:卡片 / 弹层 / 分段控件 */
+  --glass-4:   rgba(20, 20, 29, 0.42);   /* 更薄的玻璃:输入框 / 胶囊 */
+  --glass-sat: 1.8;                      /* 玻璃后的饱和度提升,否则会发灰 */
+  --glass-rim: rgba(255, 255, 255, 0.10);/* 玻璃上缘那道高光 */
+  --glass-sh:  rgba(0, 0, 0, 0.28);      /* 玻璃内阴影,做出厚度 */
+
   --scrim:   rgba(3, 3, 6, 0.66);        /* 弹层遮罩 */
   --shade:   rgba(7, 7, 12, 0.34);       /* 氛围背景压暗起点 */
   --shade-2: rgba(7, 7, 12, 0.93);       /* 氛围背景压暗终点 */
@@ -123,6 +135,16 @@
   --glow:    0.14;                       /* 发光几乎关掉,只留一点温度 */
   --glass:   rgba(255, 255, 255, 0.78);
   --glass-2: rgba(255, 255, 255, 0.58);
+
+  /* 浅色下的玻璃:更白、更薄,模糊半径收到一半 —— 浅底上大半径会糊成一片 */
+  --blur:      20px;
+  --blur-sm:   12px;
+  --glass-3:   rgba(255, 255, 255, 0.66);
+  --glass-4:   rgba(255, 255, 255, 0.50);
+  --glass-sat: 1.5;
+  --glass-rim: rgba(255, 255, 255, 0.85);
+  --glass-sh:  rgba(20, 22, 40, 0.10);
+
   --scrim:   rgba(28, 28, 38, 0.30);
   --shade:   rgba(246, 246, 249, 0.52);
   --shade-2: rgba(246, 246, 249, 0.95);
@@ -241,6 +263,50 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 }
 .statusbar .sb-right { display: flex; align-items: center; gap: 6px; color: var(--fg); }
 .statusbar svg { display: block; }
+
+/* ============================================================
+   磨砂玻璃材质
+   ------------------------------------------------------------
+   一个基类 + 三档厚薄,所有「浮在内容之上」的表面都从这儿取。
+   做法:半透明底 + backdrop-filter 模糊身后 + 上缘一道高光内描边。
+   那道高光是玻璃感的关键 —— 没有它,半透明色块只会读成「一块灰」。
+   ============================================================ */
+
+.glass,
+.glass-panel,
+.glass-thin {
+  position: relative;
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+}
+
+/* 面板玻璃:卡片 / 弹层 / 分段控件 —— 底下的内容透得最少,文字最稳 */
+.glass-panel {
+  background: var(--glass-3);
+  border: 1px solid var(--line-2);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 0 0 0.5px var(--glass-sh),
+    0 18px 40px -24px var(--depth);
+}
+
+/* 薄玻璃:输入框 / 筛选胶囊 —— 能透出较多背景,但不承载长文本 */
+.glass-thin {
+  background: var(--glass-4);
+  border: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
+  box-shadow: inset 0 1px 0 var(--glass-rim);
+}
+
+/* 顶栏玻璃:滚动时压住下面的内容 */
+.appbar.glass {
+  background: var(--glass-3);
+  border-bottom: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 var(--glass-rim);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+}
 
 /* ============================================================
    布局骨架
@@ -395,9 +461,12 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 .segmented {
   display: flex; gap: 3px;
   padding: 4px;
-  background: var(--fill-1);
+  background: var(--glass-4);
+  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
   border-radius: var(--r-full);
   border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 var(--glass-rim);
 }
 .segmented button {
   flex: 1 1 0;
@@ -408,10 +477,13 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   letter-spacing: -0.005em;
   transition: background 0.2s var(--ease), color 0.2s var(--ease);
 }
+/* 选中那块做成实心玻璃片,浮在轨道上 —— 分段控件的「滑块」感 */
 .segmented button[aria-selected="true"] {
   background: var(--fill-3);
   color: var(--fg);
-  box-shadow: 0 4px 12px -6px var(--depth-2);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    0 4px 12px -6px var(--depth-2);
 }
 
 /* ============================================================
@@ -449,12 +521,18 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
    ============================================================ */
 
 .card {
-  background: var(--fill-1);
-  border: 1px solid var(--line);
+  background: var(--glass-3);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--line-2);
   border-radius: var(--r-lg);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    0 16px 36px -26px var(--depth);
   overflow: hidden;
 }
-.card.flat { background: var(--fill-1); }
+/* 卡片本身就是玻璃,flat 只是去掉投影 */
+.card.flat { box-shadow: inset 0 1px 0 var(--glass-rim); }
 
 /* ============================================================
    封面
@@ -821,12 +899,17 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
    ============================================================ */
 
 .bottomstack {
-  flex: 0 0 auto;
+  /* 真的浮在列表之上 —— 内容从它身后滚过去,backdrop-filter 才有东西可模糊。
+     正常流里的话,玻璃后面是空的,模糊出来只是一块灰。 */
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
   display: flex; flex-direction: column; gap: 8px;
   padding: 0 10px 10px;
-  position: relative;
   z-index: 12;
 }
+
+/* 列表补一段下边距,免得最后一行被压在播放坞下面 */
+.screen:has(.bottomstack) .scroll { padding-bottom: 150px; }
 
 .dock {
   height: 62px;
@@ -834,10 +917,12 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   display: flex; align-items: center; gap: var(--s3);
   padding: 0 8px;
   background: var(--glass);
-  -webkit-backdrop-filter: blur(30px) saturate(1.7);
-  backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
   border: 1px solid var(--line-2);
-  box-shadow: 0 20px 40px -20px var(--depth);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    0 20px 40px -20px var(--depth);
   position: relative;
   overflow: hidden;
 }
@@ -871,10 +956,12 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   display: flex; align-items: center;
   padding: 0 6px;
   background: var(--glass);
-  -webkit-backdrop-filter: blur(30px) saturate(1.7);
-  backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
   border: 1px solid var(--line-2);
-  box-shadow: 0 20px 40px -20px var(--depth);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    0 20px 40px -20px var(--depth);
 }
 .tabbar button {
   flex: 1 1 0;
@@ -887,9 +974,13 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   color: var(--fg-3);
   transition: color 0.2s var(--ease), background 0.2s var(--ease);
 }
+/* 选中项做成一颗凹进去的玻璃胶囊 —— 记住的是位置,不是颜色 */
 .tabbar button[aria-selected="true"] {
   color: var(--fg);
   background: color-mix(in srgb, var(--accent) 17%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 -1px 0 var(--glass-sh);
 }
 .tabbar button[aria-selected="true"] svg { color: var(--accent-safe); }
 
@@ -1075,8 +1166,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   height: 36px; padding: 0 15px;
   display: inline-flex; align-items: center; gap: 7px;
   border-radius: var(--r-full);
-  background: var(--fill-1);
+  background: var(--glass-4);
+  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
   border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 var(--glass-rim);
   font-size: var(--fs-sm); font-weight: 640;
   color: var(--fg-2);
   transition: background 0.18s var(--ease), color 0.18s var(--ease);
@@ -1086,6 +1180,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   color: color-mix(in srgb, var(--accent) 82%, var(--fg));
   border-color: color-mix(in srgb, var(--accent) 44%, transparent);
   background: color-mix(in srgb, var(--accent) 13%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 26%, transparent),
+    0 6px 18px -10px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 /* 播放页底部线路状态 */
@@ -1105,8 +1202,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 .sheet-scrim {
   position: absolute; inset: 0;
   background: var(--scrim);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(6px) saturate(1.2);
+  backdrop-filter: blur(6px) saturate(1.2);
   display: flex; align-items: flex-end;
   z-index: 40;
 }
@@ -1114,13 +1211,18 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   width: 100%;
   max-height: 86%;
   display: flex; flex-direction: column;
-  background: var(--bg-2);
+  /* 弹层也要玻璃:底下的封面透上来一层颜色,弹层才不像「贴上去的一块板」 */
+  background: var(--glass-3);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
   border-top-left-radius: var(--r-xl);
   border-top-right-radius: var(--r-xl);
   border-top: 1px solid var(--line-2);
   padding-bottom: var(--s6);
   animation: sheet-up 0.3s var(--ease);
-  box-shadow: 0 -20px 60px -20px var(--depth);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    0 -20px 60px -20px var(--depth);
 }
 @keyframes sheet-up {
   from { transform: translateY(16%); opacity: 0.35; }
@@ -1209,14 +1311,17 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   display: flex; align-items: center; gap: 11px;
   padding: 0 8px 0 18px;
   margin: 0 var(--s5) var(--s4);
-  background: var(--fill-1);
+  background: var(--glass-4);
+  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
   border: 1px solid var(--line);
   border-radius: var(--r-full);
+  box-shadow: inset 0 1px 0 var(--glass-rim);
   transition: border-color 0.2s var(--ease), background 0.2s var(--ease);
 }
 .searchfield:focus-within {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  background: var(--fill-2);
+  background: var(--glass-3);
 }
 .searchfield input {
   flex: 1 1 auto; min-width: 0;
@@ -1241,8 +1346,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   height: 34px; padding: 0 15px;
   display: inline-flex; align-items: center;
   border-radius: var(--r-full);
-  background: var(--fill-1);
+  background: var(--glass-4);
+  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
   border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 var(--glass-rim);
   font-size: var(--fs-sm); font-weight: 640;
   color: var(--fg-2);
   transition: all 0.18s var(--ease);
@@ -1251,6 +1359,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   background: var(--accent);
   color: var(--accent-ink);
   border-color: var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 6px 18px -8px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 /* ============================================================

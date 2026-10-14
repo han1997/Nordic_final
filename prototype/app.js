@@ -816,7 +816,7 @@ function screenSettings() {
         </div>
         <div class="divider"></div>
         <div class="segmented" style="margin:var(--s3) var(--s4) var(--s3)">
-          ${THEMES.map((t) => `<button data-theme="${t.id}" aria-selected="${STATE.theme === t.id}">${t.name}</button>`).join('')}
+          ${THEMES.map((t) => `<button data-set-theme="${t.id}" aria-selected="${STATE.theme === t.id}">${t.name}</button>`).join('')}
         </div>
       </div>`;
   return `<div class="appbar">
@@ -986,7 +986,7 @@ function renderStage(root) {
         <div style="border-top:1px solid var(--line);padding-top:16px">
           <h2 style="margin-bottom:8px">主题</h2>
           <div class="segmented" style="margin-bottom:16px">
-            ${THEMES.map((t) => `<button data-theme="${t.id}" aria-selected="${STATE.theme === t.id}">${t.name}</button>`).join('')}
+            ${THEMES.map((t) => `<button data-set-theme="${t.id}" aria-selected="${STATE.theme === t.id}">${t.name}</button>`).join('')}
           </div>
         </div>
         <div style="border-top:1px solid var(--line);padding-top:16px">
@@ -1004,8 +1004,14 @@ function renderStage(root) {
   root.querySelector('#sw').innerHTML = ALBUMS.map((a) =>
     `<span class="sw" title="${a.name}" style="background:linear-gradient(148deg,${a.c1},${a.accent})"></span>`).join('');
 
-  slot().addEventListener('click', (e) => {
-    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-theme],[data-sheet],[data-act]');
+  /* 监听挂在舞台根上而不是 #phone-slot 上 —— 侧栏是 #phone-slot 的兄弟节点,
+     挂在内层会让侧栏里的主题按钮点不动。 */
+  root.addEventListener('click', (e) => {
+    /* 注意:委托选择器里不能出现 [data-theme] —— applyTheme() 把 data-theme 写在
+       <body> 上,而 body 是所有点击的祖先。closest() 在没命中更近的 [data-*] 元素时
+       会一路匹配到 body,于是「点遮罩关闭弹层」这条分支永远走不到(点遮罩会变成
+       重新应用一次主题)。所以主题按钮改用独立属性 data-set-theme。 */
+    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act]');
     if (t) {
       const d = t.dataset;
       if (d.back !== undefined) return back();
@@ -1015,7 +1021,7 @@ function renderStage(root) {
       if (d.album) { STATE.albumId = d.album; return go('album', { album: d.album }); }
       if (d.artist) { STATE.artistId = d.artist; return go('artist', { artist: d.artist }); }
       if (d.route) { STATE.routeId = d.route; return render(); }
-      if (d.theme) { applyTheme(d.theme); return render(); }
+      if (d.setTheme) { applyTheme(d.setTheme); return render(); }
       if (d.quality) { STATE.quality = d.quality; STATE.overlay = ''; return render(); }
       if (d.sheet) { STATE.overlay = STATE.overlay === d.sheet ? '' : d.sheet; return render(); }
       if (d.go) return go(d.go);
