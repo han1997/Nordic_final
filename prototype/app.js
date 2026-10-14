@@ -985,9 +985,9 @@ function screenSettings() {
   const rows = [
     { key: 'quality', icon: 'wave',  t: '默认转码质量', d: '移动网络下生效', value: () =>
         (QUALITIES.find((x) => x.id === STATE.quality) || QUALITIES[2]).name, sheet: 'quality' },
-    { key: 'autoRoute', icon: 'route', t: '线路自动择优', d: '按延迟选择最快可用地址', toggle: true },
-    { key: 'bgPlay',    icon: 'bell',  t: '播放时后台运行', d: '通知栏与锁屏可控制',   toggle: true },
-    { key: 'wifiOnly',  icon: 'download', t: '仅 Wi-Fi 下载', d: '避免消耗移动流量',  toggle: true },
+    { key: 'autoRoute', icon: 'route', t: '线路自动择优', value: () => STATE.autoRoute ? '已开启' : '已关闭', toggle: true, d: () => STATE.autoRoute ? '按延迟选择最快可用地址' : '每条线路要手动锁定' },
+    { key: 'bgPlay',    icon: 'bell',  t: '播放时后台运行', value: () => STATE.bgPlay ? '已开启' : '已关闭', toggle: true, d: () => STATE.bgPlay ? '通知栏与锁屏可控制' : '切到后台即暂停' },
+    { key: 'wifiOnly',  icon: 'download', t: '仅 Wi-Fi 下载', value: () => STATE.wifiOnly ? '已开启' : '已关闭', toggle: true, d: () => STATE.wifiOnly ? '流量下不缓存' : '流量下也会预取' },
   ];
   const themeRow = `
       <div class="section" style="padding-top:var(--s2)"><h2>外观</h2></div>
@@ -1014,9 +1014,9 @@ function screenSettings() {
           ${i ? '<div class="divider"></div>' : ''}
           <div class="row" ${r.sheet ? `data-sheet="${r.sheet}"` : `data-toggle="${r.key}" role="switch" aria-checked="${on}"`}>
             <span class="set-icon">${ic(r.icon, 18)}</span>
-            <div class="grow"><div class="line1">${r.t}</div><div class="line2">${r.d}</div></div>
+            <div class="grow"><div class="line1">${r.t}</div><div class="line2">${typeof r.d === 'function' ? r.d() : r.d}</div></div>
             ${r.toggle
-              ? `<span class="tick${on ? ' on' : ''}">${ic('check', 13)}</span>`
+              ? `<span class="switch${on ? ' on' : ''}"><i></i></span>`
               : `<span class="trail" style="color:var(--fg-2)">${r.value()}</span>${ic('chevron', 17)}`}
           </div>`;
         }).join('')}
@@ -1390,6 +1390,53 @@ function renderStage(root) {
       back();
     }
   });
+
+  /* ---- 播放计时 ----
+     让时间真的走：播放中每秒 +1s，进度条、时间、歌词高亮跟着挪。
+     不能整屏重绘 —— 一秒一次的重绘会把唱片旋转、封面过渡、正在进行的拖动全打断。
+     所以原地改样式（与 bindSeekDrag 同一招：不重绘，只动现有节点）。
+     播到结尾走一次完整渲染换下一首；开了循环就原地回到 0:00 接着放。 */
+  window.setInterval(() => {
+    if (!STATE.playing) return;
+    const el = slot();
+    if (!el) return;
+    const s = currentSong();
+    STATE.elapsed += 1;
+    if (STATE.elapsed >= s.dur) {
+      if (STATE.repeat) { STATE.elapsed = 0; }
+      else {
+        const i = SONGS.findIndex((x) => x.id === STATE.songId);
+        STATE.songId = SONGS[(i + 1) % SONGS.length].id;
+        STATE.elapsed = 0;
+      }
+      return render();
+    }
+    const pct = progressOf(s, STATE.elapsed);
+    /* 坞底细线与库页英雄卡下的细线 —— 这两条本来就是「现在就播着」的进度，
+       不走就等于明说这是静止截图。 */
+    el.querySelectorAll('.dock-progress i, .prog-line i')
+      .forEach((x) => { x.style.width = `${pct}%`; });
+    const track = el.querySelector('[data-seek]');
+    if (track) {
+      const bar = track.querySelector('i');
+      if (bar) bar.style.width = `${pct}%`;
+      const knob = track.querySelector('.knob');
+      if (knob) knob.style.left = `${pct}%`;
+      const times = track.parentElement.querySelector('.times');
+      if (times && times.children.length === 2) {
+        times.children[0].textContent = mmss(STATE.elapsed);
+        times.children[1].textContent = `-${mmss(s.dur - STATE.elapsed)}`;
+      }
+    }
+    const lines = el.querySelectorAll('.lyric-line');
+    if (lines.length) {
+      const ix = Math.min(lines.length - 1, Math.floor((STATE.elapsed / s.dur) * lines.length));
+      lines.forEach((line, i) => {
+        line.classList.toggle('on', i === ix);
+        line.classList.toggle('past', i < ix);
+      });
+    }
+  }, 1000);
 
   render();
 }
