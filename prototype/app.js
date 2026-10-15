@@ -68,12 +68,12 @@ const SERVER = {
 };
 
 const ALBUMS = [
-  { id: 'a1', name: '可能',                   artist: '程响',         year: 2022, count: 8,  c1: '#43305A', c2: '#140F22', accent: '#B891FF', mark: '可能' },
-  { id: 'a2', name: 'Ultraviolet',            artist: '3LAU',         year: 2018, count: 1,  c1: '#233573', c2: '#0A1029', accent: '#7C96FF', mark: 'UV' },
-  { id: 'a3', name: '秋色',                   artist: '拾光乐队',      year: 2021, count: 11, c1: '#6B4526', c2: '#1F1207', accent: '#EFA85F', mark: '秋色' },
-  { id: 'a4', name: 'Islands',                artist: 'King Crimson', year: 1971, count: 6,  c1: '#12544A', c2: '#061A1B', accent: '#4DE0C8', mark: 'Is' },
-  { id: 'a5', name: '山丘',                   artist: '李宗盛',        year: 2013, count: 5,  c1: '#5C3630', c2: '#1A0E0C', accent: '#F08A76', mark: '山丘' },
-  { id: 'a6', name: 'Random Access Memories', artist: 'Daft Punk',    year: 2013, count: 13, c1: '#4A4A4A', c2: '#101010', accent: '#F2E3A8', mark: 'RAM' },
+  { id: 'a1', name: '可能',                   artist: '程响',         year: 2022, count: 8,  c1: '#43305A', c2: '#140F22', accent: '#B891FF' },
+  { id: 'a2', name: 'Ultraviolet',            artist: '3LAU',         year: 2018, count: 1,  c1: '#233573', c2: '#0A1029', accent: '#7C96FF' },
+  { id: 'a3', name: '秋色',                   artist: '拾光乐队',      year: 2021, count: 11, c1: '#6B4526', c2: '#1F1207', accent: '#EFA85F' },
+  { id: 'a4', name: 'Islands',                artist: 'King Crimson', year: 1971, count: 6,  c1: '#12544A', c2: '#061A1B', accent: '#4DE0C8' },
+  { id: 'a5', name: '山丘',                   artist: '李宗盛',        year: 2013, count: 5,  c1: '#5C3630', c2: '#1A0E0C', accent: '#F08A76' },
+  { id: 'a6', name: 'Random Access Memories', artist: 'Daft Punk',    year: 2013, count: 13, c1: '#4A4A4A', c2: '#101010', accent: '#F2E3A8' },
 ];
 
 /* 曲目摊到全部六张专辑上,而不是五首都挂在《可能》名下 ——
@@ -246,37 +246,12 @@ const bestRoute = () =>
    data-artist 不落值,那处文字就只是文字 —— 比点了跳到别处强。 */
 const artistIdOf = (name) => (ARTISTS.find((a) => a.name === name) || {}).id;
 
-/* 版式散列:同一批封面要有各自的长相,不能六张一个模子。 */
-function coverSeed(item) {
-  const k = String(item.id || item.name || item.title || '');
-  let n = 0;
-  for (let i = 0; i < k.length; i++) n = (n * 31 + k.charCodeAt(i)) % 997;
-  return n;
-}
-
-function cover(item, cls = '', mark = null, extra = '') {
+function cover(item, cls = '', extra = '') {
   const accent = item.accent || '#7C8CFF';
   const style = `--c1:${item.c1};--c2:${item.c2};${accentVars(accent)}${extra}`;
-  const m = String(mark ?? item.mark ?? (item.name || item.title || '').slice(0, 2));
-  const len = m.length > 4 ? 4 : m.length;
-
-  /* 大封面上把专辑名当成封面的排版元素排出来,而不是只丢两个首字 ——
-     首字只在小尺寸下成立(列表行 52px、播放坞 46px),一放大到网格与播放页
-     就成了占位图。这里给三种版式,按 id 散列挑一种,再按名字长短定字号档。
-     显不显示交给容器查询:同一个 .cover,尺寸够大才长出这层排版。 */
-  const title = String(item.name || item.title || '');
-  const by = String(item.artist || (item.count ? item.count + ' 首' : ''));
-  const seed = coverSeed(item);
-  const size = title.length <= 4 ? 0 : title.length <= 8 ? 1 : title.length <= 14 ? 2 : 3;
-
-  return `<div class="cover ${cls}" style="${style}" data-art="${item.id || ''}">
-    <span class="cover-mark" data-len="${len}">${m}</span>
-    <div class="cover-art" data-layout="${seed % 3}" data-size="${size}">
-      <div class="art-word">${title}</div>
-      ${by ? `<div class="art-by">${by}</div>` : ''}
-    </div>
-    <span class="cover-ring" aria-hidden="true"></span>
-  </div>`;
+  /* 封面是纯渐变的占位 —— 不放任何文字。真实的专辑封面接入后,
+     在这里加一层 background-image 即可;结构和所有尺寸都不用动。 */
+  return `<div class="cover ${cls}" style="${style}" data-art="${item.id || ''}"></div>`;
 }
 
 /* 艺人头像块:大初始字 + 渐变 */
@@ -336,7 +311,7 @@ function tabbar(active) {
 function dock(song = currentSong(), pct = progressOf(song, STATE.elapsed)) {
   const a = albumOf(song);
   return `<div class="dock" data-go="player">
-    ${cover(a, '', song.title.slice(0, 2), 'width:46px;height:46px;border-radius:13px')}
+    ${cover(a, '', 'width:46px;height:46px;border-radius:13px')}
     <div class="grow">
       <div class="line1">${song.title}</div>
       <div class="line2">${song.artist} · ${a.name}</div>
@@ -549,7 +524,7 @@ function screenAddServer() {
 function songRow(s, playing = false, trail = null) {
   const a = albumOf(s);
   return `<div class="row ${playing ? 'playing' : ''}" data-song="${s.id}">
-    ${cover(a, '', s.title.slice(0, 2), 'width:52px;height:52px;border-radius:14px')}
+    ${cover(a, '', 'width:52px;height:52px;border-radius:14px')}
     <div class="grow">
       <div class="line1">${s.title}</div>
       <div class="line2">${s.artist} · ${a.name}</div>
@@ -568,7 +543,7 @@ function screenLibrary(tab = 'albums') {
 
   if (tab === 'albums') {
     body = `<div class="hero-card" style="${accentVars(curA.accent)}">
-        ${cover(curA, '', curA.mark, 'width:92px;height:92px;border-radius:20px')}
+        ${cover(curA, '', 'width:92px;height:92px;border-radius:20px')}
         <div class="grow" style="min-width:0">
           <div class="label">${STATE.playing ? '继续收听' : '已暂停'}</div>
           <div class="t">${curA.name}</div>
@@ -580,13 +555,13 @@ function screenLibrary(tab = 'albums') {
       <div class="section"><h2>全部专辑</h2><span class="count">${ALBUMS.length} 张</span></div>
       <div class="grid-covers">${ALBUMS.map((a) => `
         <div class="album-tile" data-album="${a.id}" data-morph>
-          ${cover(a, 'sq', a.mark)}
+          ${cover(a, 'sq')}
           <div><div class="name">${a.name}</div><div class="meta">${a.artist} · ${a.year}</div></div>
         </div>`).join('')}</div>
       <div class="section"><h2>最近添加</h2><span class="trail">10 月 12 日扫描</span></div>
       <div class="rail"><div class="rail-track">${ALBUMS.slice(2).map((a) => `
         <div class="rail-item" data-album="${a.id}">
-          ${cover(a, 'sq', a.mark)}
+          ${cover(a, 'sq')}
           <div><div class="name">${a.name}</div><div class="meta">${a.artist}</div></div>
         </div>`).join('')}</div></div>`;
   } else if (tab === 'artists') {
@@ -610,7 +585,7 @@ function screenLibrary(tab = 'albums') {
     body = `<div class="section"><h2>我的歌单</h2><span class="count">${PLAYLISTS.length} 个</span></div>
       ${PLAYLISTS.map((p) => `
         <div class="row" style="height:72px">
-          ${cover(p, '', p.name.slice(0, 2), 'width:56px;height:56px;border-radius:16px')}
+          ${cover(p, '', 'width:56px;height:56px;border-radius:16px')}
           <div class="grow"><div class="line1">${p.name}</div><div class="line2">${p.count} 首 · ${p.desc}</div></div>
           ${ic('chevron', 18)}
         </div>`).join('')}
@@ -680,10 +655,12 @@ function screenAlbum(id) {
     </div>
     <div class="scroll">
       <div class="album-head">
-        ${cover(a, '', a.mark, 'width:140px;height:140px;border-radius:24px')}
+        ${cover(a, '', 'width:140px;height:140px;border-radius:24px')}
         <div style="min-width:0">
           <div class="title">${a.name}</div>
-          <div class="artist" data-artist="${artistIdOf(a.artist)}">${a.artist}</div>
+          ${artistIdOf(a.artist)
+            ? `<div class="artist" data-artist="${artistIdOf(a.artist)}">${a.artist}</div>`
+            : `<div class="artist inert">${a.artist}</div>`}
           <div class="meta"><span>${a.year}</span>·<span>${a.count} 首</span>·<span>FLAC 无损</span></div>
         </div>
       </div>
@@ -713,7 +690,7 @@ function screenArtist(id) {
   const albumRail = albums.length
     ? `<div class="rail"><div class="rail-track">${albums.map((a) => `
         <div class="rail-item" data-album="${a.id}">
-          ${cover(a, 'sq', a.mark)}
+          ${cover(a, 'sq')}
           <div><div class="name">${a.name}</div><div class="meta">${a.year}</div></div>
         </div>`).join('')}</div></div>
         ${albums.length < ar.albums ? `<div class="list-note">原型只收录了这位艺人的 ${albums.length} 张唱片,服务器上共有 ${ar.albums} 张。</div>` : ''}`
@@ -782,7 +759,7 @@ function screenPlayer() {
     <div class="player-hero">
       <div class="hero-stack">
         <div class="vinyl${STATE.playing ? '' : ' paused'}" aria-hidden="true"><i></i></div>
-        ${cover(a, 'sq', a.mark)}
+        ${cover(a, 'sq')}
       </div>
     </div>
 
@@ -790,10 +767,12 @@ function screenPlayer() {
       <div class="top-row">
         <div style="min-width:0">
           <div class="t">${s.title}</div>
-          <div class="a"><span data-album="${a.id}">${s.artist} · ${a.name}</span></div>
+          <div class="a">${artistIdOf(s.artist)
+            ? `<span class="p-link" data-artist="${artistIdOf(s.artist)}">${s.artist}</span>`
+            : `<span class="p-link inert">${s.artist}</span>`}<span class="p-dot">·</span><span class="p-link" data-album="${a.id}">${a.name}</span></div>
         </div>
-        <button class="icon-btn" style="color:${STATE.fav.songs.has(s.id) ? a.accent : 'var(--fg-2)'}" data-act="fav">
-          ${ic(STATE.fav.songs.has(s.id) ? 'heartF' : 'heart', 25)}</button>
+        <button class="icon-btn" data-act="fav" style="color:${STATE.fav.songs.has(s.id) ? 'var(--accent-safe)' : 'var(--fg-2)'}">
+          ${ic(STATE.fav.songs.has(s.id) ? 'heartF' : 'heart', 26)}</button>
       </div>
     </div>
 
@@ -857,7 +836,7 @@ function sheetQueue() {
           const a = albumOf(s);
           return `<div class="row ${on ? 'playing' : ''}" data-song="${s.id}">
             <span style="width:18px;flex:0 0 auto;display:flex;color:var(--accent-safe)">${on && STATE.playing ? ic('wave', 16) : ''}</span>
-            ${cover(a, '', s.title.slice(0, 2), 'width:46px;height:46px;border-radius:12px')}
+            ${cover(a, '', 'width:46px;height:46px;border-radius:12px')}
             <div class="grow"><div class="line1">${s.title}</div><div class="line2">${s.artist}</div></div>
             <span class="trail">${mmss(s.dur)}</span>
           </div>`;
@@ -1008,9 +987,7 @@ function screenNewPlaylist() {
     </div>
     <div class="scroll" style="padding:0 var(--s5)">
       <div class="hero-card" style="${accentVars(c1)}margin-top:var(--s4)">
-        <div class="cover" style="--c1:${c1};--c2:${c2};width:92px;height:92px;border-radius:20px">
-          <span class="cover-mark" data-len="2">${(name || '歌单').slice(0, 2)}</span>
-        </div>
+        <div class="cover" style="--c1:${c1};--c2:${c2};width:92px;height:92px;border-radius:20px"></div>
         <div class="grow" style="min-width:0">
           <div class="t">${name || '未命名歌单'}</div>
           <div class="a">0 首 · ${name ? '名字可用' : '起个名字就能创建'}</div>
@@ -1158,7 +1135,7 @@ function screenSearch() {
         <div class="section"><h2>专辑</h2><span class="count">${hits.albums.length} 张</span></div>
         <div class="grid-covers">${hits.albums.map((a) => `
           <div class="album-tile" data-album="${a.id}" data-morph>
-            ${cover(a, 'sq', a.mark)}
+            ${cover(a, 'sq')}
             <div><div class="name">${a.name}</div><div class="meta">${a.artist} · ${a.year}</div></div>
           </div>`).join('')}</div>` : ''}
       ${show('artists') && hits.artists.length ? `
@@ -1187,7 +1164,7 @@ function screenSearch() {
       ${body}
       <div style="height:var(--s5)"></div>
     </div>
-    ${bottom()}`;
+    ${bottom(undefined, undefined, 'search')}`;
 }
 
 /* ---------------- 设置 ---------------- */
@@ -1271,7 +1248,7 @@ function screenSettings() {
       </div>
       <div style="height:var(--s5)"></div>
     </div>
-    ${bottom()}`;
+    ${bottom(undefined, undefined, 'settings')}`;
 }
 
 /* ---------------- 视图表 ---------------- */
@@ -1512,10 +1489,14 @@ function renderStage(root) {
         times.children[1].textContent = `-${mmss(s.dur - e2)}`;
       }
     };
+    /* 点击处补一个触觉反馈：拖动时把 .track 标记为 active，旋钮随之放大变亮 ——
+       没有这一步的话，旋钮只是个静止的小点，拖起来毫不像「正握在手里」。 */
+    trackEl.classList.add('active');
     trackEl.setPointerCapture(ev.pointerId);
     paint(ev.clientX);
     const move = (m) => paint(m.clientX);
     const up = () => {
+      trackEl.classList.remove('active');
       trackEl.removeEventListener('pointermove', move);
       trackEl.removeEventListener('pointerup', up);
       trackEl.removeEventListener('pointercancel', up);
@@ -1725,8 +1706,6 @@ function renderStage(root) {
       STATE.plName = e.target.value;
       const preview = slot().querySelector('.hero-card .t');
       if (preview) preview.textContent = STATE.plName.trim() || '未命名歌单';
-      const mark = slot().querySelector('.hero-card .cover-mark');
-      if (mark) mark.textContent = (STATE.plName.trim() || '歌单').slice(0, 2);
       const btn = slot().querySelector('[data-act="create-playlist"]');
       if (btn) {
         const on = !!STATE.plName.trim();
@@ -1812,6 +1791,18 @@ function renderStage(root) {
         line.classList.toggle('on', i === ix);
         line.classList.toggle('past', i < ix);
       });
+
+      /* 高亮句自动滚到歌词框中央。歌词框可滚动,高亮只会往下走,
+         不跟着滚的话,唱到后半段高亮句就飘出屏幕了,逐句高亮形同虚设。
+         只在换行那一刻滚(data-lyric-ix 记住上次的行号),而不是每秒滚一次 ——
+         一来每秒一次 smooth 滚动会互相打断,二来连续滚动会一直拽着用户,
+         换行才滚,行与行之间留出自由浏览的间隙。 */
+      const box = el.querySelector('.lyrics');
+      if (box && box.dataset.lyricIx !== String(ix)) {
+        box.dataset.lyricIx = String(ix);
+        const line = lines[ix];
+        box.scrollTo({ top: line.offsetTop - box.clientHeight / 2 + line.clientHeight / 2, behavior: 'smooth' });
+      }
     }
   }, 1000);
 
