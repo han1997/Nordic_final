@@ -55,3 +55,6 @@ keystore.properties
 # Prototype scratch (screenshots, temp)
 prototype/.shots/
 .tmp-shots/
+
+# Throwaway probes (one-off build/toolchain experiments)
+.tmp-probe/
