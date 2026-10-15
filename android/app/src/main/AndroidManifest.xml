@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 后台播放:Android 14+ 要求前台服务声明具体类型。
+         audio_service 的媒体通知靠这个前台服务撑住,不声明的话
+         切到后台几秒后系统就会掐掉播放。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="nordic"
         android:name="${applicationName}"
