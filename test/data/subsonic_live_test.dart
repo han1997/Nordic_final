@@ -1,0 +1,172 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nordic/data/models.dart';
+import 'package:nordic/data/server_config.dart';
+import 'package:nordic/data/subsonic_client.dart';
+import 'package:nordic/data/subsonic_repository.dart';
+
+/// 这些用例打的是开发机上真实的 Navidrome —— 数据层的地基,
+/// 用假响应测「字段名对不对」很容易自说自话(照着实现编 JSON,
+/// 再照着实现断言),打到真服务器上才能发现协议口径的偏差。
+///
+/// 服务器不可达时整组跳过,不让 CI / 离线开发平白失败。
+const _serverUrl = 'http://192.168.10.4:4533';
+const _username = 'hhy';
+const _password = 'REDACTED';
+
+void main() {
+  late SubsonicRepository repo;
+
+  setUp(() {
+    repo = SubsonicRepository(clientFor(
+      config: const ServerConfig(
+        id: 's1',
+        name: '客厅 Navidrome',
+        kind: ServerKind.navidrome,
+        username: _username,
+        routes: [ServerRoute(id: 'lan', name: '局域网直连', url: _serverUrl)],
+      ),
+      password: _password,
+    ));
+  });
+
+  /// 服务器在不在。不在就跳过 —— 这组用例的价值依赖真实数据。
+  Future<bool> reachable() async {
+    try {
+      final ping = await repo.client.pingRoute(
+        const ServerRoute(id: 'lan', name: '局域网直连', url: _serverUrl),
+      );
+      return ping.isOk;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  test('鉴权通过并能拉到专辑列表', () async {
+    if (!await reachable()) {
+      markTestSkipped('Navidrome 不可达,跳过');
+      return;
+    }
+    final albums = await repo.albums();
+    expect(albums, isNotEmpty, reason: '真实库应该有专辑');
+    // 映射后的关键字段不该是占位值 —— 那是「字段名对不上」的典型症状。
+    final first = albums.first;
+    expect(first.id, isNotEmpty);
+    expect(first.name, isNot('未知专辑'));
+    expect(first.artist, isNot('未知艺人'));
+  });
+
+  test('专辑详情能拉到曲目,且曲目挂在同一张专辑上', () async {
+    if (!await reachable()) {
+      markTestSkipped('Navidrome 不可达,跳过');
+      return;
+    }
+    final albums = await repo.albums();
+    // 挑一张有曲目的专辑 —— 空专辑测不出映射问题。
+    final withSongs = albums.firstWhere((a) => a.songCount > 0);
+    final detail = await repo.album(withSongs.id);
+
+    expect(detail.album.id, withSongs.id);
+    expect(detail.songs, isNotEmpty);
+    for (final song in detail.songs) {
+      expect(song.albumId, withSongs.id, reason: '曲目应归属于这张专辑');
+      expect(song.title, isNotEmpty);
+      expect(song.duration, greaterThan(Duration.zero));
+    }
+  });
+
+  test('艺人详情返回专辑与热门曲目', () async {
+    if (!await reachable()) {
+      markTestSkipped('Navidrome 不可达,跳过');
+      return;
+    }
+    final artists = await repo.artists();
+    expect(artists, isNotEmpty);
+
+    // 挑一位真有作品的艺人。
+    final target = artists.firstWhere((a) => a.albumCount > 0);
+    final detail = await repo.artist(target.id);
+
+    expect(detail.artist.id, target.id);
+    expect(detail.artist.name, target.name);
+    expect(detail.albums, isNotEmpty);
+  });
+
+  test('歌单列表可读', () async {
+    if (!await reachable()) {
+      markTestSkipped('Navidrome 不可达,跳过');
+      return;
+    }
+    final playlists = await repo.playlists();
+    expect(playlists, isNotEmpty, reason: '库里应有歌单');
+    expect(playlists.first.name, isNotEmpty);
+  });
+
+  test('搜索命中专辑 / 艺人 / 歌曲', () async {
+    if (!await reachable()) {
+      markTestSkipped('Navidrome 不可达,跳过');
+      return;
+    }
+    // 拿一位真实艺人的名字去搜,三个桶至少该中一个。
+    final artists = await repo.artists();
+    final hits = await repo.search(artists.first.name);
+    expect(hits.total, greaterThan(0));
+  });
+
+  test('歌词优先走带时间轴的结构化接口', () async {
+    if (!await reachable()) {
+      markTestSkipped('Navidrome 不可达,跳过');
+      return;
+    }
+    final albums = await repo.albums();
+    final withSongs = albums.firstWhere((a) => a.songCount > 0);
+    final songs = (await repo.album(withSongs.id)).songs;
+
+    // 逐首找有歌词的 —— 库里不是每首都配了词。
+    Lyrics? found;
+    for (final song in songs.take(12)) {
+      final lyrics = await repo.lyrics(song.id);
+      if (!lyrics.isEmpty) {
+        found = lyrics;
+        break;
+      }
+    }
+    if (found == null) {
+      markTestSkipped('这批曲目都没有歌词,跳过');
+      return;
+    }
+    expect(found.lines, isNotEmpty);
+    expect(found.lines.first.text, isNotEmpty);
+    // Navidrome 给的是结构化歌词,应当带时间轴。
+    expect(
+      found.synced,
+      isTrue,
+      reason: 'getLyricsBySongId 应返回带 start 的结构化歌词',
+    );
+    expect(found.lines.first.start, isNotNull);
+  });
+
+  test('封面与流地址带上鉴权参数且指向当前线路', () async {
+    final cover = repo.coverUri('al-abc', size: 256);
+    expect(cover.path, '/rest/getCoverArt.view');
+    expect(cover.queryParameters['id'], 'al-abc');
+    expect(cover.queryParameters['size'], '256');
+    // 图片加载器绕过 SubsonicClient 直接发请求,不带签名会被拒。
+    expect(cover.queryParameters['u'], _username);
+    expect(cover.queryParameters['t'], isNotEmpty);
+    expect(cover.queryParameters['s'], isNotEmpty);
+    expect(cover.toString(), startsWith(_serverUrl));
+  });
+
+  test('原音档不加转码参数', () async {
+    final uri = repo.streamUri('song-1');
+    expect(uri.path, '/rest/stream.view');
+    expect(uri.queryParameters.containsKey('maxBitRate'), isFalse);
+    expect(uri.queryParameters.containsKey('format'), isFalse);
+  });
+
+  test('转码档落成 maxBitRate 与 format', () async {
+    final uri = repo.streamUri('song-1', maxBitRate: 192, format: 'mp3');
+    expect(uri.queryParameters['maxBitRate'], '192');
+    expect(uri.queryParameters['format'], 'mp3');
+  });
+}

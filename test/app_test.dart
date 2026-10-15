@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nordic/app.dart';
 import 'package:nordic/theme/nordic_theme.dart';
