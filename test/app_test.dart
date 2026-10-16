@@ -93,7 +93,11 @@ void main() {
     );
 
     final image = tester.widget<Image>(find.byType(Image));
-    expect(image.image, isA<FileImage>());
+    // 设了 cacheWidth/cacheHeight 之后 Flutter 会用 ResizeImage 包一层,
+    // 认里面那个才是「走的是哪条路」。
+    expect(_inner(image.image), isA<FileImage>());
+    // 而且**必须**设了尺寸:那张图在本机是 1024,这里只画 46。
+    expect(image.image, isA<ResizeImage>());
   });
 
   testWidgets('没下过的封面照旧走网络', (tester) async {
@@ -110,7 +114,7 @@ void main() {
     );
 
     final image = tester.widget<Image>(find.byType(Image));
-    expect(image.image, isA<NetworkImage>());
+    expect(_inner(image.image), isA<NetworkImage>());
   });
 
   group('底部胶囊', () {
@@ -171,3 +175,7 @@ void main() {
     });
   });
 }
+
+/// 剥掉 `ResizeImage` 那层包装(设了 cacheWidth 就会有)。
+ImageProvider _inner(ImageProvider provider) =>
+    provider is ResizeImage ? provider.imageProvider : provider;

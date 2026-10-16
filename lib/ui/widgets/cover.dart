@@ -50,6 +50,15 @@ class Cover extends StatelessWidget {
 
   bool get _hasArt => coverArtId != null && coverArtId!.isNotEmpty && uri != null;
 
+  /// 这张封面实际占的方框边长。宽高都给时取长边 —— 解码桶是方的,
+  /// 按长边取不会糊。
+  static double? _displayEdge(double? w, double? h) {
+    if (w == null && h == null) return null;
+    final a = w ?? 0;
+    final b = h ?? 0;
+    return a > b ? a : b;
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
@@ -84,7 +93,11 @@ class Cover extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (_hasArt)
-              _CoverArt(uri: uri!, fallback: _Fallback(accent: accent))
+              _CoverArt(
+                uri: uri!,
+                displaySize: _displayEdge(w, h),
+                fallback: _Fallback(accent: accent),
+              )
             else
               _Fallback(accent: accent),
             // 斜向高光。压在图上也在渐变上,给封面一层「塑料」的厚度。
@@ -113,10 +126,31 @@ class Cover extends StatelessWidget {
 /// 然后拿回一块空白)。两者的错误与加载中行为一致:退回渐变,
 /// 而不是留白或者破图 —— 服务器上偶有坏图,本地文件也可能被清理工具删掉。
 class _CoverArt extends StatelessWidget {
-  const _CoverArt({required this.uri, required this.fallback});
+  const _CoverArt({
+    required this.uri,
+    required this.fallback,
+    this.displaySize,
+  });
 
   final Uri uri;
   final Widget fallback;
+
+  /// 这张图实际要画多大(logical px)。不传就按原图解码。
+  final double? displaySize;
+
+  /// 解码边长:显示尺寸 × 像素密度,**向上取到 2 的幂**再夹在 128–1024。
+  ///
+  /// 取整到 2 的幂是为了让不同地方的同尺寸封面共用一份解码结果 ——
+  /// 46 的坞缩略图和 48 的队列行是同一个桶,不必各解一张。
+  static int? _decodeEdge(BuildContext context, double? displaySize) {
+    if (displaySize == null || displaySize <= 0) return null;
+    final px = displaySize * MediaQuery.devicePixelRatioOf(context);
+    var edge = 128;
+    while (edge < px && edge < 1024) {
+      edge *= 2;
+    }
+    return edge;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,10 +163,14 @@ class _CoverArt extends StatelessWidget {
     ) =>
         wasSynchronouslyLoaded || frame != null ? child : fallback;
 
+    final decode = _decodeEdge(context, displaySize);
+
     if (uri.scheme == 'file') {
       return Image.file(
         File(uri.toFilePath()),
         fit: BoxFit.cover,
+        cacheWidth: decode,
+        cacheHeight: decode,
         errorBuilder: (_, _, _) => fallback,
         frameBuilder: placeholder,
       );
@@ -141,6 +179,11 @@ class _CoverArt extends StatelessWidget {
     return Image.network(
       uri.toString(),
       fit: BoxFit.cover,
+      // 本机那份封面是下载时按 1024 存的,而这里可能只要画 46 ——
+      // 不设这一对参数就会把整张图解进内存,切页面时正撞上动画。
+      // (网络那份多数已经由服务器按 size 缩过,设了也无害。)
+      cacheWidth: decode,
+      cacheHeight: decode,
       errorBuilder: (_, _, _) => fallback,
       frameBuilder: placeholder,
     );

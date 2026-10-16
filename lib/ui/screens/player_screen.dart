@@ -417,10 +417,18 @@ class _ScrubberState extends State<_Scrubber> {
 
   @override
   Widget build(BuildContext context) {
-    final state = widget.playable.state;
-    final durationMs = state.duration.inMilliseconds;
+    // 位置单独订阅(见 PlaybackController.position):只让这个滑块跟着走,
+    // 不必把整屏拉进「每秒重建几次」的名单里。
+    return ValueListenableBuilder<Duration>(
+      valueListenable: widget.playable.position,
+      builder: (context, position, _) => _build(context, position),
+    );
+  }
+
+  Widget _build(BuildContext context, Duration position) {
+    final durationMs = widget.playable.state.duration.inMilliseconds;
     final hasDuration = durationMs > 0;
-    final positionMs = state.position.inMilliseconds.toDouble();
+    final positionMs = position.inMilliseconds.toDouble();
 
     // 时长未知时(还在读流)滑块停在最左,但不显示百分比 ——
     // 给一个凭空的进度比空着更误导。

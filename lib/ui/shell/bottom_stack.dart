@@ -86,7 +86,6 @@ class _PlayerDock extends StatelessWidget {
     final appState = context.watch<AppState>();
 
     final playing = playback.state.playing;
-    final progress = playback.state.progress / 100;
 
     return NordicGlass(
       panel: NordicGlassPanel.nav,
@@ -150,12 +149,23 @@ class _PlayerDock extends StatelessWidget {
                   ],
                 ),
               ),
-              // 坞底那条细线 —— 「现在就播着」的进度。
+              // 坞底那条细线 —— 「现在就播着」的进度。位置单独订阅:
+              // 坞在每一屏底部,不该因为位置变了就把整块玻璃重画。
               Positioned(
                 left: 12,
                 right: 12,
                 bottom: 0,
-                child: ProgressLine(progress: progress, height: 2),
+                child: ValueListenableBuilder<Duration>(
+                  valueListenable: playback.position,
+                  builder: (context, position, _) => ProgressLine(
+                    progress: playbackProgress(
+                          position,
+                          playback.state.duration,
+                        ) /
+                        100,
+                    height: 2,
+                  ),
+                ),
               ),
             ],
           ),

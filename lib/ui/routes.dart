@@ -31,36 +31,43 @@ abstract final class AppRoutes {
   static const newPlaylist = '/new-playlist';
   static const addRoute = '/add-route';
 
-  /// 全部具名路由。挂在 `MaterialApp.routes` 上。
-  static Map<String, WidgetBuilder> get table => {
-        player: (_) => const PlayerScreen(),
-        lyrics: (_) => const LyricsScreen(),
-        servers: (_) => const ServersScreen(),
-        downloads: (_) => const DownloadsScreen(),
-        newPlaylist: (_) => const NewPlaylistScreen(),
-        addRoute: (_) => const AddRouteScreen(),
-      };
-
-  /// 带参数的路由 —— 用 `onGenerateRoute` 接。
+  /// 所有页面的路由都从这里出。
+  ///
+  /// **不挂 `MaterialApp.routes` 表**:那张表走 Material 的默认过渡
+  /// (Android 上是缩放 + 淡入)。缩放一路要重画,而淡入会强制 saveLayer ——
+  /// 这两件事叠在本应用的页面上(整屏氛围模糊 + 两片玻璃胶囊)就是切页面时
+  /// 的顿挫。统一走 [slide] 的纯位移:位移不改几何,模糊层可以直接复用。
   static Route<dynamic>? generate(RouteSettings settings) {
     switch (settings.name) {
+      case player:
+        return slide(settings, const PlayerScreen());
+      case lyrics:
+        return slide(settings, const LyricsScreen());
+      case servers:
+        return slide(settings, const ServersScreen());
+      case downloads:
+        return slide(settings, const DownloadsScreen());
+      case newPlaylist:
+        return slide(settings, const NewPlaylistScreen());
+      case addRoute:
+        return slide(settings, const AddRouteScreen());
       case album:
-        return _slide(settings, AlbumScreen(albumId: settings.arguments as String));
+        return slide(settings, AlbumScreen(albumId: settings.arguments as String));
       case artist:
-        return _slide(settings,
+        return slide(settings,
             ArtistScreen(artistId: settings.arguments as String));
       case playlist:
-        return _slide(settings,
+        return slide(settings,
             PlaylistScreen(playlistId: settings.arguments as String));
       default:
         return null;
     }
   }
 
-  /// 详情页统一的滑入过渡。用平台默认的 [CupertinoPageRoute] 语义
+  /// 页面统一的滑入过渡。用平台默认的 [CupertinoPageRoute] 语义
   /// (从右滑入 + 手势返回),而不是 Material 的默认上浮 ——
   /// 这个应用全屏沉浸,侧滑返回更符合直觉。
-  static Route<dynamic> _slide(RouteSettings settings, Widget page) =>
+  static Route<dynamic> slide(RouteSettings settings, Widget page) =>
       PageRouteBuilder(
         settings: settings,
         transitionDuration: const Duration(milliseconds: 320),

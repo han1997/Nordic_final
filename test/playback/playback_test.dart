@@ -57,22 +57,26 @@ void main() {
 
   group('播放状态', () {
     test('时长未知时进度不假装是 0%,也不越界', () {
-      const unknown = PlaybackState(position: Duration(seconds: 30));
-      expect(unknown.progress, 0, reason: '时长未知时不该给一个凭空的百分比');
-
-      const halfway = PlaybackState(
-        position: Duration(seconds: 30),
-        duration: Duration(seconds: 60),
+      expect(
+        playbackProgress(const Duration(seconds: 30), Duration.zero),
+        0,
+        reason: '时长未知时不该给一个凭空的百分比',
       );
-      expect(halfway.progress, closeTo(50, 0.01));
+      expect(
+        playbackProgress(const Duration(seconds: 30), const Duration(seconds: 60)),
+        closeTo(50, 0.01),
+      );
     });
 
     test('进度在越界位置被夹回 0–100', () {
-      const past = PlaybackState(
-        position: Duration(seconds: 90),
-        duration: Duration(seconds: 60),
+      expect(
+        playbackProgress(const Duration(seconds: 90), const Duration(seconds: 60)),
+        100,
       );
-      expect(past.progress, 100);
+      expect(
+        playbackProgress(const Duration(seconds: -5), const Duration(seconds: 60)),
+        0,
+      );
     });
 
     test('copyWith 能清掉旧错误', () {

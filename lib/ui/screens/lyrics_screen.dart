@@ -40,8 +40,28 @@ class _LyricsScreenState extends State<LyricsScreen> {
   /// 当前曲目的时长。无时间轴歌词按它摊行;在 build 里从播放状态同步。
   Duration _duration = Duration.zero;
 
+  /// 订阅了哪一份位置通道 —— 换播放器时要退订旧的(见 [didChangeDependencies])。
+  PlaybackController? _playback;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 位置不进 state 的通知(见 PlaybackController.position),这一屏自己订。
+    // 逐句高亮要跟着走,所以这里按位置重建整屏是对的 —— 歌词就是几行文字,
+    // 而音乐库那边的货架绝不该被同一件事牵着重建。
+    final playback = context.read<PlaybackController>();
+    if (identical(playback, _playback)) return;
+    _playback?.position.removeListener(_onPosition);
+    _playback = playback..position.addListener(_onPosition);
+  }
+
+  void _onPosition() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _playback?.position.removeListener(_onPosition);
     _scrollController.dispose();
     super.dispose();
   }
@@ -122,7 +142,9 @@ class _LyricsScreenState extends State<LyricsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _ensureLyrics(song.id));
 
     final accent = NordicAccent.derived(song.albumId);
-    final position = playable.state.position;
+    // 位置不进 state 的通知(见 PlaybackController.position),这一屏自己订:
+    // 逐句高亮与底部进度条都跟着它走。
+    final position = playable.position.value;
     _duration = playable.state.duration;
     final activeIndex = _activeIndex(_lyrics, position);
 
@@ -321,6 +343,7 @@ class _LyricsControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.nordic;
     final state = playable.state;
+    final position = playable.position.value;
     final accent = context.accent.accent;
     final durationMs = state.duration.inMilliseconds;
     final hasDuration = durationMs > 0;
@@ -346,7 +369,7 @@ class _LyricsControls extends StatelessWidget {
                   ),
                   child: Slider(
                     value: hasDuration
-                        ? state.position.inMilliseconds
+                        ? position.inMilliseconds
                             .clamp(0, durationMs)
                             .toDouble()
                         : 0,
@@ -360,10 +383,10 @@ class _LyricsControls extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(formatDuration(state.position), style: _timeStyle(context)),
+                    Text(formatDuration(position), style: _timeStyle(context)),
                     Text(
                       hasDuration
-                          ? '-${formatDuration(state.duration - state.position)}'
+                          ? '-${formatDuration(state.duration - position)}'
                           : '--:--',
                       style: _timeStyle(context),
                     ),

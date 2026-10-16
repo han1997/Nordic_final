@@ -18,7 +18,6 @@ class PlaybackState {
     this.song,
     this.playing = false,
     this.processing = false,
-    this.position = Duration.zero,
     this.duration = Duration.zero,
     this.hasNext = false,
     this.hasPrevious = false,
@@ -33,7 +32,6 @@ class PlaybackState {
   /// 正在缓冲 / 加载。界面据此显示转圈而不是「已暂停」。
   final bool processing;
 
-  final Duration position;
   final Duration duration;
   final bool hasNext;
   final bool hasPrevious;
@@ -43,19 +41,10 @@ class PlaybackState {
   /// 播放失败的原因。非空时界面要显示错误而不是空态。
   final String? error;
 
-  /// 进度百分比(0–100)。时长未知时返回 0 —— 不要拿 0 去画进度条,
-  /// 那会看起来像「播到了开头」;界面应结合 [duration] 判断。
-  double get progress {
-    if (duration.inMilliseconds <= 0) return 0;
-    final ratio = position.inMilliseconds / duration.inMilliseconds;
-    return (ratio.clamp(0.0, 1.0)) * 100;
-  }
-
   PlaybackState copyWith({
     Song? song,
     bool? playing,
     bool? processing,
-    Duration? position,
     Duration? duration,
     bool? hasNext,
     bool? hasPrevious,
@@ -68,7 +57,6 @@ class PlaybackState {
         song: song ?? this.song,
         playing: playing ?? this.playing,
         processing: processing ?? this.processing,
-        position: position ?? this.position,
         duration: duration ?? this.duration,
         hasNext: hasNext ?? this.hasNext,
         hasPrevious: hasPrevious ?? this.hasPrevious,
@@ -76,6 +64,14 @@ class PlaybackState {
         repeatOne: repeatOne ?? this.repeatOne,
         error: clearError ? null : (error ?? this.error),
       );
+}
+
+/// 进度百分比(0–100)。时长未知时返回 0 —— 不要拿 0 去画进度条,
+/// 那会看起来像「播到了开头」;界面应结合时长判断。
+double playbackProgress(Duration position, Duration duration) {
+  if (duration.inMilliseconds <= 0) return 0;
+  final ratio = position.inMilliseconds / duration.inMilliseconds;
+  return ratio.clamp(0.0, 1.0) * 100;
 }
 
 /// 界面与播放器之间的那层。
@@ -90,7 +86,14 @@ class PlaybackController extends ChangeNotifier {
   final NordicAudioHandler _handler;
 
   final List<StreamSubscription<dynamic>> _subs = [];
-  final List<StreamSubscription<dynamic>> _positionSubs = [];
+
+  /// 播放位置 —— **单独一条通道,不进 [state] 的通知**。
+  ///
+  /// 位置每秒变好几次,而 [state] 一变,所有盯着它的界面都要重建:
+  /// 音乐库的货架、专辑页二十来行曲目、坞……切页面时正撞上这件事,就是顿挫。
+  /// 真正要显示位置的只有三处(播放页的进度条、坞底那条细线、歌词页),
+  /// 它们各自订阅这一条就够了。
+  final ValueNotifier<Duration> position = ValueNotifier(Duration.zero);
 
   PlaybackState _state = const PlaybackState();
   PlaybackState get state => _state;
@@ -104,10 +107,9 @@ class PlaybackController extends ChangeNotifier {
   void _wire() {
     final player = _handler.player;
 
-    // 位置单独走一条订阅 —— 它每秒发很多次,每次都全量重建
-    // 会让整个播放页跟着重绘。
-    _track(_positionSubs, player.positionStream.listen((position) {
-      _emit(_state.copyWith(position: position));
+    // 位置单独走一条订阅,而且**只更新那条通道**(见 [position] 的说明)。
+    _track(_subs, player.positionStream.listen((next) {
+      position.value = next;
     }));
 
     _track(_subs, player.playerStateStream.listen((ps) {
@@ -219,7 +221,7 @@ class PlaybackController extends ChangeNotifier {
     final index = _handler.player.currentIndex;
     if (index == null || index < 0) return Duration.zero;
     final after = queue.skip(index + 1).fold(Duration.zero, (s, x) => s + x.duration);
-    final currentLeft = _state.duration - _state.position;
+    final currentLeft = _state.duration - position.value;
     return after + (currentLeft.isNegative ? Duration.zero : currentLeft);
   }
 
@@ -228,9 +230,7 @@ class PlaybackController extends ChangeNotifier {
     for (final sub in _subs) {
       sub.cancel();
     }
-    for (final sub in _positionSubs) {
-      sub.cancel();
-    }
+    position.dispose();
     super.dispose();
   }
 }

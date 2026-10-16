@@ -292,16 +292,21 @@ class _ContinueCard extends StatelessWidget {
                                   ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              '${song.artist} · 播到 '
-                              '${formatDuration(playable.state.position)} / '
-                              '${formatDuration(playable.state.duration)}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: t.fg2),
+                            // 位置单独订阅:英雄卡是音乐库首页的一部分,
+                            // 不该因为播放位置而把整页货架拉进重建。
+                            ValueListenableBuilder<Duration>(
+                              valueListenable: playable.position,
+                              builder: (context, position, _) => Text(
+                                '${song.artist} · 播到 '
+                                '${formatDuration(position)} / '
+                                '${formatDuration(playable.state.duration)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: t.fg2),
+                              ),
                             ),
                           ],
                         ),
@@ -337,7 +342,13 @@ class _ContinueCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: NordicSpace.s3),
-          ProgressLine(progress: playable.state.progress / 100),
+          ValueListenableBuilder<Duration>(
+            valueListenable: playable.position,
+            builder: (context, position, _) => ProgressLine(
+              progress:
+                  playbackProgress(position, playable.state.duration) / 100,
+            ),
+          ),
           const SizedBox(height: NordicSpace.s2),
         ],
       ),

@@ -36,11 +36,10 @@ class NordicApp extends StatelessWidget {
       // 它是应用级的一条,页面来去都不该影响它。
       builder: (context, child) =>
           _BackgroundPlayGuard(child: child ?? const SizedBox.shrink()),
+      // 全部页面(含三个 tab 的主壳)都由 AppRoutes 出路由 —— 那里统一了
+      // 过渡,见 AppRoutes.generate 的说明。
       onGenerateRoute: AppRoutes.generate,
-      routes: {
-        ...AppRoutes.table,
-        '/': (_) => const NordicShell(),
-      },
+      home: const NordicShell(),
     );
   }
 }
