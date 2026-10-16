@@ -661,6 +661,17 @@ class _PlaylistsTab extends StatelessWidget {
             trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
             onTap: () => AppRoutes.openPlaylist(context, playlist.id),
           ),
+        // 空库时也要能建歌单 —— 一个空列表配一个入口,比只显示「暂无」
+        // 有用得多。
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            NordicSpace.s5, NordicSpace.s5, NordicSpace.s5, NordicSpace.s4),
+          child: GhostButton(
+            label: '新建歌单',
+            icon: Icons.add,
+            onPressed: () => AppRoutes.openNewPlaylist(context),
+          ),
+        ),
       ],
     );
   }
