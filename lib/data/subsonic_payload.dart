@@ -127,6 +127,13 @@ abstract final class SubsonicPayload {
     return playlist.cast<String, dynamic>();
   }
 
+  /// 响应里是否带了 `playlist`。
+  ///
+  /// `createPlaylist` 在只传 `name` 时,部分实现会返回**没有 playlist 字段**
+  /// 的空壳 —— 直接让 [playlist] 抛异常会误判成「创建失败」。
+  static bool hasPlaylist(Map<String, dynamic> body) =>
+      _root(body)['playlist'] is Map;
+
   /// `search3` → `searchResult3` 的三个桶
   static Map<String, dynamic> searchResult(Map<String, dynamic> body) {
     final result = _root(body)['searchResult3'] ?? _root(body)['searchResult2'];

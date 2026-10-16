@@ -47,6 +47,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 用配置与密码建出仓库(启动时调用,与 [adoptServer] 配对)。
+  ///
+  /// 接在 [adoptServer] 之后而不是合成一个方法:配置与密码来自两个不同的
+  /// 存储(前者 SharedPreferences,后者系统密钥库),各有各的失败可能,
+  /// 分开之后「配置在但密码读不出来」这种情况有地方表达。
+  void attachRepository(ServerConfig config, String password) {
+    _repository = SubsonicRepository(clientFor(config: config, password: password));
+    notifyListeners();
+  }
+
   /// 首次配置 / 修改配置:建仓库、测速、持久化。
   ///
   /// 密码写进系统密钥库;配置写进 SharedPreferences(不含密码)。
@@ -296,11 +306,115 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 建一个歌单。成功后就地把它插进本地快照 —— 不必整库重拉。
+  ///
+  /// 失败时抛 [SubsonicException] 而不是吞掉:这是用户主动发起的写操作,
+  /// 「点了创建但什么都没有」比一句错误提示糟得多。
+  Future<Playlist> createPlaylist(String name) async {
+    final repo = _repository;
+    if (repo == null) {
+      throw const SubsonicException('还没有连接服务器');
+    }
+
+    final created = await repo.createPlaylist(name);
+    _library = LibrarySnapshot(
+      albums: _library.albums,
+      artists: _library.artists,
+      songs: _library.songs,
+      playlists: [created, ..._library.playlists],
+      recentlyAdded: _library.recentlyAdded,
+    );
+    notifyListeners();
+    return created;
+  }
+
   Future<void> setQuality(QualityOption option) async {
     quality.set(option);
     await configStore.saveQuality(option.id);
     notifyListeners();
   }
+
+  // ---------------- 下载队列 ----------------
+
+  /// 下载任务。
+  ///
+  /// **这一轮的进度是模拟的**(见 [advanceDownloads]),不做真实落盘与离线播放。
+  /// 界面上如实呈现即可 —— 队列能加能删、状态会走,但按钮背后的文件并不存在,
+  /// 所以界面上不承诺「离线可播」。
+  final List<DownloadTask> _downloads = [];
+  List<DownloadTask> get downloads => List.unmodifiable(_downloads);
+
+  int get activeDownloadCount =>
+      _downloads.where((d) => d.state == DownloadState.active).length;
+
+  void enqueueDownload(DownloadTask task) {
+    // 同一条重复入队没有意义 —— 专辑页来回点两次会看到两个一样的条目。
+    if (_downloads.any((d) => d.id == task.id)) {
+      notifyListeners();
+      return;
+    }
+    _downloads.insert(0, task);
+    notifyListeners();
+  }
+
+  void removeDownload(String id) {
+    _downloads.removeWhere((d) => d.id == id);
+    notifyListeners();
+  }
+
+  void clearDownloads() {
+    _downloads.clear();
+    notifyListeners();
+  }
+
+  /// 推进模拟进度。由界面上的定时器调用 —— 放在 [AppState] 里而不是
+  /// 下载页内部,是为了切走再切回来时进度仍然连续。
+  void advanceDownloads() {
+    final active = _downloads.where((d) => d.state == DownloadState.active);
+    if (active.isEmpty) return;
+    for (final task in active) {
+      task.pct = (task.pct + 7 + task.id.hashCode % 9).clamp(0.0, 100.0);
+      if (task.pct >= 100) task.state = DownloadState.done;
+    }
+    notifyListeners();
+  }
+}
+
+/// 下载任务的状态。
+enum DownloadState {
+  active('下载中'),
+  done('已完成');
+
+  const DownloadState(this.label);
+
+  final String label;
+}
+
+/// 一条下载任务。
+class DownloadTask {
+  DownloadTask({
+    required this.id,
+    required this.name,
+    this.detail = '',
+    this.sizeMb = 0,
+    this.pct = 0,
+    this.state = DownloadState.active,
+  });
+
+  final String id;
+  final String name;
+  final String detail;
+  final double sizeMb;
+
+  /// 0–100。
+  double pct;
+
+  DownloadState state;
+
+  /// 文案里的体积。四舍五入到整 MB —— 小数位没有意义。
+  String get sizeLabel => '${sizeMb.round()} MB';
+
+  bool get isDone => state == DownloadState.done;
 }
 
 /// 音乐库的一屏数据。

@@ -12,8 +12,12 @@ import 'quality.dart';
 /// 媒体会话与前台服务,通知栏控件就靠这个建立。`androidNotificationChannel*`
 /// 决定通知的渠道与优先级:`lowImportance` 让媒体通知不出横幅、不发声,
 /// 这是播放器的惯例(正在放歌时再弹一条横幅很吵)。
+///
+/// [repository] 是一个**取值函数**而不是实例:服务器配置可以在运行时变
+/// (用户改地址、换账号),处理器必须每次都拿到最新的那一个,
+/// 否则改完配置还得重启应用才能播。
 Future<NordicAudioHandler> startAudioService({
-  required SubsonicRepository repository,
+  required SubsonicRepository? Function() repository,
   required QualityController quality,
 }) =>
     AudioService.init(
@@ -24,7 +28,6 @@ Future<NordicAudioHandler> startAudioService({
         androidNotificationChannelDescription: '通知栏与锁屏上的播放控制',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
-        // 播放页与通知栏的返回行为交给应用自己处理。
         androidNotificationClickStartsActivity: true,
       ),
     );
@@ -69,7 +72,8 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-  final SubsonicRepository _repository;
+  /// 取值函数而非实例 —— 见 startAudioService 的说明。
+  final SubsonicRepository? Function() _repository;
   final QualityController _quality;
 
   late final AudioPlayer _player;
@@ -173,6 +177,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   /// 重排队列。拖动排序后调用 —— 位置要保住,不能让正在听的歌跳回开头。
+  ///
+  /// [newIndex] 已经由 `ReorderableListView.onReorderItem` 算成
+  /// 「移除 oldIndex 之后」的插入下标,这里**不要再减一**。
   Future<void> reorder(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex) return;
     if (oldIndex < 0 || oldIndex >= _queue.length) return;
@@ -181,13 +188,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     final position = _player.position;
     final wasPlaying = _player.playing;
 
-    // ReorderableListView 给的 newIndex 是「插入到该位置之前」的口径,
-    // 往下拖时要减一,否则会差一位。
-    final target = (newIndex > oldIndex ? newIndex - 1 : newIndex)
-        .clamp(0, _queue.length - 1);
+    final target = newIndex.clamp(0, _queue.length - 1);
     final next = [..._queue];
-    final moved = next.removeAt(oldIndex);
-    next.insert(target, moved);
+    next.insert(target, next.removeAt(oldIndex));
     _queue = next;
 
     await _player.setAudioSources(
@@ -278,27 +281,44 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // ---------------- 内部 ----------------
 
+  /// 当前生效的仓库。没配服务器时为 null —— 调用点要自己判,
+  /// 不要在这里造一个连不上任何东西的假仓库。
+  SubsonicRepository? get _repo => _repository();
+
   /// 域模型 → 播放源。转码档位在这里落成查询参数。
-  AudioSource _sourceFor(Song song) => AudioSource.uri(
-        _repository.streamUri(
-          song.id,
-          maxBitRate: _quality.value.maxBitRate,
-          format: _quality.value.format,
-        ),
-        tag: _mediaItemFor(song),
-      );
+  ///
+  /// 拿不到仓库说明配置在播放途中被清掉了(用户移除了服务器)——
+  /// 这时给一个必然失败的源是没有意义的,所以退回原音地址的空实现由
+  /// [setQueue] 提前拦下(见那里的判断)。
+  AudioSource _sourceFor(Song song) {
+    final repo = _repo;
+    if (repo == null) {
+      throw StateError('还没有配置服务器,无法构建播放源');
+    }
+    return AudioSource.uri(
+      repo.streamUri(
+        song.id,
+        maxBitRate: _quality.value.maxBitRate,
+        format: _quality.value.format,
+      ),
+      tag: _mediaItemFor(song),
+    );
+  }
 
   /// 封面一律用专辑封面:Subsonic 里单曲通常没有独立的图。
-  MediaItem _mediaItemFor(Song song) => MediaItem(
-        id: song.id,
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        duration: song.duration,
-        artUri: song.hasCover
-            ? _repository.coverUri(song.coverArtId!, size: 512)
-            : null,
-      );
+  MediaItem _mediaItemFor(Song song) {
+    final repo = _repo;
+    return MediaItem(
+      id: song.id,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      duration: song.duration,
+      artUri: song.hasCover && repo != null
+          ? repo.coverUri(song.coverArtId!, size: 512)
+          : null,
+    );
+  }
 
   /// 把播放器状态翻成 [playbackState] 供系统 UI 使用。
   void _broadcastState(PlaybackEvent event) {

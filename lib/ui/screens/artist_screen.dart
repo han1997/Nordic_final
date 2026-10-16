@@ -1,0 +1,490 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../data/models.dart';
+import '../../data/subsonic_payload.dart';
+import '../../playback/playback_controller.dart';
+import '../../state/app_state.dart';
+import '../../theme/accent.dart';
+import '../../theme/context_ext.dart';
+import '../../theme/tokens.dart';
+import '../routes.dart';
+import '../shell/shell.dart';
+import '../widgets/components.dart';
+import '../widgets/cover.dart';
+import '../widgets/rows.dart';
+import '../widgets/states.dart';
+
+/// 艺人详情 —— 大头像 + 热门 + 专辑货架。
+class ArtistScreen extends StatefulWidget {
+  const ArtistScreen({super.key, required this.artistId});
+
+  final String artistId;
+
+  @override
+  State<ArtistScreen> createState() => _ArtistScreenState();
+}
+
+class _ArtistScreenState extends State<ArtistScreen> {
+  Artist? _artist;
+  List<Album> _albums = const [];
+  List<Song> _topSongs = const [];
+  String? _error;
+  bool _loading = true;
+  bool _starred = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    final state = context.read<AppState>();
+    final repo = state.repository;
+    if (repo == null) {
+      setState(() {
+        _loading = false;
+        _error = '还没有连接服务器';
+      });
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final detail = await repo.artist(widget.artistId);
+      if (!mounted) return;
+      setState(() {
+        _artist = detail.artist;
+        _albums = detail.albums;
+        _topSongs = detail.topSongs;
+        _loading = false;
+        _starred = state.isArtistStarred(widget.artistId);
+      });
+    } on SubsonicException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.message;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = NordicAccent.derived(widget.artistId);
+
+    return ImmersiveScaffold(
+      accent: accent,
+      child: Column(
+        children: [
+          NordicAppBar(
+            title: '',
+            big: false,
+            transparent: true,
+            leading: IconButtonRound(
+              icon: Icons.arrow_back,
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            actions: [
+              IconButtonRound(
+                icon: Icons.more_horiz,
+                quiet: true,
+                onPressed: _artist == null ? null : _showMenu,
+              ),
+            ],
+          ),
+          Expanded(child: _body()),
+        ],
+      ),
+    );
+  }
+
+  Widget _body() {
+    if (_loading) return const LoadingState(message: '正在读取艺人');
+    if (_error != null) return ErrorState(message: _error!, onRetry: _load);
+
+    final artist = _artist;
+    if (artist == null) {
+      return const EmptyState(title: '这位艺人已经不在库里了');
+    }
+
+    final playable = context.watch<PlaybackController>();
+    final currentId = playable.state.song?.id;
+    final state = context.watch<AppState>();
+
+    // 有作品才给播放入口。库里没歌的艺人点「播放」会去播上一首别人的歌 ——
+    // 那一下等于对用户说了假话,所以整行收掉,旁边说明一句。
+    final playableSongs = _topSongs.isNotEmpty || _albums.isNotEmpty;
+
+    return ListView(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.paddingOf(context).bottom + NordicSpace.s6,
+      ),
+      children: [
+        _ArtistHead(artist: artist),
+        _ArtistActions(
+          starred: _starred,
+          playable: playableSongs && _topSongs.isNotEmpty,
+          onPlay: _topSongs.isEmpty
+              ? null
+              : () => playable.playAll(_topSongs, index: 0),
+          onShuffle: _topSongs.isEmpty
+              ? null
+              : () {
+                  final shuffled = [..._topSongs]..shuffle();
+                  playable.playAll(shuffled, index: 0);
+                },
+          onToggleStar: _toggleStar,
+        ),
+        if (!playableSongs)
+          const ListNote('这个库里没有这位艺人的可播放曲目,换一位试试。'),
+        if (_topSongs.isNotEmpty) ...[
+          SectionHeader(title: '热门歌曲', count: '${_topSongs.length} 首'),
+          for (var i = 0; i < _topSongs.length; i++)
+            TrackRow(
+              song: _topSongs[i],
+              // 「热门」按播放量排,序数没有意义,所以不排曲序。
+              playing: _topSongs[i].id == currentId && playable.state.playing,
+              onTap: () => playable.playAll(_topSongs, index: i),
+              trailing: IconButtonRound(
+                icon: Icons.more_horiz,
+                size: 32,
+                iconSize: 18,
+                quiet: true,
+                onPressed: () => _songMenu(_topSongs[i]),
+              ),
+            ),
+        ],
+        SectionHeader(
+          title: '专辑',
+          count: _albums.length < artist.albumCount
+              ? '${_albums.length} / ${artist.albumCount} 张'
+              : '${_albums.length} 张',
+        ),
+        if (_albums.isEmpty)
+          const ListNote('服务器上这位艺人名下有专辑记录,但这次没有返回具体条目。')
+        else
+          SizedBox(
+            height: shelfHeight(context, artwork: 142),
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(
+                NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s4),
+              itemCount: _albums.length,
+              separatorBuilder: (_, _) => const SizedBox(width: NordicSpace.s4),
+              itemBuilder: (context, index) {
+                final album = _albums[index];
+                return GestureDetector(
+                  onTap: () => AppRoutes.openAlbum(context, album.id),
+                  child: SizedBox(
+                    width: 142,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Cover(
+                          coverArtId: album.coverArtId,
+                          seed: album.id,
+                          uri: _cover(context, state, album.coverArtId),
+                          size: 142,
+                          radius: 22,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          album.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          album.year == null ? '${album.songCount} 首' : '${album.year}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: context.nordic.fg3),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        if (_albums.isNotEmpty && _albums.length < artist.albumCount)
+          ListNote(
+            '服务器上 ${artist.name} 共有 ${artist.albumCount} 张唱片,'
+            '这里列出了 ${_albums.length} 张。',
+          ),
+      ],
+    );
+  }
+
+  Uri? _cover(BuildContext context, AppState state, String? artId) {
+    final repo = state.repository;
+    if (repo == null || artId == null) return null;
+    try {
+      return repo.coverUri(artId, size: 512);
+    } on SubsonicException {
+      return null;
+    }
+  }
+
+  Future<void> _toggleStar() async {
+    final state = context.read<AppState>();
+    await state.toggleArtistStar(widget.artistId);
+    if (!mounted) return;
+    setState(() => _starred = state.isArtistStarred(widget.artistId));
+    _toast(_starred ? '已收藏这位艺人' : '已取消收藏');
+  }
+
+  void _showMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => NordicScrim(
+        onTap: () => Navigator.of(context).pop(),
+        child: NordicSheet(
+          title: _artist?.name ?? '',
+          subtitle: _artist == null ? null : '${_artist!.albumCount} 张专辑',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _MenuRow(
+                icon: _starred ? Icons.favorite : Icons.favorite_border,
+                label: _starred ? '取消收藏' : '收藏这位艺人',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _toggleStar();
+                },
+              ),
+              _MenuRow(
+                icon: Icons.queue_music,
+                label: '热门歌曲加入队列',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _queueAll();
+                },
+              ),
+              const SizedBox(height: NordicSpace.s2),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _queueAll() async {
+    final playable = context.read<PlaybackController>();
+    for (final song in _topSongs) {
+      await playable.append(song);
+    }
+    _toast('${_topSongs.length} 首已加入队列');
+  }
+
+  void _songMenu(Song song) {
+    final playable = context.read<PlaybackController>();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => NordicScrim(
+        onTap: () => Navigator.of(context).pop(),
+        child: NordicSheet(
+          title: song.title,
+          subtitle: '${song.artist} · ${song.album}',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _MenuRow(
+                icon: Icons.playlist_play,
+                label: '下一首播放',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  playable.playNext(song);
+                  _toast('已排到下一首');
+                },
+              ),
+              _MenuRow(
+                icon: Icons.queue_music,
+                label: '加入播放队列',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  playable.append(song);
+                  _toast('已加入队列');
+                },
+              ),
+              _MenuRow(
+                icon: Icons.album_outlined,
+                label: '查看专辑',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  AppRoutes.openAlbum(context, song.albumId);
+                },
+              ),
+              const SizedBox(height: NordicSpace.s2),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
+  }
+}
+
+class _ArtistHead extends StatelessWidget {
+  const _ArtistHead({required this.artist});
+
+  final Artist artist;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s5),
+      child: Row(
+        children: [
+          ArtistPlate(artist: artist, size: 104, radius: 30),
+          const SizedBox(width: NordicSpace.s4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  artist.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                        fontSize: 29,
+                        fontWeight: FontWeight.w700,
+                        height: 1.1,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${artist.albumCount} 张专辑',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: t.fg3),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArtistActions extends StatelessWidget {
+  const _ArtistActions({
+    required this.starred,
+    required this.playable,
+    required this.onPlay,
+    required this.onShuffle,
+    required this.onToggleStar,
+  });
+
+  final bool starred;
+  final bool playable;
+  final VoidCallback? onPlay;
+  final VoidCallback? onShuffle;
+  final VoidCallback onToggleStar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s4),
+      child: Row(
+        children: [
+          if (playable)
+            Expanded(
+              child: PrimaryButton(
+                label: '播放热门',
+                icon: Icons.play_arrow,
+                height: 48,
+                onPressed: onPlay,
+              ),
+            ),
+          if (playable) const SizedBox(width: NordicSpace.s3),
+          IconButtonRound(
+            icon: Icons.shuffle,
+            size: 48,
+            iconSize: 20,
+            halo: true,
+            onPressed: onShuffle,
+          ),
+          const SizedBox(width: NordicSpace.s3),
+          IconButtonRound(
+            icon: starred ? Icons.favorite : Icons.favorite_border,
+            size: 48,
+            iconSize: 20,
+            halo: true,
+            color: starred ? context.accentSafe : null,
+            onPressed: onToggleStar,
+          ),
+          if (!playable)
+            const Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(left: NordicSpace.s3),
+                child: Text(
+                  '库里没有这位艺人的曲目',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({required this.icon, required this.label, required this.onTap});
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: t.fg2),
+            const SizedBox(width: NordicSpace.s4),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

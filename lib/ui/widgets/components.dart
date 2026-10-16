@@ -1,0 +1,770 @@
+import 'package:flutter/material.dart';
+
+import '../../theme/context_ext.dart';
+import '../../theme/glass.dart';
+import '../../theme/tokens.dart';
+
+/// 主按钮 —— `.btn.primary`,实心强调色,整宽。
+class PrimaryButton extends StatelessWidget {
+  const PrimaryButton({
+    super.key,
+    required this.label,
+    this.icon,
+    this.onPressed,
+    this.fillMaxWidth = true,
+    this.height = 52,
+    this.emphasis = true,
+  });
+
+  final String label;
+  final IconData? icon;
+  final VoidCallback? onPressed;
+  final bool fillMaxWidth;
+  final double height;
+
+  /// false 时用填充色而非强调色渐变 —— 列表里的次要动作。
+  final bool emphasis;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    final accent = context.accent;
+    final enabled = onPressed != null;
+
+    final child = Row(
+      mainAxisSize: fillMaxWidth ? MainAxisSize.max : MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 20, color: emphasis ? t.bg : t.fg),
+          const SizedBox(width: 9),
+        ],
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: emphasis ? t.bg : t.fg,
+                ),
+          ),
+        ),
+      ],
+    );
+
+    return Opacity(
+      // 不可用时压暗而不是隐藏 —— 按钮还在原位,用户知道它存在。
+      opacity: enabled ? 1 : 0.45,
+      child: GestureDetector(
+        onTap: onPressed,
+        child: Container(
+          height: height,
+          width: fillMaxWidth ? double.infinity : null,
+          padding: fillMaxWidth ? null : const EdgeInsets.symmetric(horizontal: 22),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(NordicRadius.full),
+            gradient: emphasis
+                ? LinearGradient(
+                    begin: const Alignment(-0.7, -1),
+                    end: const Alignment(0.7, 1),
+                    colors: [
+                      Color.lerp(accent.accent, Colors.white, 0.10)!,
+                      accent.accent,
+                    ],
+                  )
+                : null,
+            color: emphasis ? null : t.fill2,
+            boxShadow: emphasis
+                ? [
+                    BoxShadow(
+                      color: accent.accent.withValues(alpha: 0.75 * t.glow),
+                      blurRadius: 34,
+                      offset: const Offset(0, 16),
+                      spreadRadius: -14,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(child: child),
+        ),
+      ),
+    );
+  }
+}
+
+/// 虚边按钮 —— `.btn.ghost`,用于「添加线路」这类补充动作。
+class GhostButton extends StatelessWidget {
+  const GhostButton({
+    super.key,
+    required this.label,
+    this.icon,
+    this.onPressed,
+    this.height = 48,
+  });
+
+  final String label;
+  final IconData? icon;
+  final VoidCallback? onPressed;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        height: height,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(NordicRadius.full),
+          border: Border.all(color: t.line2, width: 1),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 18, color: t.fg2),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              label,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: t.fg2, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 顶栏上的小药丸按钮 —— `.pill-btn`(如「保存」「创建」)。
+class PillButton extends StatelessWidget {
+  const PillButton({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.solid = false,
+    this.icon,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  /// 实心强调色 —— 表单的主提交动作。
+  final bool solid;
+
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    final accent = context.accent;
+    final enabled = onPressed != null;
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: GestureDetector(
+        onTap: onPressed,
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: solid ? accent.accent : t.fill2,
+            borderRadius: BorderRadius.circular(NordicRadius.full),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 15, color: solid ? t.bg : t.fg2),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: solid ? t.bg : t.fg2,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 圆形图标按钮 —— `.icon-btn`,可带一层淡填充(`halo`)。
+class IconButtonRound extends StatelessWidget {
+  const IconButtonRound({
+    super.key,
+    required this.icon,
+    this.onPressed,
+    this.size = 40,
+    this.iconSize = 22,
+    this.color,
+    this.halo = false,
+    this.quiet = false,
+  });
+
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final double size;
+  final double iconSize;
+  final Color? color;
+
+  /// 带一层极淡的填充底色 —— 详情页动作排上的那几个圆按钮。
+  final bool halo;
+
+  /// 次级图标,颜色退一档。
+  final bool quiet;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return GestureDetector(
+      onTap: onPressed,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: halo ? t.fill1 : null,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          icon,
+          size: iconSize,
+          color: color ?? (quiet ? t.fg2 : t.fg),
+        ),
+      ),
+    );
+  }
+}
+
+/// 章节标题 —— `.section`:标题 + 计数 + 右侧可放动作。
+class SectionHeader extends StatelessWidget {
+  const SectionHeader({
+    super.key,
+    required this.title,
+    this.count,
+    this.trailing,
+    this.padding,
+  });
+
+  final String title;
+
+  /// 计数小字,如「529 首」。
+  final String? count;
+
+  /// 右侧动作(「重新测速」这类胶囊)。
+  final Widget? trailing;
+
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Padding(
+      padding: padding ??
+          const EdgeInsets.fromLTRB(
+            NordicSpace.s5,
+            NordicSpace.s6,
+            NordicSpace.s5,
+            NordicSpace.s3,
+          ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context)
+                .textTheme
+                .headlineSmall
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          if (count != null) ...[
+            const SizedBox(width: 10),
+            Text(
+              count!,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: t.fg4, fontWeight: FontWeight.w600),
+            ),
+          ],
+          const Spacer(),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
+/// 筛选 / 状态胶囊 —— `.chip`。
+class NordicChip extends StatelessWidget {
+  const NordicChip({
+    super.key,
+    required this.label,
+    this.icon,
+    this.selected = false,
+    this.onTap,
+    this.height = 34,
+    this.color,
+  });
+
+  final String label;
+  final IconData? icon;
+  final bool selected;
+  final VoidCallback? onTap;
+  final double height;
+
+  /// 覆盖强调色(如「重新测速」用中性色)。
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    final accent = color ?? context.accent.accent;
+
+    if (selected) {
+      return GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: height,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          decoration: BoxDecoration(
+            color: accent,
+            borderRadius: BorderRadius.circular(NordicRadius.full),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 15, color: t.bg),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: t.bg,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 未选中:薄玻璃底 + 发丝边,能透出背景。
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        height: height,
+        child: NordicGlass(
+          panel: NordicGlassPanel.thin,
+          borderRadius: BorderRadius.circular(NordicRadius.full),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 15, color: t.fg3),
+                  const SizedBox(width: 6),
+                ],
+                Text(
+                  label,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontWeight: FontWeight.w600, color: t.fg2),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 分段控件 —— `.segmented`。选中块做成实心玻璃片浮在轨道上。
+class SegmentedControl<T> extends StatelessWidget {
+  const SegmentedControl({
+    super.key,
+    required this.options,
+    required this.value,
+    required this.onChanged,
+    this.labelOf,
+    this.height = 36,
+  });
+
+  final List<T> options;
+  final T value;
+  final ValueChanged<T> onChanged;
+  final String Function(T)? labelOf;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return SizedBox(
+      height: height + 8,
+      child: NordicGlass(
+        panel: NordicGlassPanel.thin,
+        borderRadius: BorderRadius.circular(NordicRadius.full),
+        border: false,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Row(
+            children: [
+              for (final option in options)
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => onChanged(option),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: NordicMotion.ease,
+                      height: height,
+                      decoration: BoxDecoration(
+                        color: option == value ? t.fill3 : Colors.transparent,
+                        borderRadius: BorderRadius.circular(NordicRadius.full),
+                      ),
+                      child: Center(
+                        child: Text(
+                          labelOf?.call(option) ?? '$option',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: option == value ? t.fg : t.fg3,
+                              ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 勾选圆点 —— `.tick`。线路 / 质量 / 接入类型三处共用。
+class NordicTick extends StatelessWidget {
+  const NordicTick({super.key, required this.selected, this.size = 24});
+
+  final bool selected;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    final accent = context.accent.accent;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: selected ? accent : Colors.transparent,
+        border: selected ? null : Border.all(color: t.line2, width: 1.6),
+      ),
+      child: selected
+          ? Icon(Icons.check, size: size * 0.58, color: t.bg)
+          : null,
+    );
+  }
+}
+
+/// 开关 —— `.switch`。长得像开关,不是圆形勾选。
+class NordicSwitch extends StatelessWidget {
+  const NordicSwitch({super.key, required this.value, this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    final accent = context.accent.accent;
+
+    return GestureDetector(
+      onTap: onChanged == null ? null : () => onChanged!(!value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: NordicMotion.ease,
+        width: 46,
+        height: 28,
+        decoration: BoxDecoration(
+          color: value ? accent : t.fill3,
+          borderRadius: BorderRadius.circular(NordicRadius.full),
+          border: Border.all(color: value ? accent : t.line),
+        ),
+        child: AnimatedAlign(
+          duration: const Duration(milliseconds: 220),
+          curve: NordicMotion.ease,
+          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x4D000000),
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 进度细线 —— `.prog-line`。坞底与「继续收听」卡各一条。
+class ProgressLine extends StatelessWidget {
+  const ProgressLine({super.key, required this.progress, this.height = 3});
+
+  /// 0–1。
+  final double progress;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(NordicRadius.full),
+      child: SizedBox(
+        height: height,
+        child: Stack(
+          children: [
+            Positioned.fill(child: ColoredBox(color: t.fill3)),
+            FractionallySizedBox(
+              widthFactor: progress.clamp(0.0, 1.0),
+              child: ColoredBox(color: context.accent.accent),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 设置项左侧的小图标块 —— `.set-icon`。
+class SettingIcon extends StatelessWidget {
+  const SettingIcon({super.key, required this.icon, this.color});
+
+  final IconData icon;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: t.fill2,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Icon(icon, size: 18, color: color ?? context.accentSafe),
+    );
+  }
+}
+
+/// 「原型只带了这几首」这类列表末尾说明 —— `.list-note`。
+/// 放在列表**末尾**而不是顶部:先把内容给出来,再解释为什么少,
+/// 读起来不像错误提示。
+class ListNote extends StatelessWidget {
+  const ListNote(this.text, {super.key, this.padding});
+
+  final String text;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: padding ??
+            const EdgeInsets.fromLTRB(
+              NordicSpace.s5,
+              NordicSpace.s4,
+              NordicSpace.s5,
+              0,
+            ),
+        child: Text(
+          text,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                height: 1.7,
+                color: context.nordic.fg3,
+              ),
+        ),
+      );
+}
+
+/// 空态 —— `.empty`。**只在「确实为空」时用**;
+/// 加载中与出错时另走 [LoadingState] / [ErrorState](见「不造假空态」约定)。
+class EmptyState extends StatelessWidget {
+  const EmptyState({super.key, required this.title, this.detail, this.topPadding = 120});
+
+  final String title;
+  final String? detail;
+  final double topPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(NordicSpace.s6, topPadding, NordicSpace.s6, 72),
+      child: Column(
+        children: [
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: t.fg2,
+                ),
+          ),
+          if (detail != null) ...[
+            const SizedBox(height: NordicSpace.s3),
+            Text(
+              detail!,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 底部弹层 —— `.sheet`。玻璃面 + 顶部把手 + 上滑动画。
+class NordicSheet extends StatelessWidget {
+  const NordicSheet({super.key, required this.child, this.title, this.subtitle});
+
+  final Widget child;
+  final String? title;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: t.glass3,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(NordicRadius.xl),
+            ),
+            border: Border(top: BorderSide(color: t.line2)),
+            boxShadow: [
+              BoxShadow(
+                color: t.depth,
+                blurRadius: 60,
+                offset: const Offset(0, -20),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 11),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: t.fill3,
+                  borderRadius: BorderRadius.circular(NordicRadius.full),
+                ),
+              ),
+              const SizedBox(height: 6),
+              if (title != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    NordicSpace.s5,
+                    NordicSpace.s3,
+                    NordicSpace.s5,
+                    NordicSpace.s2,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title!,
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.copyWith(fontSize: 21),
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(width: 9),
+                        Flexible(
+                          child: Text(
+                            subtitle!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              Flexible(child: child),
+              SizedBox(height: MediaQuery.paddingOf(context).bottom + NordicSpace.s4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 弹层遮罩 —— `.sheet-scrim`。
+class NordicScrim extends StatelessWidget {
+  const NordicScrim({super.key, required this.child, this.onTap});
+
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: onTap,
+            child: ColoredBox(color: t.scrim),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}

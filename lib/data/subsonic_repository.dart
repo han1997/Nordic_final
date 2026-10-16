@@ -223,6 +223,49 @@ class SubsonicRepository {
 
   Future<Set<String>> starredArtistIds() async =>
       (await starred()).artists.map((a) => a.id).toSet();
+
+  // ---------------- 歌单写操作 ----------------
+
+  /// 建一个空歌单。返回新建的歌单。
+  ///
+  /// `createPlaylist` 在部分实现里会**返回空响应体**(而不是新建的对象),
+  /// 那种情况下退回去 `getPlaylists` 里按名字找最新的一条 —— 建完却拿不到
+  /// 对象会让调用方以为失败,而服务器上其实已经有了。
+  Future<Playlist> createPlaylist(String name, {List<String> songIds = const []}) async {
+    final body = await client.call('createPlaylist', {
+      'name': name,
+      if (songIds.isNotEmpty) 'songId': songIds.join(','),
+    });
+
+    if (SubsonicPayload.hasPlaylist(body)) {
+      return SubsonicMapper.playlist(SubsonicPayload.playlist(body));
+    }
+
+    final all = await playlists();
+    final match = all.where((p) => p.name == name).toList();
+    if (match.isEmpty) {
+      throw SubsonicException('歌单「$name」创建后没有返回,请下拉刷新看看');
+    }
+    return match.first;
+  }
+
+  /// 把一首歌加进歌单。
+  Future<void> addToPlaylist(String playlistId, String songId) =>
+      client.call('updatePlaylist', {
+        'playlistId': playlistId,
+        'songIdToAdd': songId,
+      });
+
+  /// 重命名歌单。
+  Future<void> renamePlaylist(String playlistId, String name) =>
+      client.call('updatePlaylist', {
+        'playlistId': playlistId,
+        'name': name,
+      });
+
+  /// 删除歌单。
+  Future<void> deletePlaylist(String playlistId) =>
+      client.call('deletePlaylist', {'id': playlistId});
 }
 
 /// 专辑列表的排序口径,对应 `getAlbumList2` 的 `type`。

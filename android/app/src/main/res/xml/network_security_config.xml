@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  明文 HTTP 放行策略。
+
+  Android 9 起默认禁止明文流量。自建音乐服务器(Navidrome / Subsonic /
+  飞牛)在局域网里几乎都是 http:// ,不放行的话曲库能拉到,但**音频播不出来**
+  —— ExoPlayer 直接抛 CleartextNotPermittedException。
+
+  为什么是全局放行而不是按网段白名单:用户在「添加服务器」里填的是任意地址,
+  可以是 192.168.x.x、10.x.x.x,也可以是走了 Tailscale / 内网穿透的域名。
+  按 IP 段列白名单覆盖不全,而漏掉的那一种表现成「曲库有、点了不出声」,
+  极难自查。这是一个**用户自带服务器**的应用,明文 HTTP 是它的正常用法,
+  不是异常 —— 所以照实放行。
+
+  唯一的兜底是界面上的说明:设置页里写清「凭据以系统密钥库保存」,
+  并且服务器地址是用户自己填的、他自己知道那台机器在不在可信网络里。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
