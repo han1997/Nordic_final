@@ -402,6 +402,23 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 }
 .section .count { font-size: var(--fs-sm); color: var(--fg-4); font-weight: 600; }
 
+/* 排序入口 —— 挂在章节头右侧,顺带说明「这一栏按什么排」。
+   做成安静的文字按钮而不是又一颗胶囊:它不是状态显示,再多一颗胶囊会把
+   章节头压重。(档位那颗之所以是胶囊,是因为它同时报着当前码率。) */
+.sort-btn {
+  margin-left: auto;
+  align-self: center;
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 30px; padding: 0 10px 0 8px;
+  border-radius: var(--r-full);
+  border: 1px solid transparent;
+  background: none;
+  font-size: var(--fs-sm); font-weight: 640;
+  color: var(--fg-3);
+  transition: color 0.18s var(--ease), background 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+.sort-btn:hover { color: var(--fg); background: var(--fill-1); border-color: var(--line); }
+
 .section .chip, .section .pill-btn { align-self: center; }
 
 .divider { height: 1px; background: var(--line); margin: 0 var(--s5); }

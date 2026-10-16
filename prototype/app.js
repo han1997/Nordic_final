@@ -53,6 +53,58 @@ function ic(name, size = 22, cls = '') {
     stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
 }
 
+/* ---------------- 排序 ----------------
+   只影响「全部专辑 / 全部歌曲」这两个列表 —— 最近添加那条轨道、常听艺人那
+   几排货架讲的是另一件事(它们本身就是按某个口径挑出来的),不跟着变。 */
+
+const ALBUM_SORTS = [
+  ['artist', '按艺人'], ['name', '按名称'], ['newest', '最近添加'], ['random', '随机'],
+];
+const SONG_SORTS = [
+  ['title', '按标题'], ['artist', '按艺人'], ['album', '按专辑'], ['duration', '按时长'],
+];
+
+/* 按当前口径取排序后的专辑 / 歌曲。 */
+const byText = (a, b) => String(a).localeCompare(String(b), 'zh');
+
+/* 随机要**稳**:每帧重抽一次的话,点个心都会让整页换序。种子存在 STATE 里,
+   只在用户重新选「随机」时换一个 —— 于是随机也是一份确定的顺序。 */
+function seededShuffle(list, seed) {
+  const hash = (str) => {
+    let h = 2166136261 ^ seed;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+    }
+    return h >>> 0;
+  };
+  return [...list].sort((a, b) => hash(a.id) - hash(b.id));
+}
+
+function sortedAlbums() {
+  const list = [...ALBUMS];
+  switch (STATE.albumSort) {
+    case 'name':   return list.sort((a, b) => byText(a.name, b.name));
+    case 'newest': return list.sort((a, b) => (b.year || 0) - (a.year || 0));
+    case 'random': return seededShuffle(list, STATE.randomSeed);
+    default:       return list.sort((a, b) => byText(a.artist, b.artist) || (b.year || 0) - (a.year || 0));
+  }
+}
+
+function sortedSongs() {
+  const list = [...SONGS];
+  switch (STATE.songSort) {
+    case 'artist':   return list.sort((a, b) => byText(a.artist, b.artist) || byText(a.title, b.title));
+    case 'album':    return list.sort((a, b) => byText(a.album, b.album) || (a.no || 0) - (b.no || 0));
+    case 'duration': return list.sort((a, b) => b.dur - a.dur);
+    default:         return list.sort((a, b) => byText(a.title, b.title));
+  }
+}
+
+function sortLabel(options, current) {
+  const hit = options.find(([id]) => id === current);
+  return hit ? hit[1] : options[0][1];
+}
+
 /* ---------------- 数据 ---------------- */
 
 const SERVER = {
@@ -167,6 +219,11 @@ const STATE = {
   serverDirty: false,           /* 表单动过 -> 保存按钮亮起来 */
   removed: false,               /* 点了「移除该服务器」 */
   toast: '',                    /* 屏幕底部的小气泡,几秒后消失 */
+  /* 排序:只影响「全部专辑 / 全部歌曲」两栏。随机用种子算,不是每帧重抽。 */
+  albumSort: 'artist',
+  songSort: 'title',
+  randomSeed: 7,
+  sortFor: 'albums',
   /* 下载:专辑页下载按钮真的往这里记一笔。原型不真拉文件,
      但队列要有进度的样子 —— 下载中 → 已完成,几个条目各在各的阶段。 */
   downloads: [],
@@ -354,7 +411,9 @@ function routeRows(routes, withCheck, pageAccent) {
         : `<div class="ms"><b>${r.ping}</b><small>ms</small></div>`;
     return `<div class="route ${sel ? 'selected' : ''}" data-route="${r.id}"
         ${withCheck ? `role="radio" aria-selected="${sel}"` : ''}>
-      ${withCheck ? `<span class="tick">${ic('check', 14)}</span>` : `<span class="dot ${r.state}"></span>`}
+      ${withCheck
+        ? `<span class="tick${sel ? ' on' : ''}">${ic('check', 14)}</span>`
+        : `<span class="dot ${r.state}"></span>`}
       <div class="grow">
         <div class="rname">${r.name}<span class="tag">${r.tag}</span></div>
         <div class="rurl">${r.url}</div>
@@ -565,8 +624,11 @@ function screenLibrary(tab = 'albums') {
         <button class="go" data-act="toggle-play">${ic(STATE.playing ? 'pause' : 'play', 20)}</button>
       </div>
       <div class="prog-line" style="margin:0 var(--s5) var(--s5)"><i style="width:${pct}%"></i></div>
-      <div class="section"><h2>全部专辑</h2><span class="count">${ALBUMS.length} 张</span></div>
-      <div class="grid-covers">${ALBUMS.map((a) => `
+      <div class="section">
+        <h2>全部专辑</h2><span class="count">${ALBUMS.length} 张</span>
+        <button class="sort-btn" data-sort-for="albums">${ic('sort', 13)} ${sortLabel(ALBUM_SORTS, STATE.albumSort)}</button>
+      </div>
+      <div class="grid-covers">${sortedAlbums().map((a) => `
         <div class="album-tile" data-album="${a.id}" data-morph>
           ${cover(a, 'sq')}
           <div><div class="name">${a.name}</div><div class="meta">${a.artist} · ${a.year}</div></div>
@@ -592,8 +654,11 @@ function screenLibrary(tab = 'albums') {
           ${ic('chevron', 18)}
         </div>`).join('')}`;
   } else if (tab === 'songs') {
-    body = `<div class="section"><h2>全部歌曲</h2><span class="count">${SONGS.length} 首</span></div>
-      ${SONGS.map((s) => songRow(s, s.id === cur.id)).join('')}`;
+    body = `<div class="section">
+        <h2>全部歌曲</h2><span class="count">${SONGS.length} 首</span>
+        <button class="sort-btn" data-sort-for="songs">${ic('sort', 13)} ${sortLabel(SONG_SORTS, STATE.songSort)}</button>
+      </div>
+      ${sortedSongs().map((s) => songRow(s, s.id === cur.id)).join('')}`;
   } else {
     body = `<div class="section"><h2>我的歌单</h2><span class="count">${PLAYLISTS.length} 个</span></div>
       ${PLAYLISTS.map((p) => `
@@ -826,7 +891,7 @@ function sheetQuality() {
               <div class="qname">${q.name}${q.tag ? `<span class="tag">${q.tag}</span>` : ''}</div>
               <div class="qdesc">${q.desc}</div>
             </div>
-            <span class="tick">${ic('check', 14)}</span>
+            <span class="tick${STATE.quality === q.id ? ' on' : ''}">${ic('check', 14)}</span>
           </div>`).join('')}
       </div>
     </div>
@@ -1259,28 +1324,51 @@ function screenSettings() {
     ${bottom(undefined, undefined, 'settings')}`;
 }
 
+/* 排序面板 —— 与转码面板同一副骨架(选项行 + 勾),不另造一种弹层。 */
+function sheetSort() {
+  const forAlbums = STATE.sortFor === 'albums';
+  const options = forAlbums ? ALBUM_SORTS : SONG_SORTS;
+  const current = forAlbums ? STATE.albumSort : STATE.songSort;
+
+  return `<div class="sheet-scrim">
+    <div class="sheet">
+      <div class="handle"></div>
+      <h2>${forAlbums ? '专辑排序' : '歌曲排序'}
+        <span>只影响「${forAlbums ? '全部专辑' : '全部歌曲'}」这一栏</span></h2>
+      <div class="sheet-body">
+        ${options.map(([id, label]) => `
+          <div class="qopt" data-sort="${id}" role="radio" aria-selected="${current === id}">
+            <div style="flex:1 1 auto"><div class="qname">${label}</div></div>
+            <span class="tick${current === id ? ' on' : ''}">${ic('check', 14)}</span>
+          </div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
 /* ---------------- 视图表 ---------------- */
 
-const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu };
+const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort };
 
 /* 弹层是叠在当前屏上的，不是某一屏专属 —— 专辑页的「队列」、设置里的
-   「默认转码质量」都要能把同一张面板揭起来。之前只有播放页拼了 overlay,
-   于是另外两处点了没反应（点了跟没点一样）。统一在这里接。 */
+   「默认转码质量」、音乐库的「排序」都要能把同一张面板揭起来。之前只有
+   播放页拼了 overlay,于是另外几处点了没反应（点了跟没点一样）——
+   所以**每一屏都走这里**,而不是逐个补。 */
 const withOverlay = (inner) => inner + (STATE.overlay && sheets[STATE.overlay] ? sheets[STATE.overlay]() : '');
 
 const VIEWS = {
-  servers:        () => shell(screenServers()),
-  'server-config':() => shell(screenServerConfig()),
-  'add-server':   () => shell(screenAddServer()),
-  'add-route':    () => shell(screenAddRoute()),
-  downloads:      () => shell(screenDownloads()),
-  'new-playlist': () => shell(screenNewPlaylist()),
-  library:        (p) => shell(screenLibrary((p && p.lib) || 'albums')),
+  servers:        () => shell(withOverlay(screenServers())),
+  'server-config':() => shell(withOverlay(screenServerConfig())),
+  'add-server':   () => shell(withOverlay(screenAddServer())),
+  'add-route':    () => shell(withOverlay(screenAddRoute())),
+  downloads:      () => shell(withOverlay(screenDownloads())),
+  'new-playlist': () => shell(withOverlay(screenNewPlaylist())),
+  library:        (p) => shell(withOverlay(screenLibrary((p && p.lib) || 'albums'))),
   album:          (p) => { const a = ALBUM_BY_ID((p && p.album) || STATE.albumId); return shell(withOverlay(screenAlbum(a.id)), { home: true, accent: a.accent, c1: a.c1 }); },
   artist:         (p) => { const ar = ARTIST_BY_ID((p && p.artist) || STATE.artistId); return shell(withOverlay(screenArtist(ar.id)), { home: true, accent: ar.accent, c1: ar.c1 }); },
   player:         () => shell(withOverlay(screenPlayer()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
   lyrics:         () => shell(withOverlay(screenLyrics()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
-  search:         () => shell(screenSearch()),
+  search:         () => shell(withOverlay(screenSearch())),
   settings:       () => shell(withOverlay(screenSettings())),
 };
 
@@ -1528,7 +1616,7 @@ function renderStage(root) {
        <body> 上，而 body 是所有点击的祖先。closest() 在没命中更近的 [data-*] 元素时
        会一路匹配到 body，于是「点遮罩关闭弹层」这条分支永远走不到（点遮罩会变成
        重新应用一次主题）。所以主题按钮改用独立属性 data-set-theme。 */
-    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-dl-del],[data-hue],[data-route-tag]');
+    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-dl-del],[data-hue],[data-route-tag],[data-sort-for],[data-sort]');
     if (t) {
       const d = t.dataset;
       if (d.back !== undefined) return back();
@@ -1558,6 +1646,15 @@ function renderStage(root) {
       if (d.kindCfg) { STATE.serverKindCfg = d.kindCfg; STATE.serverDirty = true; return render(); }
       if (d.quality) { STATE.quality = d.quality; STATE.overlay = ''; return render(); }
       if (d.sheet) { STATE.overlay = STATE.overlay === d.sheet ? '' : d.sheet; return render(); }
+      if (d.sortFor) { STATE.sortFor = d.sortFor; STATE.overlay = 'sort'; return render(); }
+      if (d.sort) {
+        if (STATE.sortFor === 'albums') STATE.albumSort = d.sort;
+        else STATE.songSort = d.sort;
+        /* 重新选一次「随机」就换一副牌 —— 同一副牌点来点去都是一样的顺序。 */
+        if (d.sort === 'random') STATE.randomSeed = (STATE.randomSeed * 7 + 13) % 9973;
+        STATE.overlay = '';
+        return render();
+      }
       if (d.go) return go(d.go);
       /* 三处的心共用一份本地名单。传进来的 id 必须来自当前这一屏，
          否则换页后按下会改到上一屏的对象上 —— 卡片上的心变实，播放页却不认。 */
