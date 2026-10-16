@@ -308,7 +308,9 @@ function tabbar(active) {
   ).join('')}</nav>`;
 }
 
-function dock(song = currentSong(), pct = progressOf(song, STATE.elapsed)) {
+/* 播放坞 —— 现在只是托盘里的一行(见下)。
+   进度线不在这儿:它挪到托盘中间那条分隔线上,整块东西一起表示「正在放」。 */
+function dock(song = currentSong()) {
   const a = albumOf(song);
   return `<div class="dock" data-go="player">
     ${cover(a, '', 'width:46px;height:46px;border-radius:13px')}
@@ -318,12 +320,23 @@ function dock(song = currentSong(), pct = progressOf(song, STATE.elapsed)) {
     </div>
     <button class="icon-btn" data-act="toggle-play">${ic(STATE.playing ? 'pause' : 'play', 25)}</button>
     <button class="icon-btn" data-act="next">${ic('next', 23)}</button>
-    <div class="dock-progress"><i style="width:${pct}%"></i></div>
   </div>`;
 }
 
-const bottom = (song, pct, active) =>
-  `<div class="bottomstack">${dock(song, pct)}${tabbar(active)}</div>`;
+/* 底部那一片:播放坞与标签栏**合成一颗托盘**(参考飞牛播放器那种一体式下方)。
+   原先两块各自一颗胶囊、中间留 8px 缝 —— 两层玻璃、两条边框、两道光影,
+   读起来是两个各自独立的东西,而它们本来就是一件事:你现在在听什么、
+   以及去哪儿。合成一颗之后:一层玻璃、一条外框,中间只用一条分隔线分开,
+   那条线同时就是**进度**:播放坞与标签栏之间那条细线从左往右长,
+   整块托盘于是自己说明「正在放」。 */
+const bottom = (song, pct, active) => {
+  const bar = pct == null ? progressOf(currentSong(), STATE.elapsed) : pct;
+  return `<div class="bottomstack"><div class="tray">
+    ${dock(song)}
+    <div class="tray-line"><i style="width:${bar}%"></i></div>
+    ${tabbar(active)}
+  </div></div>`;
+};
 
 /* ---------------- 服务器与线路 ---------------- */
 
@@ -1776,9 +1789,9 @@ function renderStage(root) {
       return render();
     }
     const pct = progressOf(s, STATE.elapsed);
-    /* 坞底细线与库页英雄卡下的细线 —— 这两条本来就是「现在就播着」的进度，
-       不走就等于明说这是静止截图。 */
-    el.querySelectorAll('.dock-progress i, .prog-line i')
+    /* 托盘里那条分隔线(播放坞与标签栏之间,兼作进度)与库页英雄卡下的细线 ——
+       这两条本来就是「现在就播着」的进度,不走就等于明说这是静止截图。 */
+    el.querySelectorAll('.tray-line i, .prog-line i')
       .forEach((x) => { x.style.width = `${pct}%`; });
     const track = el.querySelector('[data-seek]');
     if (track) {

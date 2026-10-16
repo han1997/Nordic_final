@@ -907,19 +907,17 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
      正常流里的话,玻璃后面是空的,模糊出来只是一块灰。 */
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column;
   padding: 0 10px 10px;
   z-index: 12;
 }
 
-/* 列表补一段下边距,免得最后一行被压在播放坞下面 */
-.screen:has(.bottomstack) .scroll { padding-bottom: 150px; }
-
-.dock {
-  height: 62px;
-  border-radius: var(--r-full);
-  display: flex; align-items: center; gap: var(--s3);
-  padding: 0 8px;
+/* 托盘 —— 播放坞 + 标签栏共享的那**一层**玻璃。
+   两块分开时各有一圈边框与阴影,合起来之后这些只该有一份;
+   圆角取 r-xl 而不是全圆:一整块两行的东西做成胶囊,上下缘会鼓得像药丸。 */
+.tray {
+  border-radius: var(--r-xl);
+  overflow: hidden;
   background: var(--glass);
   -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
   backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
@@ -927,8 +925,32 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   box-shadow:
     inset 0 1px 0 var(--glass-rim),
     0 20px 40px -20px var(--depth);
+}
+
+/* 两行之间那条细线,同时是进度条 —— 见 app.js 里 bottom() 的说明。 */
+.tray-line {
   position: relative;
+  height: 2px;
+  margin: 0 var(--s4);
+  border-radius: var(--r-full);
+  background: var(--fill-2);
   overflow: hidden;
+}
+.tray-line i {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 80%, transparent);
+  transition: width 0.25s linear;
+}
+
+/* 列表补一段下边距,免得最后一行被压在播放坞下面 */
+.screen:has(.bottomstack) .scroll { padding-bottom: 150px; }
+
+.dock {
+  height: 60px;
+  display: flex; align-items: center; gap: var(--s3);
+  padding: 0 8px;
+  cursor: pointer;
 }
 .dock .cover { width: 46px; height: 46px; border-radius: 13px; }
 .dock .grow { flex: 1 1 auto; min-width: 0; }
@@ -941,31 +963,10 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   font-size: var(--fs-xs); color: var(--fg-3); margin-top: 3px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.dock .dock-progress {
-  position: absolute;
-  left: 12px; right: 12px; bottom: 0;
-  height: 2px; border-radius: 2px;
-  background: var(--fill-2);
-}
-.dock .dock-progress i {
-  display: block; height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 80%, transparent);
-}
-
 .tabbar {
-  height: 66px;
-  border-radius: var(--r-full);
+  height: 62px;
   display: flex; align-items: center;
   padding: 0 6px;
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
-  border: 1px solid var(--line-2);
-  box-shadow:
-    inset 0 1px 0 var(--glass-rim),
-    0 20px 40px -20px var(--depth);
 }
 .tabbar button {
   flex: 1 1 0;
