@@ -21,6 +21,7 @@ nodes() {
   dump
   python - "$TMP/ui.xml" <<'PY'
 import re, sys
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 s = open(sys.argv[1], encoding='utf-8', errors='replace').read()
 for m in re.finditer(r'<node[^>]*?/?>', s):
     n = m.group(0)
@@ -44,6 +45,7 @@ case "${1:-nodes}" in
   nodes) nodes ;;
   tap)   dump; cx=$(python - "$TMP/ui.xml" "$2" <<'PY'
 import re, sys
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 s = open(sys.argv[1], encoding='utf-8', errors='replace').read()
 want = sys.argv[2]
 for m in re.finditer(r'<node[^>]*?/?>', s):
