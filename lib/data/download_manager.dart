@@ -456,6 +456,8 @@ class DownloadManager extends ChangeNotifier {
         format: DownloadJob._formatOf(job.request.songs),
         bytes: completedBytes,
         files: files,
+        // 曲目信息随身带一份:断网时下载管理里要能列出来点着播(见 DownloadRecord.tracks)。
+        tracks: job.request.songs,
         cover: cover,
         coverArtId: job.request.coverArtId,
         completedAt: DateTime.now(),

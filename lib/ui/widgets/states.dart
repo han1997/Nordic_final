@@ -56,6 +56,8 @@ class ErrorState extends StatelessWidget {
     this.isAuthFailure = false,
     this.onRetry,
     this.onOpenSettings,
+    this.hint,
+    this.onHintTap,
     this.topPadding = 120,
   });
 
@@ -63,6 +65,11 @@ class ErrorState extends StatelessWidget {
   final bool isAuthFailure;
   final VoidCallback? onRetry;
   final VoidCallback? onOpenSettings;
+
+  /// 卡片下的一句话(可选)。给「还有别的路可走」用 —— 比如断网时
+  /// 本机已下好的音乐就在下载管理里。
+  final String? hint;
+  final VoidCallback? onHintTap;
   final double topPadding;
 
   @override
@@ -127,6 +134,21 @@ class ErrorState extends StatelessWidget {
               ],
             ),
           ),
+          if (hint != null) ...[
+            const SizedBox(height: NordicSpace.s4),
+            GestureDetector(
+              onTap: onHintTap,
+              child: Text(
+                hint!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      height: 1.55,
+                      // 能点的提示要看得出来能点。
+                      color: onHintTap == null ? null : context.accentSafe,
+                    ),
+              ),
+            ),
+          ],
           if (isAuthFailure) ...[
             const SizedBox(height: NordicSpace.s4),
             Text(

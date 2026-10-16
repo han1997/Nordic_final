@@ -3,11 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../../data/download_manager.dart';
 import '../../data/download_store.dart';
+import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
+import '../widgets/cover.dart';
+import '../widgets/rows.dart';
 
 /// 下载管理。
 ///
@@ -15,6 +18,9 @@ import '../widgets/components.dart';
 /// 进度与体积来自实际的传输,失败会带上服务器给的原因。
 /// **已完成的条目播放时走本机文件** —— 断网也能听,那份索引同时喂给
 /// 播放层(见 `playback/audio_handler.dart` 的 `playbackOriginFor`)。
+///
+/// 这一屏也是**断网时的落脚点**:库刷不出来时,已下好的东西从这里点开就能播,
+/// 曲目清单来自下载记录自带的元信息(见 [DownloadRecord.tracks])。
 class DownloadsScreen extends StatelessWidget {
   const DownloadsScreen({super.key});
 
@@ -90,6 +96,9 @@ class DownloadsScreen extends StatelessWidget {
                                       height: 1, thickness: 1, color: t.line),
                                 _DownloadRow(
                                   job: jobs[i],
+                                  onOpen: _openable(jobs[i])
+                                      ? () => _openTask(context, jobs[i].record!)
+                                      : null,
                                   onRemove: () =>
                                       _remove(context, state, jobs[i]),
                                   onRetry: () =>
@@ -102,12 +111,36 @@ class DownloadsScreen extends StatelessWidget {
                       ),
                       ListNote(
                         '下载走当前线路,存到本机的 ${DownloadStore.label} 目录。'
-                        '已完成的条目离线也能播。',
+                        '已完成的条目点开就能播,断网也一样。',
                       ),
                     ],
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 这条任务能不能点开 —— 下完了、而且记下了曲目清单才算数。
+  /// (老版本的记录里没有 tracks,那些条目只显示进度,点了没反应不如不给点。)
+  static bool _openable(DownloadJob job) =>
+      job.isDone && (job.record?.tracks.isNotEmpty ?? false);
+
+  /// 点开一条已下好的内容:列出它带着的曲目,点哪首从哪首开始放。
+  ///
+  /// 队列就是这一整条,所以「从第一首开始」不用另设一个按钮 ——
+  /// 列表本身就摆在那里。
+  void _openTask(BuildContext context, DownloadRecord record) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => NordicScrim(
+        onTap: () => Navigator.of(sheetContext).pop(),
+        child: NordicSheet(
+          title: record.name,
+          subtitle: '${record.detail} · 已完成 · ${record.sizeLabel}',
+          child: _OfflineTracks(record: record),
+        ),
       ),
     );
   }
@@ -170,18 +203,22 @@ class _DownloadRow extends StatelessWidget {
     required this.job,
     required this.onRemove,
     required this.onRetry,
+    this.onOpen,
   });
 
   final DownloadJob job;
   final VoidCallback onRemove;
   final VoidCallback onRetry;
 
+  /// 点开这一条(下好了才有)。null 表示这条打不开 —— 没下完的点了也没东西可听。
+  final VoidCallback? onOpen;
+
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
     final accentSafe = context.accentSafe;
 
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
       child: Row(
@@ -228,6 +265,10 @@ class _DownloadRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: NordicSpace.s3),
+          // 能点开的给一个「进得去」的记号 —— 一行能点的东西看不出来能点,
+          // 等于没做。
+          if (onOpen != null)
+            Icon(Icons.chevron_right, size: 18, color: t.fg3),
           if (job.state == DownloadState.failed)
             IconButtonRound(
               icon: Icons.refresh,
@@ -246,6 +287,9 @@ class _DownloadRow extends StatelessWidget {
         ],
       ),
     );
+
+    if (onOpen == null) return row;
+    return InkWell(onTap: onOpen, child: row);
   }
 
   IconData get _icon => switch (job.state) {
@@ -256,4 +300,52 @@ class _DownloadRow extends StatelessWidget {
         DownloadState.waitingNetwork => Icons.cloud_off,
         DownloadState.queued => Icons.schedule,
       };
+}
+
+/// 一条已下好的内容里的曲目 —— 从下载记录自带的元信息里读,
+/// **不查服务器**:断网时它得照样列得出来,这正是这一屏存在的理由。
+class _OfflineTracks extends StatelessWidget {
+  const _OfflineTracks({required this.record});
+
+  final DownloadRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.read<AppState>();
+    final playable = context.watch<PlaybackController>();
+    final currentId = playable.state.song?.id;
+
+    return ConstrainedBox(
+      // 一张专辑几十首,纸不能长到屏幕外。
+      constraints: const BoxConstraints(maxHeight: 380),
+      child: ListView.builder(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: NordicSpace.s4),
+        itemCount: record.tracks.length,
+        itemBuilder: (context, i) {
+          final song = record.tracks[i];
+          final isCurrent = song.id == currentId;
+          return NordicRow(
+            height: 60,
+            leading: Cover(
+              coverArtId: song.coverArtId,
+              seed: song.albumId,
+              // 本机那份封面优先 —— 这张图就在隔壁目录里。
+              uri: state.coverUriFor(song.coverArtId, size: 128),
+              size: 42,
+              radius: 10,
+              showShadow: false,
+            ),
+            title: song.title,
+            titleColor: isCurrent ? context.accentSafe : null,
+            subtitle: song.artist,
+            onTap: () {
+              Navigator.of(context).pop();
+              playable.playAll(record.tracks, index: i);
+            },
+          );
+        },
+      ),
+    );
+  }
 }

@@ -20,6 +20,7 @@ class DownloadRecord {
     required this.bytes,
     required this.files,
     required this.completedAt,
+    this.tracks = const [],
     this.cover,
     this.coverArtId,
   });
@@ -40,6 +41,12 @@ class DownloadRecord {
 
   /// 曲目 id → 相对根目录的路径。
   final Map<String, String> files;
+
+  /// 下下来的曲目本身的信息。
+  ///
+  /// [files] 只答「在哪」,不答「是什么」—— 断网时没有任何地方能问服务器
+  /// 这首叫什么,而下载管理里要能列出来点着播。所以清单随身带一份。
+  final List<Song> tracks;
 
   /// 封面图在磁盘上的相对路径。没下到就是 null。
   final String? cover;
@@ -63,6 +70,7 @@ class DownloadRecord {
         'format': format,
         'bytes': bytes,
         'files': files,
+        'tracks': [for (final t in tracks) t.toJson()],
         'cover': cover,
         'coverArtId': coverArtId,
         'completedAt': completedAt.toIso8601String(),
@@ -82,6 +90,10 @@ class DownloadRecord {
           if (e.key is String && e.value is String)
             e.key as String: e.value as String,
       },
+      tracks: [
+        for (final t in (json['tracks'] as List? ?? const []))
+          if (t is Map) Song.fromJson(t.cast<String, dynamic>()),
+      ],
       cover: json['cover'] as String?,
       coverArtId: json['coverArtId'] as String?,
       completedAt:

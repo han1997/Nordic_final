@@ -43,6 +43,7 @@ void main() {
       format: 'FLAC',
       bytes: 4,
       files: {'s1': 'dl-album-al-1/01 - 曲目.flac'},
+      tracks: [song('s1')],
       cover: 'dl-album-al-1/cover.jpg',
       coverArtId: 'cover-1',
       completedAt: DateTime(2026, 10, 16),
@@ -56,6 +57,20 @@ void main() {
     expect(store.isAvailable, isTrue);
     expect(store.localPathFor('s1'), file.path);
     expect(store.localPathFor('没下过的曲子'), isNull);
+  });
+
+  test('曲目信息跟着记录一起落盘 —— 断网时下载管理靠它列清单', () async {
+    await givenDownloaded();
+
+    final reopened = await DownloadStore.open(root: root);
+    final track = reopened.records.single.tracks.single;
+
+    // 不是「只知道有个 id」:名字、时长、封面都要在,否则离线时那一屏
+    // 只能列出一串 id,点着播也没法显示在播什么。
+    expect(track.id, 's1');
+    expect(track.title, '曲目');
+    expect(track.artist, '艺人');
+    expect(track.duration, Duration.zero);
   });
 
   test('封面按 coverArtId 找 —— 界面就是这么问的', () async {

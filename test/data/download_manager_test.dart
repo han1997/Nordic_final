@@ -151,6 +151,21 @@ void main() {
       expect(reopened.localPathFor('s2'), isNotNull);
     });
 
+    test('下完后记录里带着曲目信息 —— 没有服务器也列得出来', () async {
+      final manager = managerWith(fn: transfer(<Uri>[]));
+
+      final job = await manager.enqueue(
+        DownloadRequest.album(album, [song('s1', title: '第一首'), song('s2', title: '第二首')]),
+      );
+      await settle(manager);
+
+      // 断网时这一屏要从记录里读出标题 —— 服务器是问不到的。
+      expect(job.record?.tracks.map((t) => t.title), ['第一首', '第二首']);
+
+      final restored = (await DownloadStore.open(root: root)).records.single;
+      expect(restored.tracks.map((t) => t.title), ['第一首', '第二首']);
+    });
+
     test('封面跟着一起下,并且界面按 coverArtId 问得到', () async {
       final manager = managerWith(fn: transfer(<Uri>[]));
 

@@ -166,6 +166,11 @@ class AppState extends ChangeNotifier {
   bool _errorIsAuth = false;
   bool get errorIsAuth => _errorIsAuth;
 
+  /// 错误是不是**网络**问题。这种时候本机已下好的内容是唯一能进去的地方,
+  /// 界面据此提示一句(见 `ui/screens/library_screen.dart`)。
+  bool _errorIsNetwork = false;
+  bool get errorIsNetwork => _errorIsNetwork;
+
   LibrarySnapshot _library = LibrarySnapshot.empty;
   LibrarySnapshot get library => _library;
 
@@ -181,6 +186,7 @@ class AppState extends ChangeNotifier {
       _phase = LoadPhase.loading;
       _error = null;
       _errorIsAuth = false;
+      _errorIsNetwork = false;
       notifyListeners();
     }
 
@@ -203,6 +209,7 @@ class AppState extends ChangeNotifier {
       _phase = LoadPhase.ready;
       _error = null;
       _errorIsAuth = false;
+      _errorIsNetwork = false;
       // 顺手把收藏名单取回来 —— 界面上的心形要显示当前状态,
       // 否则每次重绘都从「未收藏」开始,点了才变,看着像没记住。
       unawaited(refreshStarred());
@@ -210,10 +217,12 @@ class AppState extends ChangeNotifier {
       _phase = LoadPhase.failed;
       _error = e.message;
       _errorIsAuth = e.isAuthFailure;
+      _errorIsNetwork = e.isNetworkFailure;
     } catch (e) {
       _phase = LoadPhase.failed;
       _error = '$e';
       _errorIsAuth = false;
+      _errorIsNetwork = false;
     }
     notifyListeners();
   }
@@ -467,6 +476,26 @@ class AppState extends ChangeNotifier {
   /// 也据此显示 —— 两处各判一次迟早会不一致。
   bool isDownloaded(String songId) => downloadManager.isDownloaded(songId);
 
+
+  /// 封面地址,**本机优先**。
+  ///
+  /// 给「没有服务器也要显示封面」的地方用 —— 下载管理就是那个场景:
+  /// 断网时它仍要能列出已下好的内容,而封面本机就有一份。
+  /// 界面其余地方的封面走 [SubsonicRepository.coverUri](同样本机优先)。
+  Uri? coverUriFor(String? coverArtId, {int size = 512}) {
+    if (coverArtId == null || coverArtId.isEmpty) return null;
+
+    final local = downloadManager.coverPathForArt(coverArtId);
+    if (local != null) return Uri.file(local);
+
+    final repo = _repository;
+    if (repo == null) return null;
+    try {
+      return repo.coverUri(coverArtId, size: size);
+    } on SubsonicException {
+      return null;
+    }
+  }
 
   /// 下载整张专辑的曲目。[songs] 必须是**已加载出来的曲目表** ——
   /// 只报个曲目数就下发,下载器无从知道要拉哪些文件。

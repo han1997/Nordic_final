@@ -137,6 +137,47 @@ class Song {
     return bitRate == null ? fmt : '$fmt · $bitRate kbps';
   }
 
+  /// 落盘用 —— 下载记录里跟着存一份曲目信息。
+  ///
+  /// **为什么下载要自己带一份**:断网时没有任何地方能问服务器「这首叫什么」,
+  /// 而下载管理里要能列出已下好的内容、点着就能播。那份清单只能随身带着,
+  /// 否则「下载了也听不了」——库里刷不出来,就哪儿都进不去。
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'artist': artist,
+        'album': album,
+        'albumId': albumId,
+        'artistId': artistId,
+        'coverArtId': coverArtId,
+        'track': track,
+        'duration': duration.inSeconds,
+        'suffix': suffix,
+        'bitRate': bitRate,
+        'contentType': contentType,
+        'sizeBytes': sizeBytes,
+        'year': year,
+        'genre': genre,
+      };
+
+  static Song fromJson(Map<String, dynamic> json) => Song(
+        id: json['id'] as String,
+        title: json['title'] as String? ?? '未知曲目',
+        artist: json['artist'] as String? ?? '未知艺人',
+        album: json['album'] as String? ?? '未知专辑',
+        albumId: json['albumId'] as String? ?? '',
+        artistId: json['artistId'] as String?,
+        coverArtId: json['coverArtId'] as String?,
+        track: (json['track'] as num?)?.toInt(),
+        duration: Duration(seconds: (json['duration'] as num?)?.toInt() ?? 0),
+        suffix: json['suffix'] as String?,
+        bitRate: (json['bitRate'] as num?)?.toInt(),
+        contentType: json['contentType'] as String?,
+        sizeBytes: (json['sizeBytes'] as num?)?.toInt(),
+        year: (json['year'] as num?)?.toInt(),
+        genre: json['genre'] as String?,
+      );
+
   @override
   bool operator ==(Object other) => other is Song && other.id == id;
 

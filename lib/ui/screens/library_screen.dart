@@ -101,11 +101,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
       case LoadPhase.loading:
         return const LoadingState();
       case LoadPhase.failed:
+        // 断网时**已经下到本机的那批还在**:指一句去哪找,不然用户会以为
+        // 离线就什么都用不了。(库里没有下过东西时不提这一句 —— 空跑一趟更烦。)
+        final offlineReady =
+            state.errorIsNetwork && state.downloads.any((j) => j.isDone);
         return ErrorState(
           message: state.error ?? '读取失败',
           isAuthFailure: state.errorIsAuth,
           onRetry: () => state.loadLibrary(),
           onOpenSettings: () => AppRoutes.openServers(context),
+          hint: offlineReady ? '本机已下载的音乐还在,去「下载管理」就能离线听。' : null,
+          onHintTap:
+              offlineReady ? () => AppRoutes.openDownloads(context) : null,
         );
       case LoadPhase.idle:
       case LoadPhase.ready:
