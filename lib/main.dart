@@ -67,7 +67,11 @@ Future<void> main() async {
   //
   // 加超时兜底:平台侧若因权限 / service 声明缺失而挂住,`AudioService.init`
   // 会**静默不返回**(不抛错),界面就停在启动图上无从查起。
-  // 兜底成一个空处理器后应用照样能用,只是没有通知栏控制。
+  //
+  // 兜底不是「没有播放层」,而是**直接建一个处理器**(绕过 AudioService.init):
+  // 队列 / 播放 / 本地文件都能用,少的只是通知栏与锁屏那层控制。这一点很要紧 ——
+  // 界面处处都假设播放层在场(坞、播放页、歌曲菜单),真给了 null 就是整屏报错,
+  // 「应用照样能用」这句就成了空话。
   NordicAudioHandler? audioHandler;
   try {
     audioHandler = await startAudioService(
@@ -78,14 +82,17 @@ Future<void> main() async {
     ).timeout(const Duration(seconds: 8));
     await audioHandler.configureSession();
   } on TimeoutException catch (e) {
-    debugPrint('后台播放服务启动超时,应用继续但没有通知栏控制:$e');
+    debugPrint('后台播放服务启动超时,退到没有通知栏控制的播放层:$e');
   } catch (e) {
-    debugPrint('后台播放服务启动失败:$e');
+    debugPrint('后台播放服务启动失败,退到没有通知栏控制的播放层:$e');
   }
 
-  final playback = audioHandler == null
-      ? null
-      : PlaybackController(audioHandler);
+  audioHandler ??= NordicAudioHandler(
+    () => appState.repository,
+    quality,
+    downloads: downloads,
+  );
+  final playback = PlaybackController(audioHandler);
 
   runApp(
     MultiProvider(
@@ -94,11 +101,11 @@ Future<void> main() async {
         // QualityController 是 ValueNotifier(即 ChangeNotifier),
         // 必须走 ChangeNotifierProvider —— 放 Provider 会被 debug 检查拦下。
         ChangeNotifierProvider<QualityController>.value(value: quality),
-        if (playback != null)
-          ChangeNotifierProvider<PlaybackController>.value(value: playback),
-        // 可空的那一份给「应用退到后台」这条规则用:播放层起不来时它是 null,
-        // 那件事得有地方表达,而不是让查询抛一个「找不到 provider」。
-        Provider<PlaybackController?>.value(value: playback),
+        // 播放层**无条件在场**(见上面的兜底)—— 界面各处都按「它一定有」取用。
+        // 早先这里挂过一份可空的注册,好让查询不抛异常;那是错的:
+        // `Provider` 不监听 notifier,谁按可空那份 watch,播放状态变化时
+        // 就不会重建 —— 播放坞正是这么消失的。
+        ChangeNotifierProvider<PlaybackController>.value(value: playback),
         Provider<ConfigStore>.value(value: configStore),
         Provider<CredentialStore>.value(value: credentialStore),
       ],

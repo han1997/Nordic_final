@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
-import 'package:nordic/playback/playback_controller.dart';
 import 'package:nordic/theme/accent.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/theme_mode.dart';
@@ -115,54 +113,46 @@ void main() {
     expect(image.image, isA<NetworkImage>());
   });
 
-  group('沉浸页上的浮动胶囊', () {
-    /// 播放层可能起不来(见 main.dart 的兜底),所以坞查的是**可空**的那一份。
-    /// 这里就按「没有播放层」搭一棵树 —— 顺带把那条降级路径钉住。
-    Widget harness({required bool showNav, Widget? child}) => MultiProvider(
-          providers: [Provider<PlaybackController?>.value(value: null)],
-          child: MaterialApp(
-            theme: NordicTheme.build(NordicTokens.dark),
-            home: ImmersiveScaffold(
-              accent: NordicAccent.derived('al-1'),
-              showNav: showNav,
-              child: child ?? const SizedBox.shrink(),
+  group('底部胶囊', () {
+    // 只造胶囊本身(`showDock: false`),不造播放坞 —— 坞背后是一个真的
+    // AudioPlayer,而 widget 测试的 FakeAsync 里等不到平台侧的回话。
+    // 坞的行为由 `test/playback/playback_test.dart` 与真机承担。
+    Widget harness({required AppTab? active, required bool showDock}) =>
+        MaterialApp(
+          theme: NordicTheme.build(NordicTokens.dark),
+          home: Scaffold(
+            body: Stack(
+              children: [
+                BottomStack(
+                  activeTab: active,
+                  showDock: showDock,
+                  onTabSelected: (tab) => pendingTab.value = tab,
+                ),
+              ],
             ),
           ),
         );
 
     setUp(() => pendingTab.value = null);
 
-    testWidgets('专辑 / 艺人 / 服务器这类页面也浮着标签栏 —— 与原型一致', (tester) async {
-      await tester.pumpWidget(harness(showNav: true));
+    testWidgets('三颗 tab 都在;不属于任何 tab 的页面谁都不高亮', (tester) async {
+      // 专辑 / 艺人 / 服务器 / 歌单这几屏浮的就是这一颗(见 ImmersiveScaffold
+      // 的 showNav),它们不属于任何一个 tab。
+      await tester.pumpWidget(harness(active: null, showDock: false));
 
       for (final label in ['音乐库', '搜索', '设置']) {
         expect(find.text(label), findsOneWidget);
       }
-      // 这些屏不属于任何 tab,谁都不该高亮。
       expect(pendingTab.value, isNull);
     });
 
-    testWidgets('不给胶囊的页面(播放 / 歌词)底下就是干净的', (tester) async {
-      await tester.pumpWidget(harness(showNav: false));
-
-      expect(find.text('音乐库'), findsNothing);
-    });
-
-    testWidgets('点胶囊上的 tab:请主壳切过去', (tester) async {
-      await tester.pumpWidget(harness(showNav: true));
+    testWidgets('点胶囊上的 tab 会请主壳切过去', (tester) async {
+      await tester.pumpWidget(harness(active: AppTab.library, showDock: false));
 
       await tester.tap(find.text('搜索'));
       await tester.pump();
 
       expect(pendingTab.value, AppTab.search);
-    });
-
-    testWidgets('没有播放层时不崩 —— 坞整个不出现', (tester) async {
-      await tester.pumpWidget(harness(showNav: true));
-
-      expect(tester.takeException(), isNull);
-      // 坞不在,但标签栏还在:浏览不该因为播放服务起不来而瘫痪。
-      expect(find.text('设置'), findsOneWidget);
     });
   });
 

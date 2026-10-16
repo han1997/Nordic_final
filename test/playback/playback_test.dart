@@ -7,6 +7,9 @@ import 'package:nordic/playback/playback_controller.dart';
 import 'package:nordic/playback/quality.dart';
 
 void main() {
+  // 造处理器会碰 AudioSession 的平台通道,先起绑定。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('转码档位', () {
     test('原音档不传任何转码参数', () {
       // 关键:传了 format 就等于转码,哪怕码率写得很高也是重编码过的一道。
@@ -77,6 +80,20 @@ void main() {
       expect(failed.copyWith(clearError: true).error, isNull);
       // 不显式清除时保留 —— 否则重绘一次错误提示就没了。
       expect(failed.copyWith(playing: true).error, '连不上');
+    });
+  });
+
+  group('播放层无条件在场', () {
+    test('不经过 AudioService.init 也能建出处理器 —— main.dart 的兜底路径', () {
+      // 界面处处按「播放层一定在」取用(坞 / 播放页 / 歌曲菜单),所以
+      // AudioService.init 挂住时必须能退到这条路,而不是给界面一个 null。
+      final handler = NordicAudioHandler(() => null, QualityController());
+
+      expect(handler.songs, isEmpty);
+      expect(handler.currentSong, isNull);
+      expect(handler.quality, QualityOption.fallback);
+
+      handler.player.dispose();
     });
   });
 

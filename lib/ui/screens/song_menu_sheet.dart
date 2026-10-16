@@ -23,9 +23,7 @@ Future<void> showSongMenu(
   VoidCallback? onRemoveFromPlaylist,
 }) {
   final appState = context.read<AppState>();
-  // 播放层可能压根没起来(audio_service 初始化失败,见 main.dart 的兜底)。
-  // 那时整张纸照样该能打开 —— 收藏与下载不依赖播放器,少了那两条就是。
-  final playable = context.read<PlaybackController?>();
+  final playable = context.read<PlaybackController>();
   final starred = appState.isSongStarred(song.id);
   final downloaded = appState.isDownloaded(song.id);
 
@@ -79,24 +77,22 @@ Future<void> showSongMenu(
                   showPlaylistPicker(context, song: song);
                 },
               ),
-              if (playable != null) ...[
-                NordicMenuRow(
-                  icon: Icons.playlist_play,
-                  label: '下一首播放',
-                  onTap: () {
-                    close();
-                    playable.playNext(song);
-                  },
-                ),
-                NordicMenuRow(
-                  icon: Icons.queue_music,
-                  label: '加入播放队列',
-                  onTap: () {
-                    close();
-                    playable.append(song);
-                  },
-                ),
-              ],
+              NordicMenuRow(
+                icon: Icons.playlist_play,
+                label: '下一首播放',
+                onTap: () {
+                  close();
+                  playable.playNext(song);
+                },
+              ),
+              NordicMenuRow(
+                icon: Icons.queue_music,
+                label: '加入播放队列',
+                onTap: () {
+                  close();
+                  playable.append(song);
+                },
+              ),
               NordicMenuRow(
                 icon: Icons.album_outlined,
                 label: '查看专辑',

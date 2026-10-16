@@ -75,12 +75,10 @@ class _PlayerDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-
-    // 播放层可能压根没起来(audio_service 初始化失败,见 main.dart 的兜底)。
-    // 那种情况下应用照样该能浏览 —— 查可空的那一份,坞整个不出现。
-    final playback = context.watch<PlaybackController?>();
-    if (playback == null) return const SizedBox.shrink();
-
+    // 必须 watch **这一份**:它是 ChangeNotifierProvider,播放状态一变就重建。
+    // (早先这里查过一份可空的注册,那份是普通 Provider,不监听通知 ——
+    //  坞于是永远停在「还没开始播」的样子,放起歌来也不出现。)
+    final playback = context.watch<PlaybackController>();
     final song = playback.state.song;
     // 还没放过任何东西时不占位 —— 空坞是一块没有意义的玻璃。
     if (song == null) return const SizedBox.shrink();

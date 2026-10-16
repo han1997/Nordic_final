@@ -75,11 +75,7 @@ class _BackgroundPlayGuardState extends State<_BackgroundPlayGuard>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.paused) return;
-    // 播放层可能压根没起来(平台侧没建出后台服务)—— 那时也没什么可暂停的。
-    // 这里用可空的 provider 查询,而不是 try/catch 一个「找不到 provider」。
-    final playback = context.read<PlaybackController?>();
-    if (playback == null) return;
-
+    final playback = context.read<PlaybackController>();
     pauseWhenBackgrounded(
       backgroundPlay: context.read<AppState>().backgroundPlay,
       pause: playback.pause,
