@@ -650,27 +650,24 @@ function screenAlbum(id) {
     <div class="appbar nav">
       <button class="icon-btn" data-back>${ic('back', 22)}</button>
       <span class="spacer"></span>
-      <button class="icon-btn quiet" data-act="dl-album">${ic('download', 21)}</button>
       <button class="icon-btn quiet" data-menu-for="album">${ic('more', 20)}</button>
     </div>
     <div class="scroll">
-      <div class="album-head">
-        ${cover(a, '', 'width:140px;height:140px;border-radius:24px')}
-        <div style="min-width:0">
-          <div class="title">${a.name}</div>
-          ${artistIdOf(a.artist)
-            ? `<div class="artist" data-artist="${artistIdOf(a.artist)}">${a.artist}</div>`
-            : `<div class="artist inert">${a.artist}</div>`}
-          <div class="meta"><span>${a.year}</span>·<span>${a.count} 首</span>·<span>FLAC 无损</span></div>
-        </div>
+      <!-- 向歌词页看齐:居中、留白、只有一件主事。
+           原先一行四个按钮(播放 / 随机 / 收藏 / 队列)把封面挤到左上角,
+           整屏读起来全是控件 —— 现在随机与收藏进了「⋯」,
+           播放一行独占,下面的曲目也不再被一条分隔线断开。 -->
+      <div class="album-hero">
+        ${cover(a, '', 'width:168px;height:168px;border-radius:26px')}
+        <div class="title">${a.name}</div>
+        ${artistIdOf(a.artist)
+          ? `<div class="artist" data-artist="${artistIdOf(a.artist)}">${a.artist}</div>`
+          : `<div class="artist inert">${a.artist}</div>`}
+        <div class="meta"><span>${a.year}</span>·<span>${a.count} 首</span>·<span>FLAC 无损</span></div>
       </div>
-      <div class="action-row">
+      <div class="album-play">
         <button class="btn primary" data-song="${firstId}">${ic('play', 20)} 播放</button>
-        <button class="icon-btn halo" style="width:48px;height:48px" data-act="shuffle">${ic('shuffle', 20)}</button>
-        <button class="icon-btn halo" style="width:48px;height:48px;color:${faved ? 'var(--accent-safe)' : ''}" data-act="fav-album">${ic(faved ? 'heartF' : 'heart', 20)}</button>
-        <button class="icon-btn halo" style="width:48px;height:48px" data-sheet="queue">${ic('queue', 20)}</button>
       </div>
-      <div class="divider"></div>
       ${rows}
       ${more}
       <div style="height:var(--s5)"></div>
@@ -757,8 +754,12 @@ function screenPlayer() {
     </div>
 
     <div class="player-hero">
-      <div class="hero-stack">
-        <div class="vinyl${STATE.playing ? '' : ' paused'}" aria-hidden="true"><i></i></div>
+      <!-- 封面即入口:点它翻到歌词,歌词页点回来。背后不再有黑胶盘面 ——
+           那一圈盘面是为了「转起来表示在放」,但它也把封面挤窄了,
+           而播放状态本来就由播放键与进度条说清了。 -->
+      <div class="hero-cover${STATE.playing ? ' playing' : ''}" data-go="lyrics"
+        role="button" aria-label="查看歌词" title="点封面看歌词">
+        <span class="hero-glow" aria-hidden="true"></span>
         ${cover(a, 'sq')}
       </div>
     </div>
@@ -789,16 +790,14 @@ function screenPlayer() {
       <button class="icon-btn${STATE.repeat ? ' on' : ''}" style="color:${STATE.repeat ? 'var(--accent-safe)' : ''}" data-act="repeat">${ic('repeat', 23)}</button>
     </div>
 
+    <!-- 只剩「当前档位」这一颗:它是**状态**,顺带能切。
+         队列与线路挪进了右上角的「⋯」—— 那里本来就是「其余动作」的去处,
+         而它们一天用不到几次,不该常驻在拇指够不到的屏幕最下沿。 -->
     <div class="chip-row-b">
       <button class="quality-chip on" data-sheet="quality">${ic('wave', 15)} ${q.name} · ${codec}</button>
       <span class="spacer" style="flex:1"></span>
-      <button class="quality-chip" data-go="lyrics">${ic('lyrics', 15)} 歌词</button>
-      <button class="quality-chip" data-sheet="queue">${ic('queue', 15)} 队列</button>
-    </div>
-
-    <div class="route-line" data-sheet="routes" style="cursor:pointer">
-      <span class="dot ${route.state}"></span>
-      线路 <b>${route.name}</b> · ${route.state === 'ok' ? `${route.ping} ms · ` : '不可用 · '}自动择优</div>`;
+      <span class="player-hint">${ic('lyrics', 15)} 点封面看歌词</span>
+    </div>`;
 }
 
 function sheetQuality() {
@@ -876,7 +875,9 @@ function sheetMenu() {
     items = [
       [faved ? 'heartF' : 'heart', faved ? '取消收藏' : '收藏这首歌', 'act:fav'],
       ['download', '下载到本机（FLAC）', 'act:dl-song'],
-      ['queue', '加入播放队列', 'sheet:queue'],
+      ['queue', '加入播放队列', 'act:queue-add'],
+      ['queue', '查看播放队列', 'sheet:queue'],
+      ['route', '切换线路', 'sheet:routes'],
       ['disc', '查看专辑', `album:${a.id}`],
     ];
   } else if (forWhat === 'album') {
@@ -885,8 +886,10 @@ function sheetMenu() {
     title = a.name; sub = `${a.artist} · ${a.year}`;
     items = [
       [faved ? 'heartF' : 'heart', faved ? '取消收藏' : '收藏这张专辑', 'act:fav-album'],
+      ['shuffle', '随机播放这张专辑', 'act:shuffle-album'],
       ['download', '整张下载到本机', 'act:dl-album'],
-      ['queue', '加入播放队列', 'sheet:queue'],
+      ['queue', '加入播放队列', 'act:queue-add'],
+      ['queue', '查看播放队列', 'sheet:queue'],
     ];
   } else if (forWhat === 'artist') {
     const ar = ARTIST_BY_ID(STATE.params.artist || STATE.artistId);
@@ -1067,7 +1070,9 @@ function screenLyrics() {
       <span class="spacer"></span>
       <button class="icon-btn quiet" data-menu-for="song">${ic('more', 20)}</button>
     </div>
-    <div class="lyrics">
+    <!-- 点歌词回封面 —— 与「点封面看歌词」互为来路,进出都不必去够返回键。
+         拖动滚动不会触发 click,所以翻歌词不会误退回。 -->
+    <div class="lyrics" data-go="player" role="button" title="点一下回到封面">
       ${LYRICS.map((l, i) => `<div class="lyric-line ${i === activeIx ? 'on' : i < activeIx ? 'past' : ''}">${l}</div>`).join('')}
     </div>
     <div class="scrub" style="padding-bottom:var(--s5)">
@@ -1389,7 +1394,7 @@ function renderStage(root) {
       /* 播放页与专辑页的大封面在这里点名 —— 名字只在过渡期间挂着。
          不能图省事写成标记里的静态样式：t.finished 撤名时会连静态值一起抹掉，
          第一次过渡之后那处封面就再也当不了起点或终点。 */
-      const hero = slot().querySelector('.player-hero .cover, .album-head .cover');
+      const hero = slot().querySelector('.player-hero .cover, .album-hero .cover');
       if (hero) { hero.style.viewTransitionName = 'cover-art'; named.push(hero); }
     });
     t.finished.finally(() => { named.forEach((el) => { el.style.viewTransitionName = ''; }); });
@@ -1610,6 +1615,19 @@ function renderStage(root) {
           } else if (val === 'fav-artist') {
             const set = STATE.fav.artists;
             const id = STATE.params.artist; if (id) set.has(id) ? set.delete(id) : set.add(id);
+          } else if (val === 'queue-add') {
+            toast('已加入播放队列');
+          } else if (val === 'shuffle-album') {
+            /* 随机播这张专辑:进播放页、打开随机、从这张专辑里挑一首起。
+               原型不假装真的重排队列,但「按下之后去了哪儿」要是真的。 */
+            const a = ALBUM_BY_ID(STATE.params.album || STATE.albumId);
+            const mine = tracksOf(a.id);
+            if (!mine.length) { toast('这张专辑还没有曲目'); return render(); }
+            STATE.shuffle = true;
+            STATE.songId = mine[Math.floor(Math.random() * mine.length)].id;
+            STATE.elapsed = 0;
+            STATE.playing = true;
+            return go('player');
           } else if (val === 'dl-song') {
             dlEnqueue('song', currentSong());
             toast('已加入下载队列');

@@ -1024,38 +1024,55 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
    专辑详情
    ============================================================ */
 
-.album-head {
-  display: flex; gap: var(--s4);
-  padding: var(--s2) var(--s5) var(--s5);
-  align-items: flex-end;
+.album-hero {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center;
+  gap: 6px;
+  /* 垂直留白按歌词页的路子给 —— 那一屏之所以清爽,一半来自它舍得空。 */
+  padding: var(--s6) var(--s6) var(--s5);
   position: relative;
   z-index: 1;
 }
-.album-head .cover {
-  width: 140px; height: 140px;
-  border-radius: 24px;
+.album-hero .cover {
+  width: 168px; height: 168px;
+  border-radius: 26px;
+  margin-bottom: var(--s4);
 }
-.album-head .title {
+.album-hero .title {
   font-size: var(--fs-h1);
   font-weight: 740;
   letter-spacing: -0.038em;
-  line-height: 1.08;
-  margin-bottom: 8px;
+  line-height: 1.12;
 }
-.album-head .artist {
+.album-hero .artist {
   font-size: var(--fs-lg); font-weight: 600;
   color: var(--fg-2);
+  max-width: 100%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* 艺人名可点(跳到艺人页)。查得到才挂 data-artist,查不到的落 inert ——
    库里没有这位艺人时,文字照旧但不再假装能点(否则点了会跳到别人页)。 */
-.album-head .artist[data-artist] { cursor: pointer; transition: color 0.18s var(--ease); }
-.album-head .artist[data-artist]:hover { color: var(--accent-safe); }
-.album-head .artist.inert { cursor: default; }
-.album-head .meta {
+.album-hero .artist[data-artist] { cursor: pointer; transition: color 0.18s var(--ease); }
+.album-hero .artist[data-artist]:hover { color: var(--accent-safe); }
+.album-hero .artist.inert { cursor: default; }
+.album-hero .meta {
   font-size: var(--fs-sm); color: var(--fg-3);
-  margin-top: 7px;
-  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin-top: 3px;
+  display: flex; align-items: center; justify-content: center; gap: 7px; flex-wrap: wrap;
+}
+
+/* 播放独占一行:整屏只有这一颗实心按钮。随机 / 收藏 / 队列进了「⋯」,
+   它们不该和「播这张专辑」抢同一条视觉线。
+   宽度收成一枚居中的胶囊(而不是通栏)—— 与这一屏的居中构图一致,
+   也让「清爽」不靠把最重的那块颜色铺满整行来实现。 */
+.album-play {
+  display: flex; justify-content: center;
+  padding: 0 var(--s5) var(--s5);
+  position: relative; z-index: 1;
+}
+.album-play .btn {
+  width: auto; min-width: 190px;
+  height: 50px; padding: 0 34px;
 }
 
 .action-row {
@@ -1103,69 +1120,47 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   z-index: 1;
 }
 
-/* ---- 唱片 ----
-   封面背后露出一截黑胶盘面,并且随播放状态缓慢自转 —— 静止的渐变色块再怎么
-   调也只是色块,转起来才有「在放」的感觉。 */
-.hero-stack {
+/* ---- 封面 ---- 
+   播放页只有封面一件主角。原先它背后还压着一截黑胶盘面(靠自转表示在放),
+   但那圈盘面把封面挤到 250px 宽、整体右移,读起来是「两件东西」。
+   现在播放状态交给播放键与进度条说,封面独占居中,背后只留一层光晕 ——
+   在放的时候它会缓慢呼吸,那是这一屏唯一保留的动效。 */
+.hero-cover {
   position: relative;
   width: 100%;
-  /* 封面收一档并整体左移,给右边的唱片让出可见宽度。右边距挤出的 18px 位移
-     让盘面能露出约 50px —— 只露 30px 的话看着像封面旁边蹭了一道黑影,
-     读不出是唱片。 */
-  max-width: 250px;
-  margin-right: 36px;
+  max-width: 292px;
   aspect-ratio: 1 / 1;
   display: grid;
   place-items: center;
+  cursor: pointer;
 }
-.hero-stack .cover {
-  width: 100%;
-  height: 100%;
-  border-radius: 30px;
-  position: relative;
-  z-index: 2;
-  box-shadow: 0 44px 80px -28px var(--depth),
-              0 0 90px -20px color-mix(in srgb, var(--accent) 42%, transparent),
-              inset 0 1px 0 var(--rim);
-}
-.vinyl {
+/* 光晕单独一层,呼吸走 opacity —— 合成层上的事,不触发布局与重绘。
+   (直接动画 box-shadow 会每帧重绘整张封面,原型里也不该这么写。) */
+.hero-glow {
   position: absolute;
-  /* 锚在封面右缘,只露出一截。右边缘要留在手机屏内,否则会被 .phone 的
-     overflow:hidden 直接裁掉。 */
-  right: -50px;
-  width: 88%;
-  aspect-ratio: 1 / 1;
+  inset: -6%;
   border-radius: var(--r-full);
-  z-index: 1;
-  background:
-    repeating-radial-gradient(circle at 50% 50%,
-      rgba(255, 255, 255, 0.045) 0 1px,
-      transparent 1px 3px),
-    radial-gradient(circle at 50% 50%, #1A1A20 0 17%, #0B0B0F 30%, #15151A 62%, #08080B 100%);
-  box-shadow: 0 34px 64px -26px var(--depth),
-              inset 0 1px 0 rgba(255, 255, 255, 0.10);
-  animation: spin 16s linear infinite;
+  background: radial-gradient(circle at 50% 50%,
+    color-mix(in srgb, var(--accent) 62%, transparent) 0 24%,
+    transparent 68%);
+  filter: blur(38px);
+  opacity: 0.44;
+  z-index: 0;
+  transition: opacity 0.8s var(--ease);
 }
-/* 暂停不是把唱片藏起来,是让它停下 —— 转与不转是这一屏唯一能读出播放状态的动效。 */
-.vinyl.paused { animation-play-state: paused; }
-/* 盘心与标签。转速刻意压慢 —— 真实黑胶 33⅓ 转,一帧一顿反而晕。 */
-.vinyl i {
-  position: absolute;
-  left: 50%; top: 50%;
-  width: 30%; aspect-ratio: 1 / 1;
-  margin: -15% 0 0 -15%;
-  border-radius: var(--r-full);
-  background:
-    radial-gradient(circle at 50% 50%, var(--accent) 0 26%, transparent 27%),
-    linear-gradient(150deg, var(--c1), var(--c2));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+.hero-cover.playing .hero-glow { animation: cover-breathe 6.4s ease-in-out infinite; }
+/* 暂停时停在当前亮度,而不是跳回暗档 —— 呼吸是「在放」的信号,停下来就够。 */
+.hero-cover.playing:hover .hero-glow { opacity: 0.62; }
+@keyframes cover-breathe {
+  0%, 100% { opacity: 0.38; }
+  50% { opacity: 0.72; }
 }
+.hero-cover .cover { position: relative; z-index: 1; }
+
 .player-hero .cover {
   width: 100%;
-  max-width: 300px;
-  border-radius: 30px;
+  border-radius: 28px;
   box-shadow: 0 44px 80px -28px var(--depth),
-              0 0 90px -20px color-mix(in srgb, var(--accent) 42%, transparent),
               inset 0 1px 0 var(--rim);
 }
 
@@ -1269,6 +1264,15 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   padding: 0 var(--s5) var(--s4);
   position: relative; z-index: 1;
 }
+/* 「点封面看歌词」—— 底行右侧那句安静的话。它只是提示,不是按钮:
+   真正的入口在封面上,这里再摆一颗胶囊会把「只剩一颗档位」的清爽又填满。 */
+.player-hint {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--fg-4);
+  padding-right: 2px;
+}
+
 .quality-chip {
   height: 36px; padding: 0 15px;
   display: inline-flex; align-items: center; gap: 7px;
@@ -1293,14 +1297,6 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 }
 
 /* 播放页底部线路状态 */
-.route-line {
-  display: flex; align-items: center; gap: 8px;
-  padding: 0 var(--s5) var(--s5);
-  font-size: var(--fs-xs);
-  color: var(--fg-3);
-  position: relative; z-index: 1;
-}
-.route-line b { color: var(--fg-2); font-weight: 640; }
 
 /* ============================================================
    底部弹层
@@ -1742,9 +1738,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 
-  /* 把唱片转速压成 0.01ms 只是让它每帧绕一整圈,看着像卡住,其实仍在全速重绘 ——
-     真正该做的是停掉。 */
-  .vinyl { animation: none !important; }
+  /* 光晕的呼吸同理:压成 0.01ms 只是让它每帧走完一轮,该做的是停掉。
+     停掉之后它仍保留静态亮度 —— 那不是动效,是这一屏的底色。 */
+  .hero-glow { animation: none !important; }
 
   /* 系统性关闭视图过渡:否则每次跳转都会闪一下 0.01ms 的位移,还不如不出过渡。 */
   ::view-transition-group(*),
