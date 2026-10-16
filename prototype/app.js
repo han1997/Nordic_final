@@ -53,6 +53,18 @@ function ic(name, size = 22, cls = '') {
     stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
 }
 
+/* 「添加时间」:真实服务器上这是每首曲目的 `created`(Navidrome 会给)。
+   原型里按一张固定表**算**出日期,而不是往每条 mock 数据里塞一个字段 ——
+   它是「什么时候入库」,和歌本身无关。顺序刻意跨专辑错开,
+   好让「按添加时间」排出来与别的口径明显不同。 */
+const ADDED_ORDER = ['s6', 's3', 's11', 's1', 's13', 's8', 's2', 's10', 's5', 's9', 's4', 's12', 's7', 's14'];
+
+function addedOf(song) {
+  const rank = ADDED_ORDER.indexOf(song.id);
+  const days = (rank < 0 ? ADDED_ORDER.length : rank) * 3;
+  return new Date(Date.UTC(2026, 0, 18) - days * 86400000).toISOString().slice(0, 10);
+}
+
 /* ---------------- 排序 ----------------
    只影响「全部专辑 / 全部歌曲」这两个列表 —— 最近添加那条轨道、常听艺人那
    几排货架讲的是另一件事(它们本身就是按某个口径挑出来的),不跟着变。 */
@@ -61,7 +73,7 @@ const ALBUM_SORTS = [
   ['artist', '按艺人'], ['name', '按名称'], ['newest', '最近添加'], ['random', '随机'],
 ];
 const SONG_SORTS = [
-  ['title', '按标题'], ['artist', '按艺人'], ['album', '按专辑'], ['duration', '按时长'],
+  ['title', '按标题'], ['artist', '按艺人'], ['album', '按专辑'], ['added', '按添加时间'],
 ];
 
 /* 按当前口径取排序后的专辑 / 歌曲。 */
@@ -95,7 +107,8 @@ function sortedSongs() {
   switch (STATE.songSort) {
     case 'artist':   return list.sort((a, b) => byText(a.artist, b.artist) || byText(a.title, b.title));
     case 'album':    return list.sort((a, b) => byText(a.album, b.album) || (a.no || 0) - (b.no || 0));
-    case 'duration': return list.sort((a, b) => b.dur - a.dur);
+    // 入库时间新的在前 —— 与专辑那一栏的「最近添加」同一个方向。
+    case 'added':    return list.sort((a, b) => byText(addedOf(b), addedOf(a)));
     default:         return list.sort((a, b) => byText(a.title, b.title));
   }
 }
