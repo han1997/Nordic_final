@@ -130,44 +130,57 @@ class _AlbumScreenState extends State<AlbumScreen> {
     // 服务器报的整张首数 vs 我们实际拿到的条数。
     final missing = album.songCount - _songs.length;
 
-    return ListView(
-      padding: EdgeInsets.only(
-        bottom: BottomStack.listInset(context),
-      ),
-      children: [
-        _AlbumHead(
-          album: album,
-          repoCoverUri: _coverUri(album.coverArtId, 512),
+    // sliver 铺法:曲目多的时候(库里有五百首一张的专辑)一次铺完要好几帧。
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: _AlbumHead(
+            album: album,
+            repoCoverUri: _coverUri(album.coverArtId, 512),
+          ),
         ),
-        _PlayButton(
-          onPlay: _songs.isEmpty
-              ? null
-              : () => playable.playAll(_songs, index: 0),
+        SliverToBoxAdapter(
+          child: _PlayButton(
+            onPlay: _songs.isEmpty
+                ? null
+                : () => playable.playAll(_songs, index: 0),
+          ),
         ),
         if (_songs.isEmpty)
-          const EmptyState(
-            title: '这张专辑里还没有曲目',
-            detail: '服务器上有这张专辑的记录,但没有可播放的文件。',
-            topPadding: 40,
+          const SliverToBoxAdapter(
+            child: EmptyState(
+              title: '这张专辑里还没有曲目',
+              detail: '服务器上有这张专辑的记录,但没有可播放的文件。',
+              topPadding: 40,
+            ),
           )
         else
-          for (var i = 0; i < _songs.length; i++)
-            TrackRow(
+          SliverList.builder(
+            itemCount: _songs.length,
+            itemBuilder: (context, i) => TrackRow(
               song: _songs[i],
               trackNumber: _songs[i].track ?? i + 1,
               playing: _songs[i].id == currentId && playable.state.playing,
               onTap: () => playable.playAll(_songs, index: i),
             ),
+          ),
         if (missing > 0)
-          ListNote(
-            '服务器把这张专辑记为 ${album.songCount} 首,当前只取到 ${_songs.length} 首,'
-            '还有 $missing 首没有返回。',
+          SliverToBoxAdapter(
+            child: ListNote(
+              '服务器把这张专辑记为 ${album.songCount} 首,当前只取到 ${_songs.length} 首,'
+              '还有 $missing 首没有返回。',
+            ),
           )
         else if (_songs.isNotEmpty)
-          ListNote(
-            '${album.name} · ${album.artist}'
-            '${album.year == null ? '' : ' · ${album.year}'}',
+          SliverToBoxAdapter(
+            child: ListNote(
+              '${album.name} · ${album.artist}'
+              '${album.year == null ? '' : ' · ${album.year}'}',
+            ),
           ),
+        SliverToBoxAdapter(
+          child: SizedBox(height: BottomStack.listInset(context)),
+        ),
       ],
     );
   }

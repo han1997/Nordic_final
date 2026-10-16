@@ -237,6 +237,10 @@ class AppState extends ChangeNotifier {
     }
 
     try {
+      // 收藏名单与库**并行**取:串在库后面等于白等一个往返,
+      // 而它自己有错误处理(取不到就当没收藏),拖不垮这一轮。
+      final starred = refreshStarred();
+
       final results = await Future.wait([
         // 专辑这一栏按用户选的口径向服务器要 —— 「最近播放 / 常听」这种
         // 本地算不出来,只有服务器知道。
@@ -266,9 +270,9 @@ class AppState extends ChangeNotifier {
       // 一直开着的东西(测试、桌面端)还会因为文件句柄和清理动作打架。
       // write 自己吞掉写失败,所以这里不必防。
       await libraryCache.write(_serverKey(_server!), _library);
-      // 顺手把收藏名单取回来 —— 界面上的心形要显示当前状态,
-      // 否则每次重绘都从「未收藏」开始,点了才变,看着像没记住。
-      unawaited(refreshStarred());
+      // 上面已经把收藏那一轮发出去了,这里只等它落地 —— 不等也行,
+      // 但等一等「心形状态」与「库」就是同时到位的,不会先画一排空心的心。
+      unawaited(starred);
     } on SubsonicException catch (e) {
       _failLoad(e.message, isAuth: e.isAuthFailure, isNetwork: e.isNetworkFailure);
     } catch (e) {

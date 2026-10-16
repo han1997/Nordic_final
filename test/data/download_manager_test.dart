@@ -271,6 +271,36 @@ void main() {
       expect(job.receivedBytes, 8192);
     });
 
+    test('进度播报有闸:差得太小、或来得太密,都不播', () async {
+      late DownloadManager manager;
+      final seen = <double>[];
+
+      manager = managerWith(
+        fn: ({
+          required Uri uri,
+          required String savePath,
+          void Function(int received, int total)? onProgress,
+          CancelToken? cancelToken,
+        }) async {
+          onProgress?.call(1, 1000); // 0.1% —— 差太小,不播
+          seen.add(manager.jobs.single.pct);
+          onProgress?.call(500, 1000); // 50% —— 该播
+          seen.add(manager.jobs.single.pct);
+          onProgress?.call(520, 1000); // 52% —— 紧接着,被时间闸挡下
+          seen.add(manager.jobs.single.pct);
+          await File(savePath).writeAsBytes([1, 2, 3], flush: true);
+          return TransferResult(bytes: 3, contentType: 'audio/flac');
+        },
+      );
+
+      await manager.enqueue(DownloadRequest.song(song('s1')));
+      await settle(manager);
+
+      expect(seen[0], 0, reason: '0.1% 的差别不值得重建一次界面');
+      expect(seen[1], closeTo(50, 1));
+      expect(seen[2], closeTo(50, 1), reason: '局域网上下得快,同一个 250ms 里不该连着播');
+    });
+
     test('同一条任务不重复入队 —— 按钮点两下不该排出两条', () async {
       final manager = managerWith(fn: transfer(<Uri>[]));
 

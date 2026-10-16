@@ -208,63 +208,88 @@ class _SearchScreenState extends State<SearchScreen> {
     final currentId = playable.state.song?.id;
     final repo = context.watch<AppState>().repository;
 
-    return ListView(
-      padding: EdgeInsets.only(
-        bottom: BottomStack.listInset(context),
-      ),
-      children: [
+    // 结果整栏走 sliver:搜索可能命中几百条,列表与网格都要**真的懒**
+    // (嵌在 ListView 里的 `GridView(shrinkWrap: true)` 会把每一格都建出来)。
+    return CustomScrollView(
+      slivers: [
         if (show(SearchScope.songs) && _hits.songs.isNotEmpty) ...[
-          SectionHeader(
-            title: '歌曲',
-            count: '${_hits.songs.length} 首',
-            padding: const EdgeInsets.fromLTRB(
-              NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s3),
+          SliverToBoxAdapter(
+            child: SectionHeader(
+              title: '歌曲',
+              count: '${_hits.songs.length} 首',
+              padding: const EdgeInsets.fromLTRB(
+                NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s3),
+            ),
           ),
-          for (var i = 0; i < _hits.songs.length; i++)
-            SongRow(
+          SliverList.builder(
+            itemCount: _hits.songs.length,
+            itemBuilder: (context, i) => SongRow(
               song: _hits.songs[i],
               coverUri: (id) => repo!.coverUri(id, size: 128),
               playing: _hits.songs[i].id == currentId && playable.state.playing,
               onTap: () => playable.playAll(_hits.songs, index: i),
             ),
+          ),
         ],
         if (show(SearchScope.albums) && _hits.albums.isNotEmpty) ...[
-          SectionHeader(title: '专辑', count: '${_hits.albums.length} 张'),
-          GridView.builder(
+          SliverToBoxAdapter(
+            child: SectionHeader(
+              title: '专辑',
+              count: '${_hits.albums.length} 张',
+            ),
+          ),
+          SliverPadding(
             padding: const EdgeInsets.fromLTRB(
               NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s3),
-            physics: const NeverScrollableScrollPhysics(),
-            shrinkWrap: true,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: NordicSpace.s4,
-              mainAxisSpacing: NordicSpace.s5,
-              childAspectRatio: 0.78,
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: NordicSpace.s4,
+                mainAxisSpacing: NordicSpace.s5,
+                childAspectRatio: 0.78,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) =>
+                    AlbumTile(album: _hits.albums[index], repo: repo),
+                childCount: _hits.albums.length,
+              ),
             ),
-            itemCount: _hits.albums.length,
-            itemBuilder: (context, index) =>
-                AlbumTile(album: _hits.albums[index], repo: repo),
           ),
         ],
         if (show(SearchScope.artists) && _hits.artists.isNotEmpty) ...[
-          SectionHeader(title: '艺人', count: '${_hits.artists.length} 位'),
-          for (final artist in _hits.artists)
-            NordicRow(
-              leading: ArtistPlate(artist: artist, size: 52, circular: true),
-              title: artist.name,
-              subtitle: '${artist.albumCount} 张专辑',
-              trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
-              onTap: () => AppRoutes.openArtist(context, artist.id),
+          SliverToBoxAdapter(
+            child: SectionHeader(
+              title: '艺人',
+              count: '${_hits.artists.length} 位',
             ),
+          ),
+          SliverList.builder(
+            itemCount: _hits.artists.length,
+            itemBuilder: (context, index) {
+              final artist = _hits.artists[index];
+              return NordicRow(
+                leading: ArtistPlate(artist: artist, size: 52, circular: true),
+                title: artist.name,
+                subtitle: '${artist.albumCount} 张专辑',
+                trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
+                onTap: () => AppRoutes.openArtist(context, artist.id),
+              );
+            },
+          ),
         ],
         // 选中的分类里没有结果,但别的分类有 —— 说清楚,别让用户
         // 看着空列表以为搜索坏了。
         if (_scope != SearchScope.all && _countInScope == 0)
-          EmptyState(
-            title: '「$query」在${_scope.label}里没有结果',
-            detail: '换成「全部」看看。',
-            topPadding: 40,
+          SliverToBoxAdapter(
+            child: EmptyState(
+              title: '「$query」在${_scope.label}里没有结果',
+              detail: '换成「全部」看看。',
+              topPadding: 40,
+            ),
           ),
+        SliverToBoxAdapter(
+          child: SizedBox(height: BottomStack.listInset(context)),
+        ),
       ],
     );
   }

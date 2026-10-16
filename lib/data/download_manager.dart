@@ -173,6 +173,9 @@ class DownloadJob {
   /// 管理器内部用:取消正在下的一首。
   CancelToken? cancelToken;
 
+  /// 上一次把进度播报出去的时刻 —— 用来限流(`_report`)。
+  DateTime lastReportedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
   int get songCount =>
       request.songs.isNotEmpty ? request.songs.length : doneSongs;
 
@@ -575,8 +578,17 @@ class DownloadManager extends ChangeNotifier {
         : (doneSongs + fraction) / count * 100;
     final next = raw.clamp(0.0, 100.0);
 
-    if (next < 100 && (next - job.pct).abs() < 0.5) return;
+    // 两道闸:进度差不到 0.5% 不重绘,而且**每秒最多四次**。
+    // 只看百分比是不够的:局域网上下得飞快,一块 0.5% 就是十几毫秒一次,
+    // 而每次通知都会让盯着下载状态的界面跟着重建。
+    final now = DateTime.now();
+    final tooSoon = next < 100 &&
+        now.difference(job.lastReportedAt) < const Duration(milliseconds: 250);
+    final tooSmall = next < 100 && (next - job.pct).abs() < 0.5;
+    if (tooSoon || tooSmall) return;
+
     job.pct = next;
+    job.lastReportedAt = now;
     notifyListeners();
   }
 

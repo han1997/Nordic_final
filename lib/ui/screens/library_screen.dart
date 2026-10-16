@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/subsonic_payload.dart';
+import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
@@ -255,29 +256,40 @@ class _AlbumsTab extends StatelessWidget {
         ? null
         : library.albums.where((a) => a.id == song.albumId).firstOrNull;
 
-    return ListView(
-      padding: EdgeInsets.only(
-        bottom: BottomStack.listInset(context),
-      ),
-      children: [
-        if (song != null) _ContinueCard(song: song, album: albumOfSong, playable: playable),
-        SectionHeader(
-          title: '全部专辑',
-          count: '${library.albums.length} 张',
-          trailing: SortButton(
-            label: '按${state.albumSort.label}',
-            busy: state.sortingAlbums,
-            onTap: () => showSortSheet(context, albums: true),
+    // 整栏走 sliver:网格必须**真的懒**(见 [_AlbumGridSliver])。
+    return CustomScrollView(
+      slivers: [
+        if (song != null)
+          SliverToBoxAdapter(
+            child: _ContinueCard(
+              song: song,
+              album: albumOfSong,
+              playable: playable,
+            ),
+          ),
+        SliverToBoxAdapter(
+          child: SectionHeader(
+            title: '全部专辑',
+            count: '${library.albums.length} 张',
+            trailing: SortButton(
+              label: '按${state.albumSort.label}',
+              busy: state.sortingAlbums,
+              onTap: () => showSortSheet(context, albums: true),
+            ),
           ),
         ),
-        _AlbumGrid(albums: library.albums, state: state),
+        _AlbumGridSliver(albums: library.albums, state: state),
         if (library.recentlyAdded.isNotEmpty) ...[
-          const SectionHeader(
-            title: '最近添加',
-            count: null,
+          const SliverToBoxAdapter(
+            child: SectionHeader(title: '最近添加', count: null),
           ),
-          _AlbumRail(albums: library.recentlyAdded, state: state),
+          SliverToBoxAdapter(
+            child: _AlbumRail(albums: library.recentlyAdded, state: state),
+          ),
         ],
+        SliverToBoxAdapter(
+          child: SizedBox(height: BottomStack.listInset(context)),
+        ),
       ],
     );
   }
@@ -457,29 +469,35 @@ class _ContinueCard extends StatelessWidget {
 }
 
 /// 专辑网格 —— `.grid-covers`,两列大封面。
-class _AlbumGrid extends StatelessWidget {
-  const _AlbumGrid({required this.albums, required this.state});
+///
+/// **它是个 sliver**,不是嵌在 ListView 里的 `GridView(shrinkWrap: true)`:
+/// 后者为了量自己的高度会把**每一张专辑**都建出来 —— 库里 400 多张就是 400 多个
+/// 卡片、400 多次封面解码,全压在进音乐库的那一帧上。sliver 只建视口附近那几格。
+class _AlbumGridSliver extends StatelessWidget {
+  const _AlbumGridSliver({required this.albums, required this.state});
 
   final List<Album> albums;
   final AppState state;
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
+    return SliverPadding(
       padding: const EdgeInsets.fromLTRB(
         NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s3),
-      physics: const NeverScrollableScrollPhysics(),
-      shrinkWrap: true,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: NordicSpace.s4,
-        mainAxisSpacing: NordicSpace.s5,
-        childAspectRatio: 0.78,
-      ),
-      itemCount: albums.length,
-      itemBuilder: (context, index) => AlbumTile(
-        album: albums[index],
-        repo: state.repository,
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: NordicSpace.s4,
+          mainAxisSpacing: NordicSpace.s5,
+          childAspectRatio: 0.78,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => AlbumTile(
+            album: albums[index],
+            repo: state.repository,
+          ),
+          childCount: albums.length,
+        ),
       ),
     );
   }
@@ -490,7 +508,9 @@ class AlbumTile extends StatelessWidget {
   const AlbumTile({super.key, required this.album, required this.repo});
 
   final Album album;
-  final dynamic repo;
+
+  /// 封面地址由它拼。可为空 —— 还没配服务器时界面照样能画(走渐变兜底)。
+  final SubsonicRepository? repo;
 
   @override
   Widget build(BuildContext context) {
@@ -537,10 +557,10 @@ class AlbumTile extends StatelessWidget {
     );
   }
 
-  static Uri? _uri(dynamic repo, String? coverArtId) {
+  static Uri? _uri(SubsonicRepository? repo, String? coverArtId) {
     if (repo == null || coverArtId == null) return null;
     try {
-      return repo.coverUri(coverArtId, size: 512) as Uri;
+      return repo.coverUri(coverArtId, size: 512);
     } on SubsonicException {
       return null;
     }
@@ -626,16 +646,19 @@ class _ArtistsTab extends StatelessWidget {
     final t = context.nordic;
     final top = library.topArtists;
 
-    return ListView(
-      padding: EdgeInsets.only(
-        bottom: BottomStack.listInset(context),
-      ),
-      children: [
-        SectionHeader(title: '常听艺人', count: '${library.artists.length} 位'),
-        SizedBox(
-          // 152 的方块 + 两行文字,按内容算高。
-          height: shelfHeight(context, artwork: 152),
-          child: ListView.separated(
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: SectionHeader(
+            title: '常听艺人',
+            count: '${library.artists.length} 位',
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: SizedBox(
+            // 152 的方块 + 两行文字,按内容算高。
+            height: shelfHeight(context, artwork: 152),
+            child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(
               NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s4),
@@ -674,17 +697,27 @@ class _ArtistsTab extends StatelessWidget {
                 ),
               );
             },
+            ),
           ),
         ),
-        const SectionHeader(title: '全部艺人'),
-        for (final artist in library.artists)
-          NordicRow(
-            leading: ArtistPlate(artist: artist, size: 52, circular: true),
-            title: artist.name,
-            subtitle: '${artist.albumCount} 张专辑',
-            trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
-            onTap: () => AppRoutes.openArtist(context, artist.id),
-          ),
+        const SliverToBoxAdapter(child: SectionHeader(title: '全部艺人')),
+        // 一屏一屏地建:300 多位艺人一次铺完,进这一栏就要多等好几帧。
+        SliverList.builder(
+          itemCount: library.artists.length,
+          itemBuilder: (context, index) {
+            final artist = library.artists[index];
+            return NordicRow(
+              leading: ArtistPlate(artist: artist, size: 52, circular: true),
+              title: artist.name,
+              subtitle: '${artist.albumCount} 张专辑',
+              trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
+              onTap: () => AppRoutes.openArtist(context, artist.id),
+            );
+          },
+        ),
+        SliverToBoxAdapter(
+          child: SizedBox(height: BottomStack.listInset(context)),
+        ),
       ],
     );
   }
@@ -748,14 +781,35 @@ class _PlaylistsTab extends StatelessWidget {
     final t = context.nordic;
     final state = context.watch<AppState>();
 
-    return ListView(
+    // 歌单一般不多,但口径与其它两栏统一:一屏一屏地建。
+    return ListView.builder(
       padding: EdgeInsets.only(
         bottom: BottomStack.listInset(context),
       ),
-      children: [
-        SectionHeader(title: '我的歌单', count: '${library.playlists.length} 个'),
-        for (final playlist in library.playlists)
-          NordicRow(
+      itemCount: library.playlists.length + 2,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return SectionHeader(
+            title: '我的歌单',
+            count: '${library.playlists.length} 个',
+          );
+        }
+        if (index == library.playlists.length + 1) {
+          // 空库时也要能建歌单 —— 一个空列表配一个入口,比只显示「暂无」
+          // 有用得多。
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(
+              NordicSpace.s5, NordicSpace.s5, NordicSpace.s5, NordicSpace.s4),
+            child: GhostButton(
+              label: '新建歌单',
+              icon: Icons.add,
+              onPressed: () => AppRoutes.openNewPlaylist(context),
+            ),
+          );
+        }
+
+        final playlist = library.playlists[index - 1];
+        return NordicRow(
             height: 72,
             leading: Cover(
               coverArtId: playlist.coverArtId,
@@ -772,19 +826,8 @@ class _PlaylistsTab extends StatelessWidget {
             ].join(' · '),
             trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
             onTap: () => AppRoutes.openPlaylist(context, playlist.id),
-          ),
-        // 空库时也要能建歌单 —— 一个空列表配一个入口,比只显示「暂无」
-        // 有用得多。
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            NordicSpace.s5, NordicSpace.s5, NordicSpace.s5, NordicSpace.s4),
-          child: GhostButton(
-            label: '新建歌单',
-            icon: Icons.add,
-            onPressed: () => AppRoutes.openNewPlaylist(context),
-          ),
-        ),
-      ],
+          );
+      },
     );
   }
 
