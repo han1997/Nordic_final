@@ -47,6 +47,8 @@ abstract final class SubsonicMapper {
         sizeBytes: _int(json['size']),
         year: _int(json['year']),
         genre: _string(json['genre']),
+        // `created` 是「什么时候进的库」—— Navidrome 会给,别的实现可能不给。
+        created: _date(json['created']),
       );
 
   static Playlist playlist(Map<String, dynamic> json) => Playlist(

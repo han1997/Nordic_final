@@ -306,6 +306,63 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
+/// 排序入口 —— 章节头右侧那颗安静的文字按钮(带当前口径,如「按艺人」)。
+///
+/// **不做成胶囊**:它不是状态显示,而章节头左边已经有一处计数小字,
+/// 再摆一颗胶囊会把这一行压重。(档位那颗之所以是胶囊,是因为它同时报着码率。)
+/// 与原型 `.sort-btn` 同构:图标 + 文字,只在悬停时给一层底。
+class SortButton extends StatelessWidget {
+  const SortButton({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.busy = false,
+  });
+
+  final String label;
+
+  /// 正在按新口径重拉(专辑那一栏要打服务器)—— 转个圈,不然点了像没反应。
+  final bool busy;
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return GestureDetector(
+      onTap: busy ? null : onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (busy)
+              SizedBox(
+                width: 13,
+                height: 13,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.6,
+                  color: t.fg3,
+                ),
+              )
+            else
+              Icon(Icons.swap_vert, size: 15, color: t.fg3),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: t.fg3,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// 筛选 / 状态胶囊 —— `.chip`。
 class NordicChip extends StatelessWidget {
   const NordicChip({

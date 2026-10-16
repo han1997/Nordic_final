@@ -349,6 +349,12 @@ enum AlbumSort {
 
   final String wireName;
   final String label;
+
+  /// 存的是**名字**而不是序号(见 ConfigStore.saveAlbumSort)。
+  static AlbumSort byName(String? name) => values.firstWhere(
+        (s) => s.name == name,
+        orElse: () => AlbumSort.alphabeticalByArtist,
+      );
 }
 
 int _playCount(Map<String, dynamic> songJson) {

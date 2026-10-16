@@ -14,6 +14,7 @@ import '../widgets/components.dart';
 import '../widgets/cover.dart';
 import '../widgets/rows.dart';
 import '../widgets/states.dart';
+import 'sort_sheet.dart';
 
 /// 音乐库 —— 四个分栏:专辑 / 艺人 / 歌曲 / 歌单。
 enum LibraryTab {
@@ -179,7 +180,15 @@ class _AlbumsTab extends StatelessWidget {
       ),
       children: [
         if (song != null) _ContinueCard(song: song, album: albumOfSong, playable: playable),
-        SectionHeader(title: '全部专辑', count: '${library.albums.length} 张'),
+        SectionHeader(
+          title: '全部专辑',
+          count: '${library.albums.length} 张',
+          trailing: SortButton(
+            label: '按${state.albumSort.label}',
+            busy: state.sortingAlbums,
+            onTap: () => showSortSheet(context, albums: true),
+          ),
+        ),
         _AlbumGrid(albums: library.albums, state: state),
         if (library.recentlyAdded.isNotEmpty) ...[
           const SectionHeader(
@@ -627,6 +636,10 @@ class _SongsTab extends StatelessWidget {
           return SectionHeader(
             title: '全部歌曲',
             count: '${library.songs.length} 首',
+            trailing: SortButton(
+              label: '按${state.songSort.label}',
+              onTap: () => showSortSheet(context, albums: false),
+            ),
             padding: const EdgeInsets.fromLTRB(
               NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s3),
           );

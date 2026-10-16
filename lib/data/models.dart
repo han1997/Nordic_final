@@ -102,6 +102,7 @@ class Song {
     this.sizeBytes,
     this.year,
     this.genre,
+    this.created,
   });
 
   final String id;
@@ -127,6 +128,10 @@ class Song {
   final int? sizeBytes;
   final int? year;
   final String? genre;
+
+  /// 这首曲子**什么时候进的库**。Navidrome 会给(`created`),
+  /// 缺了就是 null —— 按添加时间排序时把它排到最后,不假装知道。
+  final DateTime? created;
 
   bool get hasCover => coverArtId != null && coverArtId!.isNotEmpty;
 
@@ -158,6 +163,7 @@ class Song {
         'sizeBytes': sizeBytes,
         'year': year,
         'genre': genre,
+        'created': created?.toIso8601String(),
       };
 
   static Song fromJson(Map<String, dynamic> json) => Song(
@@ -176,6 +182,9 @@ class Song {
         sizeBytes: (json['sizeBytes'] as num?)?.toInt(),
         year: (json['year'] as num?)?.toInt(),
         genre: json['genre'] as String?,
+        created: json['created'] is String
+            ? DateTime.tryParse(json['created'] as String)
+            : null,
       );
 
   @override

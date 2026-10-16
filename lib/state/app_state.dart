@@ -8,6 +8,7 @@ import '../data/models.dart';
 import '../data/server_config.dart';
 import '../data/subsonic_client.dart';
 import '../data/subsonic_payload.dart';
+import '../data/sorting.dart';
 import '../data/subsonic_repository.dart';
 import '../playback/quality.dart';
 
@@ -192,7 +193,9 @@ class AppState extends ChangeNotifier {
 
     try {
       final results = await Future.wait([
-        repo.albums(),
+        // 专辑这一栏按用户选的口径向服务器要 —— 「最近播放 / 常听」这种
+        // 本地算不出来,只有服务器知道。
+        repo.albums(sort: albumSort),
         repo.artists(),
         repo.allSongs(),
         repo.playlists(),
@@ -202,7 +205,7 @@ class AppState extends ChangeNotifier {
       _library = LibrarySnapshot(
         albums: results[0] as List<Album>,
         artists: results[1] as List<Artist>,
-        songs: results[2] as List<Song>,
+        songs: sortSongs(results[2] as List<Song>, songSort),
         playlists: results[3] as List<Playlist>,
         recentlyAdded: results[4] as List<Album>,
       );
@@ -224,6 +227,67 @@ class AppState extends ChangeNotifier {
       _errorIsAuth = false;
       _errorIsNetwork = false;
     }
+    notifyListeners();
+  }
+
+  // ---------------- 排序 ----------------
+
+  /// 专辑这一栏的排序口径。
+  AlbumSort get albumSort =>
+      AlbumSort.values.where((s) => s.name == configStore.loadAlbumSort()).firstOrNull ??
+      AlbumSort.alphabeticalByArtist;
+
+  SongSort get songSort => SongSort.byName(configStore.loadSongSort());
+
+  /// 换专辑排序时正在重拉 —— 界面上那颗按钮转个圈,不然点了没反应像是卡的。
+  bool _sortingAlbums = false;
+  bool get sortingAlbums => _sortingAlbums;
+
+  /// 换专辑排序:存下来 + **按新口径重拉这一栏**。
+  ///
+  /// 重拉而不是本地排:六个口径里「最近播放 / 常听」本地没有依据
+  /// (那要播放次数与时间,只有在服务器上)。失败时抛出去让界面说话,
+  /// 本地这份列表**保持原样** —— 排错了总比排没了强。
+  Future<void> setAlbumSort(AlbumSort sort) async {
+    if (sort == albumSort) return;
+    await configStore.saveAlbumSort(sort.name);
+
+    final repo = _repository;
+    if (repo == null) {
+      notifyListeners();
+      return;
+    }
+
+    _sortingAlbums = true;
+    notifyListeners();
+    try {
+      final albums = await repo.albums(sort: sort);
+      _library = LibrarySnapshot(
+        albums: albums,
+        artists: _library.artists,
+        songs: _library.songs,
+        playlists: _library.playlists,
+        recentlyAdded: _library.recentlyAdded,
+      );
+    } finally {
+      _sortingAlbums = false;
+      notifyListeners();
+    }
+  }
+
+  /// 换歌曲排序。**本地排** —— 服务器没有「按标题给我排一版歌」这种端点,
+  /// 而曲子本来就在手上,再打一轮请求没有意义。
+  Future<void> setSongSort(SongSort sort) async {
+    if (sort == songSort) return;
+    await configStore.saveSongSort(sort.name);
+
+    _library = LibrarySnapshot(
+      albums: _library.albums,
+      artists: _library.artists,
+      songs: sortSongs(_library.songs, sort),
+      playlists: _library.playlists,
+      recentlyAdded: _library.recentlyAdded,
+    );
     notifyListeners();
   }
 

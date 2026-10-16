@@ -153,6 +153,8 @@ class ConfigStore {
   static const _autoRouteKey = 'nordic.pref.autoRoute';
   static const _backgroundPlayKey = 'nordic.pref.backgroundPlay';
   static const _wifiOnlyKey = 'nordic.pref.wifiOnlyDownload';
+  static const _albumSortKey = 'nordic.pref.albumSort';
+  static const _songSortKey = 'nordic.pref.songSort';
 
   String? loadThemeMode() => _prefs.getString(_themeKey);
 
@@ -172,6 +174,17 @@ class ConfigStore {
 
   Future<void> saveBackgroundPlay(bool value) =>
       _prefs.setBool(_backgroundPlayKey, value);
+
+  /// 排序口径。存的是枚举的**名字** —— 存序号会在枚举增删时错位。
+  String? loadAlbumSort() => _prefs.getString(_albumSortKey);
+
+  Future<void> saveAlbumSort(String name) =>
+      _prefs.setString(_albumSortKey, name);
+
+  String? loadSongSort() => _prefs.getString(_songSortKey);
+
+  Future<void> saveSongSort(String name) =>
+      _prefs.setString(_songSortKey, name);
 
   bool loadWifiOnlyDownload() => _prefs.getBool(_wifiOnlyKey) ?? false;
 
