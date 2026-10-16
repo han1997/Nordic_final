@@ -3,12 +3,31 @@ import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../../data/models.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/grain.dart';
 import '../../theme/tokens.dart';
+
+/// 装上封面磁盘缓存的配置。在 `main()` 里调一次。
+///
+/// 默认那份只留 **200** 个对象:库里 400 多张专辑、每张还要按尺寸各存一份,
+/// 很容易超过它 —— 于是滚动时刚看过的封面可能已经被淘汰,回头又要重下一遍。
+/// 这里放到 1200 个(每张几十 KB,占用仍在几十 MB 量级),过期给一个月。
+///
+/// 用 `defaultCacheManager` 而不是逐处传:封面地址散在十几个调用点,
+/// 逐个传的话漏一处就悄悄退回默认的 200。
+void configureCoverCache() {
+  CachedNetworkImageProvider.defaultCacheManager = CacheManager(
+    Config(
+      'nordic-covers',
+      maxNrOfCacheObjects: 1200,
+      stalePeriod: const Duration(days: 30),
+    ),
+  );
+}
 
 /// 封面 —— `.cover` 的等价物。
 ///

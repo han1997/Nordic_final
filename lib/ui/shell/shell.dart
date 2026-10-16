@@ -7,6 +7,7 @@ import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/ambient.dart';
 import '../../theme/tokens.dart';
+import '../routes.dart';
 import '../screens/library_screen.dart';
 import '../screens/search_screen.dart';
 import '../screens/settings_screen.dart';
@@ -27,10 +28,25 @@ class NordicShell extends StatefulWidget {
 class _NordicShellState extends State<NordicShell> {
   AppTab _tab = AppTab.library;
 
+  /// 已经露过面的 tab。**没露过面的先不建**:冷启动时把搜索与设置那两棵树
+  /// 也建出来是白花的 —— 用户可能整场都不点它们,而设置页有几十行。
+  /// 建过之后 IndexedStack 照旧保活,滚动位置不丢。
+  final Set<AppTab> _built = {AppTab.library};
+
   void _select(AppTab tab) {
-    if (tab == _tab) return;
-    setState(() => _tab = tab);
+    if (tab == _tab && _built.contains(tab)) return;
+    setState(() {
+      _tab = tab;
+      _built.add(tab);
+    });
   }
+
+  /// tab → 那一屏。没建过的用空盒子占位(IndexedStack 要按 index 取用)。
+  static Widget _screenOf(AppTab tab) => switch (tab) {
+        AppTab.library => const LibraryScreen(),
+        AppTab.search => const SearchScreen(),
+        AppTab.settings => const SettingsScreen(),
+      };
 
   /// 沉浸页上那颗胶囊点了某个 tab(见 [openTab])。
   ///
@@ -42,10 +58,17 @@ class _NordicShellState extends State<NordicShell> {
     _select(tab);
   }
 
+  /// 顶栏那个放大镜(见 `AppRoutes.openSearchTab`)。
+  ///
+  /// 这条线**断过一阵**:`searchTabRequest` 一直有人发、没人听,于是音乐库
+  /// 顶栏的放大镜点了什么也不发生 —— 一颗死按钮。现在接回来。
+  void _applySearchRequest() => _select(AppTab.search);
+
   @override
   void initState() {
     super.initState();
     pendingTab.addListener(_applyPendingTab);
+    searchTabRequest.addListener(_applySearchRequest);
     // 首帧之后再拉数据 —— 在 initState 里直接发起会让第一次 build
     // 就撞上「正在加载」而白闪一下。
     //
@@ -72,6 +95,7 @@ class _NordicShellState extends State<NordicShell> {
   @override
   void dispose() {
     pendingTab.removeListener(_applyPendingTab);
+    searchTabRequest.removeListener(_applySearchRequest);
     super.dispose();
   }
 
@@ -83,10 +107,12 @@ class _NordicShellState extends State<NordicShell> {
           // IndexedStack 而不是条件渲染 —— 切回来时滚动位置还在。
           IndexedStack(
             index: _tab.index,
-            children: const [
-              LibraryScreen(),
-              SearchScreen(),
-              SettingsScreen(),
+            children: [
+              for (final tab in AppTab.values)
+                if (_built.contains(tab))
+                  _screenOf(tab)
+                else
+                  const SizedBox.shrink(),
             ],
           ),
           BottomStack(activeTab: _tab, onTabSelected: _select),

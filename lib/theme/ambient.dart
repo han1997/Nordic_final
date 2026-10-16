@@ -28,14 +28,18 @@ class NordicAmbient extends StatelessWidget {
 
     return Positioned.fill(
       child: IgnorePointer(
-        child: ClipRect(
-          child: ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-            child: CustomPaint(
-              painter: _AmbientPainter(
-                accent: a.accent,
-                c1: a.c1,
-                glow: t.glow,
+        // 单独一层:这层模糊对同一套配色是**完全静态**的(内容在它上面滚,
+        // 它自己不动),隔成一层才可能被光栅缓存住,不必每帧重算一遍。
+        child: RepaintBoundary(
+          child: ClipRect(
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+              child: CustomPaint(
+                painter: _AmbientPainter(
+                  accent: a.accent,
+                  c1: a.c1,
+                  glow: t.glow,
+                ),
               ),
             ),
           ),
@@ -105,17 +109,20 @@ class NordicAmbientShade extends StatelessWidget {
     final t = context.nordic;
     return Positioned.fill(
       child: IgnorePointer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                t.shade,
-                Color.lerp(t.shade, t.shade2, 0.72)!,
-                t.shade2,
-              ],
-              stops: const [0.0, 0.44, 1.0],
+        // 同上:压暗层也是静态的,隔一层交给缓存。
+        child: RepaintBoundary(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  t.shade,
+                  Color.lerp(t.shade, t.shade2, 0.72)!,
+                  t.shade2,
+                ],
+                stops: const [0.0, 0.44, 1.0],
+              ),
             ),
           ),
         ),

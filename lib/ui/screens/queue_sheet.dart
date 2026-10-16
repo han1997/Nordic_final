@@ -11,6 +11,10 @@ import '../widgets/components.dart';
 import '../widgets/cover.dart';
 import '../widgets/rows.dart';
 
+/// 短队列按内容撑高、长队列懒加载的分界:40 行建出来大约几毫秒,
+/// 再往上(从一张五百首的专辑开播就是五百行)就开始掉帧了。
+const _shrinkWrapLimit = 40;
+
 /// 揭开播放队列面板。
 void showQueueSheet(BuildContext context) {
   showModalBottomSheet<void>(
@@ -56,7 +60,9 @@ class _QueueSheet extends StatelessWidget {
               )
             : Flexible(
                 child: ReorderableListView.builder(
-                  shrinkWrap: true,
+                  // 短队列按内容撑高(三个条目不该占满整屏),长的则**懒加载** ——
+                  // 从一张五百首的专辑开播时,一次把这五百行建出来是能看出来的卡。
+                  shrinkWrap: queue.length <= _shrinkWrapLimit,
                   padding: const EdgeInsets.only(bottom: NordicSpace.s4),
                   itemCount: queue.length,
                   // onReorderItem 已经替我们算好了移除旧项之后的插入下标,

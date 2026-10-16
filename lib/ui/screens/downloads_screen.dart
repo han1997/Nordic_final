@@ -302,6 +302,9 @@ class _DownloadRow extends StatelessWidget {
       };
 }
 
+/// 短列表按内容撑高、长列表懒加载的分界(与队列面板同一套口径)。
+const _shrinkWrapLimit = 40;
+
 /// 一条已下好的内容里的曲目 —— 从下载记录自带的元信息里读,
 /// **不查服务器**:断网时它得照样列得出来,这正是这一屏存在的理由。
 class _OfflineTracks extends StatelessWidget {
@@ -319,7 +322,8 @@ class _OfflineTracks extends StatelessWidget {
       // 一张专辑几十首,纸不能长到屏幕外。
       constraints: const BoxConstraints(maxHeight: 380),
       child: ListView.builder(
-        shrinkWrap: true,
+        // 与队列面板同一套:短的按内容撑高,长的懒加载(整张专辑可能有几百首)。
+        shrinkWrap: record.tracks.length <= _shrinkWrapLimit,
         padding: const EdgeInsets.only(bottom: NordicSpace.s4),
         itemCount: record.tracks.length,
         itemBuilder: (context, i) {
