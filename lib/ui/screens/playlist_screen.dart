@@ -8,6 +8,7 @@ import '../../state/app_state.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
+import '../routes.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
@@ -71,6 +72,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   @override
   Widget build(BuildContext context) {
     final accent = NordicAccent.derived(widget.playlistId);
+    final playlist = _playlist;
+    // 服务器标了只读的歌单(别人分享给你的那种)不给改写的入口 ——
+    // 摆在这里也只会换来一句服务器拒绝。
+    final editable = playlist != null && !playlist.readonly;
 
     return ImmersiveScaffold(
       accent: accent,
@@ -84,6 +89,14 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               icon: Icons.arrow_back,
               onPressed: () => Navigator.of(context).pop(),
             ),
+            actions: [
+              if (editable)
+                IconButtonRound(
+                  icon: Icons.more_horiz,
+                  quiet: true,
+                  onPressed: _showMenu,
+                ),
+            ],
           ),
           Expanded(child: _body()),
         ],
@@ -220,6 +233,28 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               trackNumber: i + 1,
               playing: _songs[i].id == currentId && playable.state.playing,
               onTap: () => playable.playAll(_songs, index: i),
+              trailing: playlist.readonly
+                  ? null
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          formatDuration(_songs[i].duration),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: context.nordic.fg3),
+                        ),
+                        const SizedBox(width: NordicSpace.s2),
+                        IconButtonRound(
+                          icon: Icons.more_horiz,
+                          size: 32,
+                          iconSize: 16,
+                          quiet: true,
+                          onPressed: () => _songMenu(i),
+                        ),
+                      ],
+                    ),
             ),
         // 服务器报的首数与实际取到的条数不一致时说明一句,免得像漏数据。
         if (_songs.isNotEmpty && playlist.songCount > _songs.length)
@@ -246,11 +281,283 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       await playable.append(song);
     }
     if (!mounted) return;
+    _toast('${_songs.length} 首已加入队列');
+  }
+
+  // ---------------- 歌单管理 ----------------
+
+  /// 歌单自己的菜单。只读歌单没有这个入口(见 [build])。
+  void _showMenu() {
+    final playlist = _playlist;
+    if (playlist == null) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => NordicScrim(
+        onTap: () => Navigator.of(sheetContext).pop(),
+        child: NordicSheet(
+          title: playlist.name,
+          subtitle: '${playlist.songCount} 首',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              NordicMenuRow(
+                icon: Icons.edit_outlined,
+                label: '重命名歌单',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _rename();
+                },
+              ),
+              NordicMenuRow(
+                icon: Icons.delete_outline,
+                label: '删除这个歌单',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _confirmDelete();
+                },
+              ),
+              const SizedBox(height: NordicSpace.s2),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _rename() async {
+    final playlist = _playlist;
+    if (playlist == null) return;
+
+    final controller = TextEditingController(text: playlist.name)
+      // 改名时多半是整个换掉,所以默认全选 —— 省一次手动清空。
+      ..selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: playlist.name.length,
+      );
+
+    final name = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      // 软键盘弹出时整张纸要跟着抬起来,不然输入框会被盖住。
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+        ),
+        child: NordicScrim(
+          onTap: () => Navigator.of(sheetContext).pop(),
+          child: NordicSheet(
+            title: '重命名歌单',
+            subtitle: '原标题:${playlist.name}',
+            child: _RenameForm(
+              controller: controller,
+              original: playlist.name,
+              onSubmit: (value) => Navigator.of(sheetContext).pop(value),
+            ),
+          ),
+        ),
+      ),
+    );
+    controller.dispose();
+
+    if (name == null || !mounted) return;
+    try {
+      await context.read<AppState>().renamePlaylist(playlist.id, name);
+      if (!mounted) return;
+      // 本屏自己那份也要跟着改 —— 它不会因为 AppState 更新而重拉。
+      setState(() => _playlist = playlist.copyWith(name: name));
+      _toast('已改名为「$name」');
+    } catch (e) {
+      if (!mounted) return;
+      _toast('$e', duration: const Duration(seconds: 3));
+    }
+  }
+
+  Future<void> _confirmDelete() async {
+    final playlist = _playlist;
+    if (playlist == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: dialogContext.nordic.glass3,
+        title: const Text('删除这个歌单?'),
+        content: Text(
+          '「${playlist.name}」会从服务器上删掉,里面的 ${playlist.songCount} 首曲子'
+          '本身不受影响。这一步不能撤销。',
+          style: Theme.of(dialogContext).textTheme.bodySmall,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('删除', style: TextStyle(color: dialogContext.nordic.bad)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // 提示要在**退出本屏之前**找好 —— 退出后 context 就跟着作废了。
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      await context.read<AppState>().deletePlaylist(playlist.id);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      messenger?.showSnackBar(SnackBar(
+        content: Text('「${playlist.name}」已删除'),
+        duration: const Duration(seconds: 2),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      _toast('$e', duration: const Duration(seconds: 3));
+    }
+  }
+
+  void _songMenu(int index) {
+    final song = _songs[index];
+    final playable = context.read<PlaybackController>();
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => NordicScrim(
+        onTap: () => Navigator.of(sheetContext).pop(),
+        child: NordicSheet(
+          title: song.title,
+          subtitle: '${song.artist} · ${song.album}',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              NordicMenuRow(
+                icon: Icons.playlist_remove,
+                label: '从这个歌单移除',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _removeAt(index);
+                },
+              ),
+              NordicMenuRow(
+                icon: Icons.playlist_play,
+                label: '下一首播放',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  playable.playNext(song);
+                  _toast('已排到下一首');
+                },
+              ),
+              NordicMenuRow(
+                icon: Icons.queue_music,
+                label: '加入播放队列',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  playable.append(song);
+                  _toast('已加入队列');
+                },
+              ),
+              NordicMenuRow(
+                icon: Icons.album_outlined,
+                label: '查看专辑',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  AppRoutes.openAlbum(context, song.albumId);
+                },
+              ),
+              const SizedBox(height: NordicSpace.s2),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 从歌单里移除一首。**按位置移除** —— 同一首歌在歌单里出现两次时,
+  /// 只有位置说得清要移掉哪一次(见 [SubsonicRepository.removeFromPlaylist])。
+  Future<void> _removeAt(int index) async {
+    final playlist = _playlist;
+    if (playlist == null || index < 0 || index >= _songs.length) return;
+
+    final song = _songs[index];
+    try {
+      await context.read<AppState>().removeSongFromPlaylist(playlist.id, index);
+      if (!mounted) return;
+      setState(() {
+        _songs = [..._songs]..removeAt(index);
+        _playlist = playlist.copyWith(
+          songCount: (playlist.songCount - 1).clamp(0, 1 << 30),
+        );
+      });
+      _toast('已从歌单移除「${song.title}」');
+    } catch (e) {
+      if (!mounted) return;
+      _toast('没能移除:$e', duration: const Duration(seconds: 3));
+    }
+  }
+
+  void _toast(String message, {Duration? duration}) {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       SnackBar(
-        content: Text('${_songs.length} 首已加入队列'),
-        duration: const Duration(seconds: 2),
+        content: Text(message),
+        duration: duration ?? const Duration(seconds: 2),
       ),
+    );
+  }
+}
+
+/// 重命名表单。名字没变(或被清空)时保存按钮是灰的 ——
+/// 空名字会把歌单变成列表里一行看不见的东西。
+class _RenameForm extends StatelessWidget {
+  const _RenameForm({
+    required this.controller,
+    required this.original,
+    required this.onSubmit,
+  });
+
+  final TextEditingController controller;
+  final String original;
+  final void Function(String) onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final name = value.text.trim();
+        final usable = name.isNotEmpty && name != original;
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
+              child: NordicField(
+                label: '歌单名称',
+                child: NordicTextField(
+                  controller: controller,
+                  hintText: '例如:深夜驾驶',
+                  autofocus: true,
+                ),
+              ),
+            ),
+            const SizedBox(height: NordicSpace.s5),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
+              child: PrimaryButton(
+                label: '保存',
+                height: 48,
+                onPressed: usable ? () => onSubmit(name) : null,
+              ),
+            ),
+            const SizedBox(height: NordicSpace.s5),
+          ],
+        );
+      },
     );
   }
 }

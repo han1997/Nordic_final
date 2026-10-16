@@ -21,6 +21,7 @@ class DownloadRecord {
     required this.files,
     required this.completedAt,
     this.cover,
+    this.coverArtId,
   });
 
   /// 任务 id,同时也是它在根目录下的子目录名。
@@ -43,6 +44,13 @@ class DownloadRecord {
   /// 封面图在磁盘上的相对路径。没下到就是 null。
   final String? cover;
 
+  /// 那张封面对应的 `coverArtId`。
+  ///
+  /// 记它是因为界面上的封面是**按 coverArtId 找**的(专辑、艺人、歌单都是),
+  /// 有了这个映射,「这张图本机有没有」才答得上来 —— 否则离线时只能眼看
+  /// 一块渐变铺在那里。
+  final String? coverArtId;
+
   final DateTime completedAt;
 
   /// 界面上的体积文案。小数位没有意义,四舍五入到整 MB。
@@ -56,6 +64,7 @@ class DownloadRecord {
         'bytes': bytes,
         'files': files,
         'cover': cover,
+        'coverArtId': coverArtId,
         'completedAt': completedAt.toIso8601String(),
       };
 
@@ -74,6 +83,7 @@ class DownloadRecord {
             e.key as String: e.value as String,
       },
       cover: json['cover'] as String?,
+      coverArtId: json['coverArtId'] as String?,
       completedAt:
           DateTime.tryParse(json['completedAt'] as String? ?? '') ??
               DateTime.fromMillisecondsSinceEpoch(0),
@@ -189,16 +199,30 @@ class DownloadStore {
   /// 这首歌是不是已经在本地。返回绝对路径,没有就是 null。
   String? localPathFor(String songId) => _bySongId[songId];
 
-  /// 这首歌所在任务的封面路径。离线时通知栏的图靠它。
-  String? coverPathForSong(String songId) {
+  /// 这张封面在本机的路径。没下过就是 null。
+  ///
+  /// 界面与通知栏都用它:封面是按 `coverArtId` 找的(专辑、艺人、歌单同一套),
+  /// 所以这里也按 artId 找 —— 下过哪张就认哪张,不会把艺人的图当专辑的图。
+  String? coverPathForArt(String? coverArtId) {
+    if (coverArtId == null || coverArtId.isEmpty) return null;
     for (final record in _records) {
-      if (record.files.containsKey(songId)) {
+      if (record.coverArtId == coverArtId) {
         final cover = record.cover;
         return cover == null ? null : _absolute(cover);
       }
     }
     return null;
   }
+
+  // ---- 任务 id 的命名 ----
+  // 落盘目录名就是任务 id,而「某张专辑下过没有」要靠同一套命名回答,
+  // 所以命名只有这一处,下载器与查询方都用它。
+
+  static String albumTaskId(String albumId) => 'dl-album-$albumId';
+
+  static String artistTaskId(String artistId) => 'dl-artist-$artistId';
+
+  static String songTaskId(String songId) => 'dl-song-$songId';
 
   /// 任务自己的目录(不存在则建)。
   Future<Directory> directoryFor(String taskId) async {

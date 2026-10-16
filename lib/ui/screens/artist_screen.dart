@@ -9,6 +9,7 @@ import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../routes.dart';
+import 'playlist_picker_sheet.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
@@ -257,7 +258,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _MenuRow(
+              NordicMenuRow(
                 icon: _starred ? Icons.favorite : Icons.favorite_border,
                 label: _starred ? '取消收藏' : '收藏这位艺人',
                 onTap: () {
@@ -265,7 +266,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                   _toggleStar();
                 },
               ),
-              _MenuRow(
+              NordicMenuRow(
                 icon: Icons.queue_music,
                 label: '热门歌曲加入队列',
                 onTap: () {
@@ -273,7 +274,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                   _queueAll();
                 },
               ),
-              _MenuRow(
+              NordicMenuRow(
                 icon: Icons.download_outlined,
                 label: '下载全部歌曲',
                 onTap: () {
@@ -331,7 +332,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _MenuRow(
+              NordicMenuRow(
                 icon: Icons.playlist_play,
                 label: '下一首播放',
                 onTap: () {
@@ -340,7 +341,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                   _toast('已排到下一首');
                 },
               ),
-              _MenuRow(
+              NordicMenuRow(
                 icon: downloaded ? Icons.download_done : Icons.download_outlined,
                 label: downloaded ? '已下载到本机' : '下载到本机（FLAC）',
                 onTap: () {
@@ -348,7 +349,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                   if (!downloaded) _downloadSong(song);
                 },
               ),
-              _MenuRow(
+              NordicMenuRow(
                 icon: Icons.queue_music,
                 label: '加入播放队列',
                 onTap: () {
@@ -357,7 +358,15 @@ class _ArtistScreenState extends State<ArtistScreen> {
                   _toast('已加入队列');
                 },
               ),
-              _MenuRow(
+              NordicMenuRow(
+                icon: Icons.playlist_add,
+                label: '加入歌单',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  showPlaylistPicker(this.context, song: song);
+                },
+              ),
+              NordicMenuRow(
                 icon: Icons.album_outlined,
                 label: '查看专辑',
                 onTap: () {
@@ -503,37 +512,3 @@ class _ArtistActions extends StatelessWidget {
   }
 }
 
-class _MenuRow extends StatelessWidget {
-  const _MenuRow({required this.icon, required this.label, required this.onTap});
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: t.fg2),
-            const SizedBox(width: NordicSpace.s4),
-            Expanded(
-              child: Text(
-                label,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyLarge
-                    ?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

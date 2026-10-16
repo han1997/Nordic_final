@@ -655,6 +655,52 @@ class EmptyState extends StatelessWidget {
 }
 
 /// 底部弹层 —— `.sheet`。玻璃面 + 顶部把手 + 上滑动画。
+/// 底部纸里的一行动作 —— `.menu-item`。
+///
+/// 专辑页、艺人页、播放页、歌单页的「⋯」背后铺的都是这个。
+/// 四个页面各抄一份的日子到此为止:它们是同一件东西,样式该只有一处。
+class NordicMenuRow extends StatelessWidget {
+  const NordicMenuRow({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: t.fg2),
+            const SizedBox(width: NordicSpace.s4),
+            // Expanded 是给长标签(「下载到本机(FLAC)」这种)留的余地 ——
+            // 窄屏上宁可折行,也不要溢出成黄黑警示带。
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class NordicSheet extends StatelessWidget {
   const NordicSheet({super.key, required this.child, this.title, this.subtitle});
 

@@ -172,6 +172,20 @@ class Playlist {
 
   bool get hasCover => coverArtId != null && coverArtId!.isNotEmpty;
 
+  /// 只用于**本地快照的就地更新**:改完名字或增删曲目后,库里那一项要跟着变,
+  /// 但重拉整库会打断浏览。其余字段不在这里改 —— 它们由服务器说了算。
+  Playlist copyWith({String? name, int? songCount}) => Playlist(
+        id: id,
+        name: name ?? this.name,
+        songCount: songCount ?? this.songCount,
+        duration: duration,
+        description: description,
+        coverArtId: coverArtId,
+        owner: owner,
+        readonly: readonly,
+        changed: changed,
+      );
+
   @override
   bool operator ==(Object other) => other is Playlist && other.id == id;
 

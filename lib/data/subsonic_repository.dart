@@ -9,9 +9,17 @@ import 'subsonic_payload.dart';
 /// [SubsonicMapper] 映射成域模型、把失败包成能直接展示成文案的异常。
 /// **不做缓存** —— 缓存是状态层的事,混进来会让「刷新」语义变得含糊。
 class SubsonicRepository {
-  SubsonicRepository(this.client);
+  SubsonicRepository(this.client, {this._localCover});
 
   final SubsonicClient client;
+
+  /// 「这张封面在本机有没有」—— 有就返回磁盘路径。
+  ///
+  /// 由状态层从下载索引里接过来(见 `state/app_state.dart`)。放在这个类里
+  /// 而不是各页面的 `_coverUri` 里,是因为封面地址**只有这一处**在拼:
+  /// 十几处调用点各自判断一次,迟早会有一处漏掉,表现成「断网时只有那一个
+  /// 角落的封面没了」。
+  final String? Function(String coverArtId)? _localCover;
 
   // ---------------- 音乐库 ----------------
 
@@ -212,16 +220,26 @@ class SubsonicRepository {
 
   // ---------------- 播放地址 ----------------
 
-  /// 封面图 URL。**必须带鉴权参数** —— 图片缓存与音频解码器是绕过
-  /// `SubsonicClient` 直接发请求的,不签名会被服务器拒掉。
+  /// 封面图 URL。**本机下过就直接给本机文件** —— 断网时封面不该消失,
+  /// 那是「下载了也不能离线用」的观感。
+  ///
+  /// 否则必须带鉴权参数 —— 图片缓存与音频解码器是绕过 `SubsonicClient`
+  /// 直接发请求的,不签名会被服务器拒掉。
   ///
   /// [size] 由服务器负责缩放;传原始尺寸会把 4000px 的原图拉进内存。
-  Uri coverUri(String coverArtId, {int size = 512}) => SubsonicClient.buildUri(
-        _activeRouteOrThrow,
-        'getCoverArt',
-        {'id': coverArtId, 'size': '$size'},
-        client.auth,
-      );
+  /// 本机那份不再按 [size] 缩放:它是下载时按 1024 存的,为显示尺寸现解码
+  /// 一张已经在磁盘上的图不值当。
+  Uri coverUri(String coverArtId, {int size = 512}) {
+    final local = _localCover?.call(coverArtId);
+    if (local != null) return Uri.file(local);
+
+    return SubsonicClient.buildUri(
+      _activeRouteOrThrow,
+      'getCoverArt',
+      {'id': coverArtId, 'size': '$size'},
+      client.auth,
+    );
+  }
 
   /// 音频流 URL。转码档位在这里落成 `maxBitRate` / `format` 参数;
   /// 原音档不传参数,直接取原文件。
@@ -293,6 +311,17 @@ class SubsonicRepository {
       client.call('updatePlaylist', {
         'playlistId': playlistId,
         'songIdToAdd': songId,
+      });
+
+  /// 从歌单里移除某一首。
+  ///
+  /// **按位置移除**:协议给的是 `songIndexToRemove`,索引指服务器那份列表里的
+  /// 位置。同一首歌在歌单里出现两次时,「移除哪一次」只有位置说得清,
+  /// 所以这里收位置而不是歌曲 id。
+  Future<void> removeFromPlaylist(String playlistId, int index) =>
+      client.call('updatePlaylist', {
+        'playlistId': playlistId,
+        'songIndexToRemove': '$index',
       });
 
   /// 重命名歌单。

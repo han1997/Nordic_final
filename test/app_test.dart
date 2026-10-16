@@ -5,6 +5,7 @@ import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/theme_mode.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/shell/shell.dart';
+import 'package:nordic/ui/widgets/cover.dart';
 
 /// 主题层的用例。
 ///
@@ -71,5 +72,42 @@ void main() {
       // 溢出时 Flutter 会把异常塞进 takeException,这里必须为空。
       expect(tester.takeException(), isNull, reason: 'big=$big 时标题栏不应溢出');
     }
+  });
+
+  testWidgets('封面认 file:// —— 下载过的封面断网也要显出来', (tester) async {
+    // 用一个不存在的路径:Image.file 会走 errorBuilder 退回渐变兜底,
+    // 但树里那一层仍是 FileImage。这里验的是「有没有走本机这条路」,
+    // 走错了会变成 Image.network(把一个本地路径当网址发出去)。
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: NordicTheme.build(NordicTokens.dark),
+        home: Cover(
+          coverArtId: 'cover-1',
+          seed: 'al-1',
+          uri: Uri.file('/tmp/nordic-不存在的封面.jpg'),
+          size: 80,
+        ),
+      ),
+    );
+
+    final image = tester.widget<Image>(find.byType(Image));
+    expect(image.image, isA<FileImage>());
+  });
+
+  testWidgets('没下过的封面照旧走网络', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: NordicTheme.build(NordicTokens.dark),
+        home: Cover(
+          coverArtId: 'cover-1',
+          seed: 'al-1',
+          uri: Uri.parse('http://nas.example.com/rest/getCoverArt.view?id=cover-1'),
+          size: 80,
+        ),
+      ),
+    );
+
+    final image = tester.widget<Image>(find.byType(Image));
+    expect(image.image, isA<NetworkImage>());
   });
 }

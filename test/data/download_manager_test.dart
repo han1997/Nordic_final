@@ -151,6 +151,33 @@ void main() {
       expect(reopened.localPathFor('s2'), isNotNull);
     });
 
+    test('封面跟着一起下,并且界面按 coverArtId 问得到', () async {
+      final manager = managerWith(fn: transfer(<Uri>[]));
+
+      await manager.enqueue(DownloadRequest.album(album, [song('s1')]));
+      await settle(manager);
+
+      final cover = manager.coverPathForArt('cover-1');
+      expect(cover, isNotNull);
+      expect(File(cover!).existsSync(), isTrue);
+
+      // 有了它,仓库给的封面地址就是本机文件 —— 断网也看得见。
+      final repo = SubsonicRepository(
+        SubsonicClient(
+          auth: SubsonicAuth(username: 'u', password: 'p'),
+          routes: const [
+            ServerRoute(id: 'lan', name: '局域网', url: 'http://lan.example.com'),
+          ],
+        ),
+        localCover: manager.coverPathForArt,
+      );
+      expect(repo.coverUri('cover-1').scheme, 'file');
+      // 没下过的那张照旧走服务器,参数齐全。
+      final remote = repo.coverUri('别的封面', size: 128);
+      expect(remote.scheme, 'http');
+      expect(remote.queryParameters['size'], '128');
+    });
+
     test('下载一律取原文件,不吃转码档', () async {
       final calls = <Uri>[];
       final manager = managerWith(fn: transfer(calls));

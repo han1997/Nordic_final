@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../data/download_manager.dart';
@@ -24,6 +25,7 @@ class AppState extends ChangeNotifier {
     required this.credentialStore,
     required this.quality,
     required this.downloadManager,
+    this._dio,
   }) {
     // 下载器的状态变化要能被界面看到,而界面只订阅 [AppState] 一个对象 ——
     // 这里把它接进来,省掉「下载页要多订阅一个 provider」这件事。
@@ -34,6 +36,10 @@ class AppState extends ChangeNotifier {
   final CredentialStore credentialStore;
   final QualityController quality;
   final DownloadManager downloadManager;
+
+  /// 建客户端时用的 HTTP 客户端。生产走默认(见 [clientFor]),
+  /// 测试塞一个假 Dio 进来 —— 写歌单这类操作要验的是「发了什么、本地跟着变了吗」。
+  final Dio? _dio;
 
   SubsonicRepository? _repository;
   SubsonicRepository? get repository => _repository;
@@ -60,11 +66,16 @@ class AppState extends ChangeNotifier {
   /// 存储(前者 SharedPreferences,后者系统密钥库),各有各的失败可能,
   /// 分开之后「配置在但密码读不出来」这种情况有地方表达。
   void attachRepository(ServerConfig config, String password) {
-    _repository = SubsonicRepository(clientFor(
-      config: config,
-      password: password,
-      autoRoute: configStore.loadAutoRoute(),
-    ));
+    _repository = SubsonicRepository(
+      clientFor(
+        config: config,
+        password: password,
+        autoRoute: configStore.loadAutoRoute(),
+        dio: _dio,
+      ),
+      // 封面的本机优先:下过的封面断网也看得见(见 SubsonicRepository.coverUri)。
+      localCover: downloadManager.coverPathForArt,
+    );
     notifyListeners();
   }
 
@@ -90,11 +101,16 @@ class AppState extends ChangeNotifier {
     await configStore.saveServer(config);
 
     _server = config;
-    _repository = SubsonicRepository(clientFor(
-      config: config,
-      password: password,
-      autoRoute: configStore.loadAutoRoute(),
-    ));
+    _repository = SubsonicRepository(
+      clientFor(
+        config: config,
+        password: password,
+        autoRoute: configStore.loadAutoRoute(),
+        dio: _dio,
+      ),
+      // 封面的本机优先:下过的封面断网也看得见(见 SubsonicRepository.coverUri)。
+      localCover: downloadManager.coverPathForArt,
+    );
     notifyListeners();
 
     // 顺手测一次速并把择优结果定下来,这样第一次进音乐库就走最快那条。
@@ -334,11 +350,7 @@ class AppState extends ChangeNotifier {
   /// 失败时抛 [SubsonicException] 而不是吞掉:这是用户主动发起的写操作,
   /// 「点了创建但什么都没有」比一句错误提示糟得多。
   Future<Playlist> createPlaylist(String name) async {
-    final repo = _repository;
-    if (repo == null) {
-      throw const SubsonicException('还没有连接服务器');
-    }
-
+    final repo = _requireRepository();
     final created = await repo.createPlaylist(name);
     _library = LibrarySnapshot(
       albums: _library.albums,
@@ -349,6 +361,92 @@ class AppState extends ChangeNotifier {
     );
     notifyListeners();
     return created;
+  }
+
+  /// 把一首歌加进歌单。
+  ///
+  /// 成功后**就地改本地快照的条数**,不重拉整库:重拉会把浏览位置和
+  /// 滚动都打断,而用户只是想把这首歌塞进某个歌单。条数不跟着变的话,
+  /// 「已加入」成功而列表里还写着旧数字,看着像没成功。
+  Future<void> addSongToPlaylist(String playlistId, String songId) async {
+    final repo = _requireRepository();
+    await repo.addToPlaylist(playlistId, songId);
+    _bumpPlaylist(playlistId, 1);
+  }
+
+  /// 从歌单里移除某一首。[index] 是它在服务器那份列表里的位置。
+  Future<void> removeSongFromPlaylist(String playlistId, int index) async {
+    final repo = _requireRepository();
+    await repo.removeFromPlaylist(playlistId, index);
+    _bumpPlaylist(playlistId, -1);
+  }
+
+  /// 重命名歌单。
+  Future<void> renamePlaylist(String playlistId, String name) async {
+    final repo = _requireRepository();
+    await repo.renamePlaylist(playlistId, name.trim());
+    _mapPlaylist(
+      playlistId,
+      (p) => p.copyWith(name: name.trim()),
+    );
+  }
+
+  /// 删除歌单。**服务器上的那份会被删掉**,界面要先问一句。
+  Future<void> deletePlaylist(String playlistId) async {
+    final repo = _requireRepository();
+    await repo.deletePlaylist(playlistId);
+    _library = LibrarySnapshot(
+      albums: _library.albums,
+      artists: _library.artists,
+      songs: _library.songs,
+      playlists: [
+        for (final p in _library.playlists)
+          if (p.id != playlistId) p,
+      ],
+      recentlyAdded: _library.recentlyAdded,
+    );
+    notifyListeners();
+  }
+
+  void _bumpPlaylist(String playlistId, int delta) {
+    _mapPlaylist(
+      playlistId,
+      (p) => p.copyWith(songCount: (p.songCount + delta).clamp(0, 1 << 30)),
+    );
+  }
+
+  /// 就地改本地快照里的一条歌单。找不到就什么也不做 ——
+  /// 用户可能是在歌单详情页里操作一个已从库里消失的歌单。
+  void _mapPlaylist(String playlistId, Playlist Function(Playlist) change) {
+    final next = <Playlist>[];
+    var changed = false;
+    for (final p in _library.playlists) {
+      if (p.id == playlistId) {
+        changed = true;
+        next.add(change(p));
+      } else {
+        next.add(p);
+      }
+    }
+    if (!changed) return;
+
+    _library = LibrarySnapshot(
+      albums: _library.albums,
+      artists: _library.artists,
+      songs: _library.songs,
+      playlists: next,
+      recentlyAdded: _library.recentlyAdded,
+    );
+    notifyListeners();
+  }
+
+  /// 取仓库,没有就抛一句人话 —— 写操作「静默失败」比报错糟得多。
+  SubsonicRepository _requireRepository() {
+    final repo = _repository;
+    if (repo == null) {
+      throw const SubsonicException('还没有连接服务器');
+    }
+    return repo;
   }
 
   Future<void> setQuality(QualityOption option) async {
@@ -369,6 +467,7 @@ class AppState extends ChangeNotifier {
   /// 也据此显示 —— 两处各判一次迟早会不一致。
   bool isDownloaded(String songId) => downloadManager.isDownloaded(songId);
 
+
   /// 下载整张专辑的曲目。[songs] 必须是**已加载出来的曲目表** ——
   /// 只报个曲目数就下发,下载器无从知道要拉哪些文件。
   Future<DownloadJob> downloadAlbum(Album album, List<Song> songs) {
@@ -386,10 +485,7 @@ class AppState extends ChangeNotifier {
   /// 曲目要在全库里找齐(`getArtist` 只给几首热门),这一步会翻页,
   /// 大库上要等一会儿 —— 所以界面先提示「正在整理曲目」再调它。
   Future<DownloadJob> downloadArtist(Artist artist) async {
-    final repo = _repository;
-    if (repo == null) {
-      throw const SubsonicException('还没有连接服务器');
-    }
+    final repo = _requireRepository();
     final songs = await repo.songsByArtist(artist);
     if (songs.isEmpty) {
       throw SubsonicException('在音乐库里没有找到 ${artist.name} 的歌曲');

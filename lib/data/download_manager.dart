@@ -27,7 +27,7 @@ class DownloadRequest {
   /// 整张专辑。
   factory DownloadRequest.album(Album album, List<Song> songs) =>
       DownloadRequest(
-        id: 'dl-album-${album.id}',
+        id: DownloadStore.albumTaskId(album.id),
         name: album.name,
         detail: '${songs.length} 首 · 整张',
         songs: songs,
@@ -37,7 +37,7 @@ class DownloadRequest {
   /// 一位艺人的全部歌曲(调用方负责把曲子找齐)。
   factory DownloadRequest.artist(Artist artist, List<Song> songs) =>
       DownloadRequest(
-        id: 'dl-artist-${artist.id}',
+        id: DownloadStore.artistTaskId(artist.id),
         name: artist.name,
         detail: '${songs.length} 首 · 这位艺人',
         songs: songs,
@@ -46,7 +46,7 @@ class DownloadRequest {
 
   /// 单曲。
   factory DownloadRequest.song(Song song) => DownloadRequest(
-        id: 'dl-song-${song.id}',
+        id: DownloadStore.songTaskId(song.id),
         name: song.title,
         detail: '${song.artist} · 单曲',
         songs: [song],
@@ -276,6 +276,10 @@ class DownloadManager extends ChangeNotifier {
   /// 这首歌是不是已经在本机。播放层靠它决定走本地还是走网络。
   bool isDownloaded(String songId) => _store.localPathFor(songId) != null;
 
+  /// 这张封面在本机的路径(下过才有)。界面上的封面优先用它。
+  String? coverPathForArt(String? coverArtId) =>
+      _store.coverPathForArt(coverArtId);
+
   DownloadStore get store => _store;
 
   /// 入队。[request] 已经入过队(或已在本地)就不重复排 —— 返回既有的那条,
@@ -453,6 +457,7 @@ class DownloadManager extends ChangeNotifier {
         bytes: completedBytes,
         files: files,
         cover: cover,
+        coverArtId: job.request.coverArtId,
         completedAt: DateTime.now(),
       );
       await _store.add(record);

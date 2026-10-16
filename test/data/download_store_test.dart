@@ -44,6 +44,7 @@ void main() {
       bytes: 4,
       files: {'s1': 'dl-album-al-1/01 - 曲目.flac'},
       cover: 'dl-album-al-1/cover.jpg',
+      coverArtId: 'cover-1',
       completedAt: DateTime(2026, 10, 16),
     ));
     return (store, file);
@@ -55,9 +56,17 @@ void main() {
     expect(store.isAvailable, isTrue);
     expect(store.localPathFor('s1'), file.path);
     expect(store.localPathFor('没下过的曲子'), isNull);
-    expect(store.coverPathForSong('s1'),
+  });
+
+  test('封面按 coverArtId 找 —— 界面就是这么问的', () async {
+    final (store, _) = await givenDownloaded();
+
+    expect(store.coverPathForArt('cover-1'),
         '${root.path}${Platform.pathSeparator}dl-album-al-1'
         '${Platform.pathSeparator}cover.jpg');
+    // 没下过的那张不给路径,免得界面拿一张别的专辑的图顶上。
+    expect(store.coverPathForArt('别的封面'), isNull);
+    expect(store.coverPathForArt(null), isNull);
   });
 
   test('重开一次记录还在 —— 存的是相对路径,换根目录也还原得出来', () async {

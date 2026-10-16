@@ -16,6 +16,7 @@ import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
 import '../widgets/rows.dart';
+import 'playlist_picker_sheet.dart';
 import 'queue_sheet.dart';
 import 'quality_sheet.dart';
 import 'routes_sheet.dart';
@@ -135,7 +136,7 @@ class PlayerScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _SheetItem(
+              NordicMenuRow(
                 icon: starred ? Icons.favorite : Icons.favorite_border,
                 label: starred ? '取消收藏' : '收藏这首歌',
                 onTap: () {
@@ -143,7 +144,7 @@ class PlayerScreen extends StatelessWidget {
                   appState.toggleSongStar(song.id);
                 },
               ),
-              _SheetItem(
+              NordicMenuRow(
                 // 已经在本机的那首不必再装作能下 —— 图标与文案直接说清楚。
                 icon: downloaded
                     ? Icons.download_done
@@ -154,7 +155,15 @@ class PlayerScreen extends StatelessWidget {
                   if (!downloaded) _download(context, song, appState);
                 },
               ),
-              _SheetItem(
+              NordicMenuRow(
+                icon: Icons.playlist_add,
+                label: '加入歌单',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  showPlaylistPicker(context, song: song);
+                },
+              ),
+              NordicMenuRow(
                 icon: Icons.playlist_play,
                 label: '下一首播放',
                 onTap: () {
@@ -162,7 +171,7 @@ class PlayerScreen extends StatelessWidget {
                   playable.playNext(song);
                 },
               ),
-              _SheetItem(
+              NordicMenuRow(
                 icon: Icons.queue_music,
                 label: '查看播放队列',
                 onTap: () {
@@ -170,7 +179,7 @@ class PlayerScreen extends StatelessWidget {
                   showQueueSheet(context);
                 },
               ),
-              _SheetItem(
+              NordicMenuRow(
                 icon: Icons.album_outlined,
                 label: '查看专辑',
                 onTap: () {
@@ -788,37 +797,4 @@ class _RouteLine extends StatelessWidget {
 }
 
 /// 弹层里的通用条目 —— `.menu-item`。
-class _SheetItem extends StatelessWidget {
-  const _SheetItem({required this.icon, required this.label, required this.onTap});
 
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: t.fg2),
-            const SizedBox(width: NordicSpace.s4),
-            Expanded(
-              child: Text(
-                label,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyLarge
-                    ?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

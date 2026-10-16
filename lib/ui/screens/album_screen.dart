@@ -235,7 +235,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _MenuItem(
+              NordicMenuRow(
                 icon: _starred ? Icons.favorite : Icons.favorite_border,
                 label: _starred ? '取消收藏' : '收藏这张专辑',
                 onTap: () {
@@ -243,7 +243,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   _toggleStar();
                 },
               ),
-              _MenuItem(
+              NordicMenuRow(
                 icon: Icons.download_outlined,
                 label: '整张下载到本机',
                 onTap: () {
@@ -251,7 +251,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   if (_album != null) _downloadToQueue(_album!);
                 },
               ),
-              _MenuItem(
+              NordicMenuRow(
                 icon: Icons.queue_music,
                 label: '加入播放队列',
                 onTap: () {
@@ -438,35 +438,4 @@ class _ActionRow extends StatelessWidget {
 }
 
 /// 上下文菜单的一行 —— `.menu-item`。
-class _MenuItem extends StatelessWidget {
-  const _MenuItem({required this.icon, required this.label, required this.onTap});
 
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: t.fg2),
-            const SizedBox(width: NordicSpace.s4),
-            Text(
-              label,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyLarge
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

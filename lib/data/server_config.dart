@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -189,11 +190,13 @@ SubsonicClient clientFor({
   required ServerConfig config,
   required String password,
   bool autoRoute = true,
+  Dio? dio,
 }) {
   final auto = config.routes.where((r) => r.selected).firstOrNull;
   return SubsonicClient(
     auth: SubsonicAuth(username: config.username, password: password),
     autoRoute: autoRoute,
+    dio: dio,
     routes: config.routes.isEmpty
         // 没线路时给一条占位,让界面能显示「未配置」而不是抛异常。
         ? const [ServerRoute(id: 'unset', name: '未配置', url: '')]

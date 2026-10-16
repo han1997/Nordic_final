@@ -346,7 +346,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       tag: _mediaItemFor(
         song,
         // 本机文件配本机的封面 —— 离线时通知栏不该只剩一块灰。
-        localCover: origin.local ? _downloads?.coverPathForSong(song.id) : null,
+        localCover: origin.local
+            ? _downloads?.coverPathForArt(song.coverArtId)
+            : null,
       ),
     );
   }

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -36,6 +37,9 @@ class Cover extends StatelessWidget {
   final String seed;
 
   /// 封面图地址。由调用方从仓库取 —— 只有仓库知道当前线路与凭据。
+  ///
+  /// **可能是 `file://`**:下过的那张封面就在本机(见 `AppState.localCoverUri`),
+  /// 断网时也能显示。
   final Uri? uri;
 
   final double? size;
@@ -80,15 +84,7 @@ class Cover extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (_hasArt)
-              Image.network(
-                uri.toString(),
-                fit: BoxFit.cover,
-                // 加载失败退回渐变 —— 服务器上偶有坏图,破图比没有图更难看。
-                errorBuilder: (_, _, _) => _Fallback(accent: accent),
-                // 加载中先用渐变占位,图到了再换上去,不留白。
-                frameBuilder: (context, child, frame, wasSyncLoaded) =>
-                    wasSyncLoaded || frame != null ? child : _Fallback(accent: accent),
-              )
+              _CoverArt(uri: uri!, fallback: _Fallback(accent: accent))
             else
               _Fallback(accent: accent),
             // 斜向高光。压在图上也在渐变上,给封面一层「塑料」的厚度。
@@ -107,6 +103,46 @@ class Cover extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 封面图本身 —— `file://` 与 `http(s)://` 两条路。
+///
+/// 分开写是因为 `Image.network` 不认 `file://`(会把路径当网址发出去,
+/// 然后拿回一块空白)。两者的错误与加载中行为一致:退回渐变,
+/// 而不是留白或者破图 —— 服务器上偶有坏图,本地文件也可能被清理工具删掉。
+class _CoverArt extends StatelessWidget {
+  const _CoverArt({required this.uri, required this.fallback});
+
+  final Uri uri;
+  final Widget fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    // 加载中先用渐变占位,图到了再换上去,不留白。
+    Widget placeholder(
+      BuildContext context,
+      Widget child,
+      int? frame,
+      bool wasSynchronouslyLoaded,
+    ) =>
+        wasSynchronouslyLoaded || frame != null ? child : fallback;
+
+    if (uri.scheme == 'file') {
+      return Image.file(
+        File(uri.toFilePath()),
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallback,
+        frameBuilder: placeholder,
+      );
+    }
+
+    return Image.network(
+      uri.toString(),
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => fallback,
+      frameBuilder: placeholder,
     );
   }
 }
