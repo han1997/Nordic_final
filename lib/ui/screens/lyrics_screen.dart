@@ -9,7 +9,7 @@ import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
-import '../widgets/rows.dart';
+import '../widgets/playback_controls.dart';
 import '../widgets/states.dart';
 import 'song_menu_sheet.dart';
 
@@ -156,7 +156,15 @@ class _LyricsScreenState extends State<LyricsScreen> {
 
     return ImmersiveScaffold(
       accent: accent,
-      bottomBar: _LyricsControls(playable: playable),
+      // 与播放页**同一份**控制区(进度条 + 五键)—— 两页是同一件东西的两面,
+      // 翻过去不该像换了台设备。
+      bottomBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PlaybackScrubber(playable: playable),
+          MediaControls(playable: playable),
+        ],
+      ),
       child: Column(
         children: [
           NordicAppBar(
@@ -193,10 +201,16 @@ class _LyricsScreenState extends State<LyricsScreen> {
       );
     }
 
-    return _LyricsList(
-      lyrics: _lyrics,
-      activeIndex: activeIndex,
-      controller: _scrollController,
+    // 点歌词回封面 —— 与播放页「点封面看歌词」互为来路。拖动滚动不会触发
+    // 点击手势,所以翻歌词不会误退。
+    return GestureDetector(
+      onTap: () => Navigator.of(context).maybePop(),
+      behavior: HitTestBehavior.opaque,
+      child: _LyricsList(
+        lyrics: _lyrics,
+        activeIndex: activeIndex,
+        controller: _scrollController,
+      ),
     );
   }
 
@@ -333,128 +347,3 @@ class _LyricLine extends StatelessWidget {
   }
 }
 
-/// 歌词页底部的控制排 + 进度条。
-class _LyricsControls extends StatelessWidget {
-  const _LyricsControls({required this.playable});
-
-  final PlaybackController playable;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    final state = playable.state;
-    final position = playable.position.value;
-    final accent = context.accent.accent;
-    final durationMs = state.duration.inMilliseconds;
-    final hasDuration = durationMs > 0;
-
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.paddingOf(context).bottom + NordicSpace.s3,
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
-            child: Column(
-              children: [
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 5,
-                    activeTrackColor: accent,
-                    inactiveTrackColor: t.fill2,
-                    thumbColor: Colors.white,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
-                  ),
-                  child: Slider(
-                    value: hasDuration
-                        ? position.inMilliseconds
-                            .clamp(0, durationMs)
-                            .toDouble()
-                        : 0,
-                    max: hasDuration ? durationMs.toDouble() : 1,
-                    onChanged: hasDuration
-                        ? (value) =>
-                            playable.seek(Duration(milliseconds: value.round()))
-                        : null,
-                  ),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(formatDuration(position), style: _timeStyle(context)),
-                    Text(
-                      hasDuration
-                          ? '-${formatDuration(state.duration - position)}'
-                          : '--:--',
-                      style: _timeStyle(context),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: NordicSpace.s2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButtonRound(
-                icon: Icons.skip_previous,
-                size: 52,
-                iconSize: 26,
-                color: t.fg2,
-                onPressed: state.hasPrevious ? playable.previous : null,
-              ),
-              const SizedBox(width: NordicSpace.s6),
-              GestureDetector(
-                onTap: playable.toggle,
-                child: Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: const Alignment(-0.7, -1),
-                      end: const Alignment(0.7, 1),
-                      colors: [Color.lerp(accent, Colors.white, 0.12)!, accent],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: 0.78),
-                        blurRadius: 36,
-                        offset: const Offset(0, 18),
-                        spreadRadius: -12,
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    state.playing ? Icons.pause : Icons.play_arrow,
-                    size: 30,
-                    color: t.bg,
-                  ),
-                ),
-              ),
-              const SizedBox(width: NordicSpace.s6),
-              IconButtonRound(
-                icon: Icons.skip_next,
-                size: 52,
-                iconSize: 26,
-                color: t.fg2,
-                onPressed: state.hasNext ? playable.next : null,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  TextStyle? _timeStyle(BuildContext context) => Theme.of(context)
-      .textTheme
-      .bodySmall
-      ?.copyWith(
-        color: context.nordic.fg3,
-        fontFeatures: const [FontFeature.tabularFigures()],
-      );
-}

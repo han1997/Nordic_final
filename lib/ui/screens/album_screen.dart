@@ -99,12 +99,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
               icon: Icons.arrow_back,
               onPressed: () => Navigator.of(context).pop(),
             ),
+            // 顶栏只剩返回与「⋯」—— 与歌词页同一副骨架。下载原先在这里,
+            // 而「⋯」里本来就有「整张下载到本机」,两处重复只让顶栏更挤。
             actions: [
-              IconButtonRound(
-                icon: Icons.download_outlined,
-                quiet: true,
-                onPressed: album == null ? null : () => _downloadToQueue(album),
-              ),
               IconButtonRound(
                 icon: Icons.more_horiz,
                 quiet: true,
@@ -142,24 +139,10 @@ class _AlbumScreenState extends State<AlbumScreen> {
           album: album,
           repoCoverUri: _coverUri(album.coverArtId, 512),
         ),
-        _ActionRow(
-          starred: _starred,
+        _PlayButton(
           onPlay: _songs.isEmpty
               ? null
               : () => playable.playAll(_songs, index: 0),
-          onShuffle: _songs.isEmpty
-              ? null
-              : () {
-                  // 「随机播放」= 打乱后整队装载并开播,而不是只跳一首。
-                  final shuffled = [..._songs]..shuffle();
-                  playable.playAll(shuffled, index: 0);
-                },
-          onToggleStar: _toggleStar,
-          onQueue: _songs.isEmpty ? null : _showQueue,
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
-          child: Divider(height: 1, color: context.nordic.line),
         ),
         if (_songs.isEmpty)
           const EmptyState(
@@ -248,6 +231,14 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 },
               ),
               NordicMenuRow(
+                icon: Icons.shuffle,
+                label: '随机播放这张专辑',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _shufflePlay();
+                },
+              ),
+              NordicMenuRow(
                 icon: Icons.download_outlined,
                 label: '整张下载到本机',
                 onTap: () {
@@ -263,12 +254,27 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   _addAllToQueue();
                 },
               ),
+              NordicMenuRow(
+                icon: Icons.queue_music,
+                label: '查看播放队列',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _showQueue();
+                },
+              ),
               const SizedBox(height: NordicSpace.s2),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// 「随机播放」= 打乱后整队装载并开播,而不是只跳一首。
+  void _shufflePlay() {
+    if (_songs.isEmpty) return;
+    final playable = context.read<PlaybackController>();
+    playable.playAll([..._songs]..shuffle(), index: 0);
   }
 
   Future<void> _addAllToQueue() async {
@@ -287,7 +293,10 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 }
 
-/// 专辑头部 —— 大封面 + 标题 + 艺人 + 元信息。
+/// 专辑头部 —— 居中:封面、标题、艺人、一行 meta。
+///
+/// 向歌词页看齐:那一屏之所以清爽,一半在「舍得空、只有一件主事」。
+/// **音质不往这里写** —— 它是每首曲子的事(曲目行里已经有了),头部再说一遍是重复。
 class _AlbumHead extends StatelessWidget {
   const _AlbumHead({required this.album, required this.repoCoverUri});
 
@@ -298,12 +307,16 @@ class _AlbumHead extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.nordic;
     final artistId = album.artistId;
+    final meta = [
+      if (album.year != null) '${album.year}',
+      '${album.songCount} 首',
+      if (album.genre != null) album.genre!,
+    ].join(' · ');
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        NordicSpace.s6, NordicSpace.s6, NordicSpace.s6, NordicSpace.s5),
+      child: Column(
         children: [
           Hero(
             tag: 'cover-${album.id}',
@@ -311,67 +324,51 @@ class _AlbumHead extends StatelessWidget {
               coverArtId: album.coverArtId,
               seed: album.id,
               uri: repoCoverUri,
-              size: 140,
-              radius: 24,
+              size: 168,
+              radius: 26,
             ),
           ),
-          const SizedBox(width: NordicSpace.s4),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  album.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.08,
-                      ),
+          const SizedBox(height: NordicSpace.s4),
+          Text(
+            album.name,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  height: 1.12,
                 ),
-                const SizedBox(height: 8),
-                // 艺人名可点才挂手势;库里没这位艺人时保持纯文字 ——
-                // 点了跳到别人页比不能点更糟。
-                if (artistId != null && artistId.isNotEmpty)
-                  GestureDetector(
-                    onTap: () => AppRoutes.openArtist(context, artistId),
-                    child: Text(
-                      album.artist,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyLarge
-                          ?.copyWith(color: t.fg2),
-                    ),
-                  )
-                else
-                  Text(
-                    album.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyLarge
-                        ?.copyWith(color: t.fg2),
-                  ),
-                const SizedBox(height: 7),
-                Text(
-                  [
-                    if (album.year != null) '${album.year}',
-                    '${album.songCount} 首',
-                    if (album.genre != null) album.genre!,
-                  ].join(' · '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: t.fg3),
-                ),
-              ],
+          ),
+          const SizedBox(height: 6),
+          // 艺人名可点才挂手势;库里没这位艺人时保持纯文字 ——
+          // 点了跳到别人页比不能点更糟。
+          if (artistId != null && artistId.isNotEmpty)
+            GestureDetector(
+              onTap: () => AppRoutes.openArtist(context, artistId),
+              child: Text(
+                album.artist,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    Theme.of(context).textTheme.bodyLarge?.copyWith(color: t.fg2),
+              ),
+            )
+          else
+            Text(
+              album.artist,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: t.fg2),
             ),
+          const SizedBox(height: 5),
+          Text(
+            meta,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: t.fg3),
           ),
         ],
       ),
@@ -379,63 +376,32 @@ class _AlbumHead extends StatelessWidget {
   }
 }
 
-/// 动作排 —— 播放 / 随机 / 收藏 / 队列。
-class _ActionRow extends StatelessWidget {
-  const _ActionRow({
-    required this.starred,
-    required this.onPlay,
-    required this.onShuffle,
-    required this.onToggleStar,
-    required this.onQueue,
-  });
+/// 播放独占一行:整屏只有这一颗实心按钮。
+///
+/// 原先这一行挤着四颗(播放 / 随机 / 收藏 / 队列),它们把封面挤到左上角、
+/// 整屏读起来全是控件。随机与收藏进了「⋯」——「播这张专辑」才是这一屏的主事。
+/// 宽度收成一枚**居中的胶囊**而不是通栏,与居中构图一致。
+class _PlayButton extends StatelessWidget {
+  const _PlayButton({required this.onPlay});
 
-  final bool starred;
   final VoidCallback? onPlay;
-  final VoidCallback? onShuffle;
-  final VoidCallback onToggleStar;
-  final VoidCallback? onQueue;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s4),
-      child: Row(
-        children: [
-          Expanded(
-            child: PrimaryButton(
-              label: '播放',
-              icon: Icons.play_arrow,
-              height: 48,
-              onPressed: onPlay,
-            ),
+        NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s5),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 190),
+          child: PrimaryButton(
+            label: '播放',
+            icon: Icons.play_arrow,
+            height: 50,
+            fillMaxWidth: false,
+            onPressed: onPlay,
           ),
-          const SizedBox(width: NordicSpace.s3),
-          IconButtonRound(
-            icon: Icons.shuffle,
-            size: 48,
-            iconSize: 20,
-            halo: true,
-            onPressed: onShuffle,
-          ),
-          const SizedBox(width: NordicSpace.s3),
-          IconButtonRound(
-            icon: starred ? Icons.favorite : Icons.favorite_border,
-            size: 48,
-            iconSize: 20,
-            halo: true,
-            color: starred ? context.accentSafe : null,
-            onPressed: onToggleStar,
-          ),
-          const SizedBox(width: NordicSpace.s3),
-          IconButtonRound(
-            icon: Icons.queue_music,
-            size: 48,
-            iconSize: 20,
-            halo: true,
-            onPressed: onQueue,
-          ),
-        ],
+        ),
       ),
     );
   }

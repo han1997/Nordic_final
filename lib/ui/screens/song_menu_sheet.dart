@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
-import '../../state/app_state.dart';
 import '../../playback/playback_controller.dart';
+import '../../playback/quality.dart';
+import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../routes.dart';
 import '../widgets/components.dart';
 import 'playlist_picker_sheet.dart';
+import 'quality_sheet.dart';
+import 'queue_sheet.dart';
+import 'routes_sheet.dart';
 
 /// 歌曲的「⋯」背后那张纸 —— 播放页 / 艺人页 / 歌单页 / 歌词页共用一份。
 ///
@@ -26,6 +30,9 @@ Future<void> showSongMenu(
   final playable = context.read<PlaybackController>();
   final starred = appState.isSongStarred(song.id);
   final downloaded = appState.isDownloaded(song.id);
+  // 转码档位在播放页底部原先有一颗常驻胶囊,现在收进这里 ——
+  // 那一项顺带报出当前档位,不然「切档」这件事就没地方看了。
+  final quality = context.read<QualityController>().value;
 
   return showModalBottomSheet<void>(
     context: context,
@@ -91,6 +98,30 @@ Future<void> showSongMenu(
                 onTap: () {
                   close();
                   playable.append(song);
+                },
+              ),
+              NordicMenuRow(
+                icon: Icons.queue_music,
+                label: '查看播放队列',
+                onTap: () {
+                  close();
+                  showQueueSheet(context);
+                },
+              ),
+              NordicMenuRow(
+                icon: Icons.route_outlined,
+                label: '切换线路',
+                onTap: () {
+                  close();
+                  showRoutesSheet(context);
+                },
+              ),
+              NordicMenuRow(
+                icon: Icons.graphic_eq,
+                label: '转码质量 · ${quality.name}',
+                onTap: () {
+                  close();
+                  showQualitySheet(context);
                 },
               ),
               NordicMenuRow(

@@ -13,10 +13,15 @@ import '../widgets/cover.dart';
 
 /// 底部常驻区:播放坞 + 标签栏 —— `.bottomstack`。
 ///
+/// **合成一颗托盘**(参考飞牛播放器那种下方一体):原先两块各自一颗胶囊、
+/// 中间留一道缝 —— 两层玻璃、两条边框、两道光影,读起来是两个各自独立的
+/// 东西,而它们本来就是同一件事:现在在听什么,以及去哪儿。合成之后只有
+/// 一层玻璃、一条外框,中间用一条线分开,那条线同时就是**进度**。
+///
 /// 用 [Stack] 浮在内容之上而不是放进正常流:玻璃**身后必须有内容**才有东西
 /// 可模糊,放流里的话后面是空的,模糊出来只是一块灰。
 ///
-/// 内容区要自己留出下边距,免得最后一行被压在坞下面(见 [bottomInset])。
+/// 内容区要自己留出下边距,免得最后一行被压在托盘下面(见 [bottomInset])。
 class BottomStack extends StatelessWidget {
   const BottomStack({
     super.key,
@@ -43,6 +48,11 @@ class BottomStack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 不看坞的时候**不去问播放层** —— 短路的写法让这一片在「没有播放层」
+    // 的树里也能立起来(测试里就是这么用的)。
+    final docked =
+        showDock && context.watch<PlaybackController?>()?.state.song != null;
+
     return Positioned(
       left: 0,
       right: 0,
@@ -53,15 +63,21 @@ class BottomStack extends StatelessWidget {
           right: 10,
           bottom: MediaQuery.paddingOf(context).bottom + 10,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (showDock) ...[
-              const _PlayerDock(),
-              const SizedBox(height: 8),
+        child: NordicGlass(
+          panel: NordicGlassPanel.nav,
+          // 一行时是胶囊,两行时取大圆角 —— 一整块两行的东西做成胶囊,
+          // 上下缘会鼓得像药丸。
+          borderRadius: BorderRadius.circular(
+            docked ? NordicRadius.xl : NordicRadius.full,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (docked) const _PlayerDock(),
+              if (docked) const _TrayProgress(),
+              _TabBar(active: activeTab, onSelected: onTabSelected),
             ],
-            _TabBar(active: activeTab, onSelected: onTabSelected),
-          ],
+          ),
         ),
       ),
     );
@@ -87,85 +103,60 @@ class _PlayerDock extends StatelessWidget {
 
     final playing = playback.state.playing;
 
-    return NordicGlass(
-      panel: NordicGlassPanel.nav,
-      child: GestureDetector(
-        onTap: () => Navigator.of(context).pushNamed('/player'),
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          height: 62,
-          child: Stack(
+    return GestureDetector(
+      onTap: () => Navigator.of(context).pushNamed('/player'),
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        height: 60,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
+              Cover(
+                coverArtId: song.coverArtId,
+                seed: song.albumId,
+                uri: _coverUriFor(appState, song),
+                size: 46,
+                radius: 13,
+                showShadow: false,
+              ),
+              const SizedBox(width: NordicSpace.s3),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Cover(
-                      coverArtId: song.coverArtId,
-                      seed: song.albumId,
-                      uri: _coverUriFor(appState, song),
-                      size: 46,
-                      radius: 13,
-                      showShadow: false,
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(fontWeight: FontWeight.w600),
                     ),
-                    const SizedBox(width: NordicSpace.s3),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            '${song.artist} · ${song.album}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(color: t.fg3),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButtonRound(
-                      icon: playing ? Icons.pause : Icons.play_arrow,
-                      iconSize: 25,
-                      onPressed: playback.toggle,
-                    ),
-                    IconButtonRound(
-                      icon: Icons.skip_next,
-                      iconSize: 23,
-                      onPressed: playback.next,
+                    const SizedBox(height: 3),
+                    Text(
+                      '${song.artist} · ${song.album}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: t.fg3),
                     ),
                   ],
                 ),
               ),
-              // 坞底那条细线 —— 「现在就播着」的进度。位置单独订阅:
-              // 坞在每一屏底部,不该因为位置变了就把整块玻璃重画。
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: 0,
-                child: ValueListenableBuilder<Duration>(
-                  valueListenable: playback.position,
-                  builder: (context, position, _) => ProgressLine(
-                    progress: playbackProgress(
-                          position,
-                          playback.state.duration,
-                        ) /
-                        100,
-                    height: 2,
-                  ),
-                ),
+              IconButtonRound(
+                icon: playing ? Icons.pause : Icons.play_arrow,
+                iconSize: 25,
+                onPressed: playback.toggle,
+              ),
+              IconButtonRound(
+                icon: Icons.skip_next,
+                iconSize: 23,
+                onPressed: playback.next,
               ),
             ],
           ),
@@ -187,6 +178,30 @@ class _PlayerDock extends StatelessWidget {
   }
 }
 
+/// 托盘中间那条细线 —— **同时就是进度**。
+///
+/// 原先进度线贴在坞底:既要绕开圆角,又压在内容上。现在它就是播放坞与标签栏
+/// 之间的那条分隔线,从左往右长 —— 整块托盘于是自己说明「正在放」。
+class _TrayProgress extends StatelessWidget {
+  const _TrayProgress();
+
+  @override
+  Widget build(BuildContext context) {
+    final playback = context.watch<PlaybackController>();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s4),
+      child: ValueListenableBuilder<Duration>(
+        valueListenable: playback.position,
+        builder: (context, position, _) => ProgressLine(
+          progress:
+              playbackProgress(position, playback.state.duration) / 100,
+          height: 2,
+        ),
+      ),
+    );
+  }
+}
+
 /// 标签栏 —— `.tabbar`。选中项做成一颗凹进去的玻璃胶囊:记住的是位置,不是颜色。
 class _TabBar extends StatelessWidget {
   const _TabBar({required this.active, required this.onSelected});
@@ -199,15 +214,13 @@ class _TabBar extends StatelessWidget {
     final t = context.nordic;
     final accent = context.accent.accent;
 
-    return NordicGlass(
-      panel: NordicGlassPanel.nav,
-      child: SizedBox(
-        height: 66,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Row(
-            children: [
-              for (final tab in AppTab.values)
+    return SizedBox(
+      height: 62,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          children: [
+            for (final tab in AppTab.values)
                 Expanded(
                   child: GestureDetector(
                     onTap: () => onSelected(tab),
@@ -242,8 +255,7 @@ class _TabBar extends StatelessWidget {
                     ),
                   ),
                 ),
-            ],
-          ),
+          ],
         ),
       ),
     );
