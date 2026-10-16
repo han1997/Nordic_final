@@ -26,7 +26,6 @@ class _RoutesSheet extends StatefulWidget {
 }
 
 class _RoutesSheetState extends State<_RoutesSheet> {
-  bool _pinging = false;
 
   @override
   Widget build(BuildContext context) {
@@ -74,11 +73,11 @@ class _RoutesSheetState extends State<_RoutesSheet> {
                 child: Row(
                   children: [
                     NordicChip(
-                      label: _pinging ? '测速中' : '立即测速',
+                      label: state.pinging ? '测速中' : '立即测速',
                       icon: Icons.refresh,
                       height: 32,
-                      selected: _pinging,
-                      onTap: _pinging ? null : () => _pingAll(state),
+                      selected: state.pinging,
+                      onTap: state.pinging ? null : () => state.refreshRouteLatency(),
                     ),
                     const Spacer(),
                     Text(
@@ -134,11 +133,6 @@ class _RoutesSheetState extends State<_RoutesSheet> {
     await state.refreshRouteLatency();
   }
 
-  Future<void> _pingAll(AppState state) async {
-    setState(() => _pinging = true);
-    await state.refreshRouteLatency();
-    if (mounted) setState(() => _pinging = false);
-  }
 }
 
 class _RouteRow extends StatelessWidget {

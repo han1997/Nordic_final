@@ -53,50 +53,67 @@ class NordicGlass extends StatelessWidget {
     final radius = borderRadius ?? BorderRadius.circular(spec.$3);
     final wantsShadow = spec.$4;
 
-    return ClipRRect(
-      borderRadius: radius,
-      child: BackdropFilter(
-        // 原型是 `blur(...) saturate(...)`;dart:ui 的 ColorFilter 本身就是
-        // 一种 ImageFilter,compose 起来就能得到同一套效果。
-        filter: ui.ImageFilter.compose(
-          outer: _saturationFilter(saturationOverride ?? t.glassSaturation),
-          inner: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: fill,
-            borderRadius: radius,
-            border: border ? Border.all(color: t.line2, width: 1) : null,
-            boxShadow: [
-              if (wantsShadow)
-                BoxShadow(color: t.depth, blurRadius: 40, offset: const Offset(0, 20)),
-              // 上缘高光 —— 玻璃感的关键,始终保留。
-              BoxShadow(color: t.glassRim, blurRadius: 0, offset: const Offset(0, 1), spreadRadius: -0.5),
-            ],
+    return DecoratedBox(
+      // 外部那道深度影放在**裁剪外面** —— 放里面的话,圆角一裁就没了
+      // (这正是它一直没出现过的一半原因)。
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: [
+          if (wantsShadow)
+            BoxShadow(
+              color: t.depth,
+              blurRadius: 40,
+              offset: const Offset(0, 20),
+            ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: BackdropFilter(
+          // **只能是裸模糊**。原先这里是
+          // `ImageFilter.compose(outer: 饱和度矩阵, inner: blur)` —— 真机上
+          // 那条路不生效:坞背后的曲目文字照样清晰可读(见真机截图),
+          // 而 80% 不透明叠 34px 模糊本该把它糊成认不出的色块。
+          //
+          // 原型的 `saturate(1.8)` 只能跟着组合过滤器走,先放下 ——
+          // 用「模糊真的生效」换「玻璃灰一点点」。若之后确实嫌灰,
+          // 再给 fill 掺一点强调色(那是另一件事)。
+          filter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: fill,
+              borderRadius: radius,
+              border: border ? Border.all(color: t.line2, width: 1) : null,
+            ),
+            child: Stack(
+              children: [
+                child,
+                // 上缘那道光 —— 玻璃感的关键。
+                //
+                // 原先它写成 `BoxShadow(offset: (0,1), spreadRadius: -0.5)`,
+                // 但 BoxShadow **没有 inset 语义**:画出来是往盒子外面(下方)
+                // 投的一道影,而且被圆角裁掉 —— 等于从来没出现过。
+                // 这里改成贴顶边的一条 1px 实线(圆角处自然收细)。
+                if (border)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    child: IgnorePointer(
+                      child: SizedBox(
+                        height: 1,
+                        child: ColoredBox(color: t.glassRim),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          child: child,
         ),
       ),
     );
   }
 
-  /// 饱和度矩阵。亮度权重用 Rec.709(与浏览器 backdrop-filter 的口径一致)。
-  /// 系数为 1 时是单位阵,直接跳过 filter,免得白吃一层合成。
-  static ui.ImageFilter _saturationFilter(double s) {
-    if ((s - 1).abs() < 0.01) return ui.ImageFilter.blur(sigmaX: 0, sigmaY: 0);
-    const lr = 0.2126;
-    const lg = 0.7152;
-    const lb = 0.0722;
-    final ir = (1 - s) * lr;
-    final ig = (1 - s) * lg;
-    final ib = (1 - s) * lb;
-    return ui.ColorFilter.matrix(<double>[
-      ir + s, ig, ib, 0, 0, //
-      ir, ig + s, ib, 0, 0, //
-      ir, ig, ib + s, 0, 0, //
-      0, 0, 0, 1, 0, //
-    ]);
-  }
 }
 
 enum NordicGlassPanel {

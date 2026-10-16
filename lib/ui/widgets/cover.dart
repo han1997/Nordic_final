@@ -113,11 +113,21 @@ class Cover extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (_hasArt)
-              _CoverArt(
-                uri: uri!,
-                coverArtId: coverArtId,
-                displaySize: _displayEdge(w, h),
-                fallback: _Fallback(accent: accent),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // 用**真实约束**当显示边长。网格里的封面是
+                  // `width: double.infinity` —— 声明尺寸算不出边长,会一路
+                  // 算到 1024 的桶(服务器只给了 512);而布局早就知道答案。
+                  final box = constraints.biggest;
+                  final measured =
+                      box.isFinite && box.shortestSide > 0 ? box.shortestSide : null;
+                  return _CoverArt(
+                    uri: uri!,
+                    coverArtId: coverArtId,
+                    displaySize: measured ?? _displayEdge(w, h),
+                    fallback: _Fallback(accent: accent),
+                  );
+                },
               )
             else
               _Fallback(accent: accent),

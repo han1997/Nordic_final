@@ -148,12 +148,29 @@ class AppState extends ChangeNotifier {
   }
 
   /// 重新测速并按结果择优。
+  /// 正在测速。
+  ///
+  /// 界面据此把按钮改成「测速中」并禁用 —— 局域网一次 `ping.view` 是个位数毫秒,
+  /// 不给这个状态,用户只会觉得「按了没反应」(真机反馈过这一条)。
+  bool _pinging = false;
+  bool get pinging => _pinging;
+
   Future<Map<String, RoutePing>> refreshRouteLatency() async {
     final repo = _repository;
     if (repo == null) return const {};
-    _pings = await repo.client.pingAll();
-    // 线路可用性变了,当前生效线路也可能变 —— 界面上的延迟数字要跟着更新。
+
+    _pinging = true;
     notifyListeners();
+    try {
+      _pings = await repo.client.pingAll();
+    } finally {
+      // 「按下去要等一下才有结果」这个节奏得对上 —— 原型里同样如此
+      // (`ping-all` 故意等 800ms 再回),否则个位数毫秒的往返谁也看不见。
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      _pinging = false;
+      // 线路可用性变了,当前生效线路也可能变 —— 界面上的延迟数字要跟着更新。
+      notifyListeners();
+    }
     return _pings;
   }
 

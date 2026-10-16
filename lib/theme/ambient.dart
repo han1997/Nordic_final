@@ -35,6 +35,10 @@ class NordicAmbient extends StatelessWidget {
             child: ImageFiltered(
               imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
               child: CustomPaint(
+                // 三层径向渐变是这一屏最贵的一笔,而它对同一套配色**不会变**
+                // —— 明说之后光栅缓存才愿意把它缓存下来,而不是每帧重画。
+                isComplex: true,
+                willChange: false,
                 painter: _AmbientPainter(
                   accent: a.accent,
                   c1: a.c1,

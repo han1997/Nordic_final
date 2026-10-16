@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../../theme/context_ext.dart';
@@ -831,20 +833,13 @@ class NordicSheet extends StatelessWidget {
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * 0.86,
         ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: t.glass3,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(NordicRadius.xl),
-            ),
-            border: Border(top: BorderSide(color: t.line2)),
-            boxShadow: [
-              BoxShadow(
-                color: t.depth,
-                blurRadius: 60,
-                offset: const Offset(0, -20),
-              ),
-            ],
+        // 弹层也是玻璃 —— 底下的封面透上来一层颜色,弹层才不像贴上去的一块板
+        // (原型 `.sheet` 就是带 backdrop-filter 的)。原先这里是纯色的
+        // DecoratedBox,于是每一张底部纸都是死板的一块。
+        child: NordicGlass(
+          panel: NordicGlassPanel.panel,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(NordicRadius.xl),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -920,7 +915,12 @@ class NordicScrim extends StatelessWidget {
         Positioned.fill(
           child: GestureDetector(
             onTap: onTap,
-            child: ColoredBox(color: t.scrim),
+            // 遮罩也轻轻糊一下(原型 `blur(6px)`)—— 弹层后面的内容
+            // 从「被压暗」变成「退到后面」,层次才分得开。
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+              child: ColoredBox(color: t.scrim),
+            ),
           ),
         ),
         child,

@@ -320,6 +320,33 @@ void main() {
     });
   });
 
+  group('测速', () {
+    late Directory root;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      root = await Directory.systemTemp.createTemp('nordic-ping');
+    });
+
+    tearDown(() async {
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+
+    test('测速期间有忙碌态,结束时收回', () async {
+      // 局域网一次 ping 是个位数毫秒 —— 没有这个状态,界面上按钮不变、
+      // 数字也不变,用户只会觉得「按了没反应」。
+      final state = await buildState(payloadDio([], libraryFixtures()), root);
+      expect(state.pinging, isFalse);
+
+      final pending = state.refreshRouteLatency();
+      // 不 await 就看:同步段里就该已经是「测速中」。
+      expect(state.pinging, isTrue);
+
+      await pending;
+      expect(state.pinging, isFalse);
+    });
+  });
+
   group('排序', () {
     late List<Uri> seen;
     late Directory root;

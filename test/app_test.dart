@@ -6,6 +6,7 @@ import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/theme_mode.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/routes.dart';
+import 'package:nordic/ui/screens/lyrics_screen.dart';
 import 'package:nordic/ui/shell/bottom_stack.dart';
 import 'package:nordic/ui/widgets/components.dart';
 import 'package:nordic/ui/shell/shell.dart';
@@ -161,6 +162,81 @@ void main() {
       await tester.pump();
 
       expect(pendingTab.value, AppTab.search);
+    });
+  });
+
+  group('没有时间轴的歌词', () {
+    // 服务端多数时候给带 `start` 的结构化歌词(实测 52 首里 51 首都有),
+    // 但没有的时候只能按整首进度平均摊 —— 这一条钉住摊法本身。
+    test('按整首的进度摊行', () {
+      const hundred = Duration(seconds: 100);
+      expect(
+        averageIndexFor(position: Duration.zero, duration: hundred, lineCount: 10),
+        0,
+      );
+      expect(
+        averageIndexFor(position: const Duration(seconds: 50), duration: hundred, lineCount: 10),
+        5,
+      );
+      // 末尾夹在最后一行里,别越界。
+      expect(
+        averageIndexFor(position: hundred, duration: hundred, lineCount: 10),
+        9,
+      );
+    });
+
+    test('时长未知时停在第一行,不假装知道进度', () {
+      expect(
+        averageIndexFor(
+          position: const Duration(seconds: 30),
+          duration: Duration.zero,
+          lineCount: 9,
+        ),
+        0,
+      );
+    });
+
+    test('一行都没有时给 -1(界面据此不高亮)', () {
+      expect(
+        averageIndexFor(
+          position: Duration.zero,
+          duration: const Duration(seconds: 10),
+          lineCount: 0,
+        ),
+        -1,
+      );
+    });
+  });
+
+  group('封面解码尺寸', () {
+    testWidgets('「无限宽」的封面按真实约束解码,不再一路算到 1024', (tester) async {
+      // 网格里的封面就是这么传的(`width: double.infinity`)—— 声明尺寸算不出
+      // 边长。修之前 `_displayEdge` 得到 Infinity,桶永远是 1024(下载到本机的
+      // 那张封面就是 1024,于是每格都按原尺寸解码)。
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: NordicTheme.build(NordicTokens.dark),
+          home: Center(
+            child: SizedBox(
+              width: 100,
+              height: 100,
+              child: Cover(
+                coverArtId: 'cover-1',
+                seed: 'al-1',
+                uri: Uri.parse(
+                  'http://nas.example.com/rest/getCoverArt.view?id=cover-1',
+                ),
+                width: double.infinity,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final image = tester.widget<Image>(find.byType(Image));
+      final provider = image.image as CachedNetworkImageProvider;
+      expect(provider.maxWidth, isNotNull);
+      expect(provider.maxWidth, lessThan(1024), reason: '100 的格子不该按 1024 解');
     });
   });
 

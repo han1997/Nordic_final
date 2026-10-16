@@ -38,9 +38,10 @@ class _QueueSheet extends StatelessWidget {
     final playable = context.watch<PlaybackController>();
     final appState = context.watch<AppState>();
     final queue = playable.queue;
-    final currentIndex = playable.state.song == null
-        ? -1
-        : queue.indexWhere((s) => s.id == playable.state.song!.id);
+    // 显示顺序 → 原始下标。随机开着时 just_audio 按**自己的**顺序播,而 queue
+    // 仍是装载时的顺序 —— 照 queue 铺,面板写的「下一首」就是假的。
+    final order = playable.queueOrder;
+    final shuffled = playable.state.shuffle;
 
     return NordicScrim(
       onTap: () => Navigator.of(context).pop(),
@@ -58,34 +59,48 @@ class _QueueSheet extends StatelessWidget {
                   topPadding: 0,
                 ),
               )
-            : Flexible(
-                child: ReorderableListView.builder(
-                  // 短队列按内容撑高(三个条目不该占满整屏),长的则**懒加载** ——
-                  // 从一张五百首的专辑开播时,一次把这五百行建出来是能看出来的卡。
-                  shrinkWrap: queue.length <= _shrinkWrapLimit,
-                  padding: const EdgeInsets.only(bottom: NordicSpace.s4),
-                  itemCount: queue.length,
-                  // onReorderItem 已经替我们算好了移除旧项之后的插入下标,
-                  // 所以不需要在手柄里再 `newIndex > oldIndex ? -1 : 0` 一次。
-                  onReorderItem: playable.reorder,
-                  itemBuilder: (context, index) {
-                    final song = queue[index];
-                    final isCurrent = index == currentIndex;
-                    return _QueueRow(
-                      // ReorderableListView 要求稳定的 key。
-                      key: ValueKey('${song.id}-$index'),
-                      index: index,
-                      song: song,
-                      isCurrent: isCurrent,
-                      playing: playable.state.playing,
-                      coverUri: _coverUri(appState, song.coverArtId),
-                      onTap: () => playable.jumpTo(index),
-                      onRemove: isCurrent
-                          ? null
-                          : () => playable.removeAt(index),
-                    );
-                  },
-                ),
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 随机开着时**不给拖动排序**:拖的是原始列表,和眼前这份
+                  // 顺序对不上,拖完只会莫名其妙。说明一句,免得以为是坏了。
+                  if (shuffled)
+                    const ListNote('随机播放中,这里按实际播放顺序列出(这一档不能拖动排序)。'),
+                  Flexible(
+                    child: ReorderableListView.builder(
+                      // 短队列按内容撑高(三个条目不该占满整屏),长的则**懒加载** ——
+                      // 从一张五百首的专辑开播时,一次把这五百行建出来是能看出来的卡。
+                      shrinkWrap: order.length <= _shrinkWrapLimit,
+                      padding: const EdgeInsets.only(bottom: NordicSpace.s4),
+                      itemCount: order.length,
+                      // onReorderItem 已经替我们算好了移除旧项之后的插入下标,
+                      // 所以不需要在手柄里再 `newIndex > oldIndex ? -1 : 0` 一次。
+                      // 随机时给一个空实现(把手已经藏了,拖不起来)—— 这个参数
+                      // 与 onReorder 必须恰好给一个,不能两个都不给。
+                      onReorderItem: shuffled ? (_, _) {} : playable.reorder,
+                      itemBuilder: (context, position) {
+                        // 行显示在 position,歌本身是原始队列里的 index。
+                        final index = order[position];
+                        final song = queue[index];
+                        final isCurrent = song.id == playable.state.song?.id;
+                        return _QueueRow(
+                          // ReorderableListView 要求稳定的 key。
+                          key: ValueKey('${song.id}-$index'),
+                          index: position,
+                          draggable: !shuffled,
+                          song: song,
+                          isCurrent: isCurrent,
+                          playing: playable.state.playing,
+                          coverUri: _coverUri(appState, song.coverArtId),
+                          onTap: () => playable.jumpTo(index),
+                          onRemove: isCurrent
+                              ? null
+                              : () => playable.removeAt(index),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
       ),
     );
@@ -106,6 +121,7 @@ class _QueueRow extends StatelessWidget {
   const _QueueRow({
     super.key,
     required this.index,
+    required this.draggable,
     required this.song,
     required this.isCurrent,
     required this.playing,
@@ -114,7 +130,12 @@ class _QueueRow extends StatelessWidget {
     required this.onRemove,
   });
 
+  /// 这一行在**列表里**的位置(拖动把手要它)。
   final int index;
+
+  /// 随机播放中不给拖 —— 拖的是原始列表,与所见顺序对不上。
+  final bool draggable;
+
   final Song song;
   final bool isCurrent;
   final bool playing;
@@ -137,14 +158,18 @@ class _QueueRow extends StatelessWidget {
             children: [
               // 拖动把手。原型的队列也支持长按拖动,这里用显式把手 ——
               // 列表本身还要点选,长按与点击的手势会打架。
-              ReorderableDragStartListener(
-                index: index,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: NordicSpace.s3, vertical: NordicSpace.s4),
-                  child: Icon(Icons.drag_handle, size: 18, color: t.fg4),
-                ),
-              ),
+              // 随机播放中藏起来(见 [draggable]):能拖但拖不动最难受。
+              if (draggable)
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: NordicSpace.s3, vertical: NordicSpace.s4),
+                    child: Icon(Icons.drag_handle, size: 18, color: t.fg4),
+                  ),
+                )
+              else
+                const SizedBox(width: NordicSpace.s3 + 18 + NordicSpace.s3),
               SizedBox(
                 width: 18,
                 child: isCurrent && playing

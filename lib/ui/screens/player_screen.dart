@@ -164,7 +164,9 @@ class _HeroStack extends StatelessWidget {
     Uri? coverUri;
     if (repo != null && song.hasCover) {
       try {
-        coverUri = repo.coverUri(song.coverArtId!, size: 700);
+        // 512 与专辑页 / 网格同一张 —— 从那儿进播放页时直接命中缓存,
+        // 不再为了更大的 700 重新下一张(那一下正好落在滑入动画上)。
+        coverUri = repo.coverUri(song.coverArtId!, size: 512);
       } on SubsonicException {
         coverUri = null;
       }
@@ -254,23 +256,27 @@ class _CoverGlowState extends State<_CoverGlow>
     final side = widget.size * 1.12;
 
     return IgnorePointer(
-      child: FadeTransition(
-        opacity: Tween<double>(begin: 0.38, end: 0.72).animate(
-          CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-        ),
-        child: Container(
-          width: side,
-          height: side,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            // 渐隐到底就是柔化,不必再叠一层 ImageFilter.blur ——
-            // 那会多一次全尺寸的滤镜合成。
-            gradient: RadialGradient(
-              colors: [
-                accent.withValues(alpha: 0.55),
-                accent.withValues(alpha: 0),
-              ],
-              stops: const [0.24, 0.68],
+      // 单独一层:这圈光晕每帧都在动,隔开之后它的重绘与重合成不会牵动
+      // 整屏(播放页本来就同时挂着氛围模糊与坞那层玻璃)。
+      child: RepaintBoundary(
+        child: FadeTransition(
+          opacity: Tween<double>(begin: 0.38, end: 0.72).animate(
+            CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+          ),
+          child: Container(
+            width: side,
+            height: side,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              // 渐隐到底就是柔化,不必再叠一层 ImageFilter.blur ——
+              // 那会多一次全尺寸的滤镜合成。
+              gradient: RadialGradient(
+                colors: [
+                  accent.withValues(alpha: 0.55),
+                  accent.withValues(alpha: 0),
+                ],
+                stops: const [0.24, 0.68],
+              ),
             ),
           ),
         ),

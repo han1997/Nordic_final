@@ -58,6 +58,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     : '${state.server!.name} · ${state.library.totalSongs} 首',
                 actions: [
                   IconButtonRound(
+                    icon: Icons.shuffle,
+                    quiet: true,
+                    // 随机播放整个库 —— 与专辑页「随机播放这张专辑」、艺人页 /
+                    // 歌单页那颗随机键同一套做法:打乱后整队装载,于是队列本身
+                    // 就是随机顺序,队列面板不必特殊处理。
+                    onPressed: () => _shuffleAll(playable),
+                  ),
+                  IconButtonRound(
                     icon: Icons.search,
                     quiet: true,
                     onPressed: () => AppRoutes.openSearchTab(context),
@@ -166,6 +174,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
       ],
     );
+  }
+
+  /// 随机播放整个库。
+  ///
+  /// 与专辑页 / 艺人页 / 歌单页那颗随机键同一套做法:打乱后**整队装载**,
+  /// 于是队列本身就是随机的,面板照原样列也不会说谎。
+  /// (播放页那颗随机键走的是另一条路 —— just_audio 的随机模式,那是「播着播着
+  /// 随机接下去」,两者不冲突。)
+  void _shuffleAll(PlaybackController playable) {
+    final songs = context.read<AppState>().library.songs;
+    if (songs.isEmpty) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content: Text('曲库还没有加载出歌曲'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    playable.playAll([...songs]..shuffle(), index: 0);
   }
 }
 

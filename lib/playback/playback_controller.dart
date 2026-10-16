@@ -102,6 +102,21 @@ class PlaybackController extends ChangeNotifier {
 
   List<Song> get queue => _handler.songs;
 
+  /// 队列的**实际播放顺序**:第 n 位播的是原始队列里的哪一项。
+  ///
+  /// `queue` 是装载时的原始顺序;随机开着时它和真正会播的顺序不是一回事 ——
+  /// 队列面板照 [queue] 铺,用户看到的「下一首」就是假的。界面要照这条映射来列,
+  /// 点行 / 移除仍用映射出来的**原始下标**。
+  List<int> get queueOrder {
+    final indices = _handler.player.effectiveIndices;
+    // 长度对不上(队列刚变、播放器还没跟上)就按原顺序 ——
+    // 宁可显示得平淡,也别显示错位。
+    if (indices.length != queue.length) {
+      return List.generate(queue.length, (i) => i);
+    }
+    return List.of(indices);
+  }
+
   QualityOption get quality => _handler.quality;
 
   void _wire() {
@@ -140,6 +155,15 @@ class PlaybackController extends ChangeNotifier {
         hasNext: player.hasNext,
         hasPrevious: player.hasPrevious,
       ));
+    }));
+
+    // 随机开关**单独一条**。just_audio 的 `setShuffleModeEnabled` 只改序列状态、
+    // 不发 playerEvent,而 `playerStateStream` 又被 `.distinct()` 压在
+    // (playing, processingState) 上 —— 于是从它派生出来的 shuffle 永远是 false:
+    // 随机键不亮,而且 `toggleShuffle` 读这个假值,于是**开了就关不掉**。
+    _track(_subs, player.shuffleModeEnabledStream.listen((enabled) {
+      if (enabled == _state.shuffle) return;
+      _emit(_state.copyWith(shuffle: enabled));
     }));
   }
 

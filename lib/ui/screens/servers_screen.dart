@@ -442,10 +442,17 @@ class _ServersScreenState extends State<ServersScreen> {
           title: '线路',
           count: '${server.routes.length} 条',
           trailing: NordicChip(
-            label: state.pings.isEmpty ? '测速' : '重新测速',
+            // 测速中要给状态:局域网一次 ping 是个位数毫秒,不变的话
+            // 用户只会觉得「按了没反应」(真机反馈过这一条)。
+            label: state.pinging
+                ? '测速中'
+                : state.pings.isEmpty
+                    ? '测速'
+                    : '重新测速',
             icon: Icons.refresh,
             height: 30,
-            onTap: () => state.refreshRouteLatency(),
+            selected: state.pinging,
+            onTap: state.pinging ? null : () => _pingAll(state),
           ),
         ),
         Padding(
@@ -465,6 +472,7 @@ class _ServersScreenState extends State<ServersScreen> {
                   _RouteManageRow(
                     route: server.routes[i],
                     ping: state.pings[server.routes[i].id],
+                    pinging: state.pinging,
                     selected: server.routes[i].id == active?.id,
                     onSelect: () => _selectRoute(state, server.routes[i]),
                   ),
@@ -513,6 +521,24 @@ class _ServersScreenState extends State<ServersScreen> {
     if (ping == null) return '--';
     if (!ping.isOk) return '不可用';
     return '${ping.latency?.inMilliseconds ?? '--'}';
+  }
+
+  /// 测速,并在结束时说一句结果 —— 否则数字没变就等于什么都没发生。
+  Future<void> _pingAll(AppState state) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final pings = await state.refreshRouteLatency();
+    if (!mounted) return;
+
+    final route = state.activeRoute;
+    final ping = route == null ? null : pings[route.id];
+    final where = route == null
+        ? '没有可用线路'
+        : (ping?.isOk ?? false)
+            ? '当前走 ${route.name} · ${ping!.latency!.inMilliseconds}ms'
+            : '当前走 ${route.name} · 不可用';
+    messenger?.showSnackBar(
+      SnackBar(content: Text('测速完成 · $where'), duration: const Duration(seconds: 2)),
+    );
   }
 
   String? _latencyUnit(AppState state, ServerRoute? route) {
@@ -660,12 +686,16 @@ class _RouteManageRow extends StatelessWidget {
     required this.ping,
     required this.selected,
     required this.onSelect,
+    this.pinging = false,
   });
 
   final ServerRoute route;
   final RoutePing? ping;
   final bool selected;
   final VoidCallback onSelect;
+
+  /// 正在测速 —— 这一行的延迟位置显示「测速中」,而不是旧数字。
+  final bool pinging;
 
   @override
   Widget build(BuildContext context) {
@@ -735,18 +765,20 @@ class _RouteManageRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  failed
-                      ? '不可用'
-                      : ping == null
-                          ? '未测速'
-                          : '${ping!.latency!.inMilliseconds}',
+                  pinging
+                      ? '测速中'
+                      : failed
+                          ? '不可用'
+                          : ping == null
+                              ? '未测速'
+                              : '${ping!.latency!.inMilliseconds}',
                   style: TextStyle(
                     fontSize: failed ? 13 : 16,
                     fontWeight: FontWeight.w700,
                     color: failed ? t.bad : t.fg,
                   ),
                 ),
-                if (!failed && ping != null)
+                if (!pinging && !failed && ping != null)
                   Text('ms', style: TextStyle(fontSize: 10, color: t.fg4)),
               ],
             ),
