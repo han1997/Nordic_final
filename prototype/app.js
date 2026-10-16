@@ -663,7 +663,7 @@ function screenAlbum(id) {
         ${artistIdOf(a.artist)
           ? `<div class="artist" data-artist="${artistIdOf(a.artist)}">${a.artist}</div>`
           : `<div class="artist inert">${a.artist}</div>`}
-        <div class="meta"><span>${a.year}</span>·<span>${a.count} 首</span>·<span>FLAC 无损</span></div>
+        <div class="meta"><span>${a.year}</span>·<span>${a.count} 首</span></div>
       </div>
       <div class="album-play">
         <button class="btn primary" data-song="${firstId}">${ic('play', 20)} 播放</button>
@@ -735,14 +735,33 @@ function screenArtist(id) {
 
 /* ---------------- 播放 ---------------- */
 
+/* 播放控制区 —— 进度条 + 一排控制键,播放页与歌词页**共用一份**。
+   两个页面是同一件东西的两面(点封面来回翻),控制区要是各长一个样子,
+   翻过去就像换了台设备:原先歌词页是居中的三键、位置更靠下,
+   播放页是铺满的五键 —— 现在就一份,五键、同样的位置、同样的间距。 */
+function scrubBar(s, elapsed) {
+  const pct = progressOf(s, elapsed);
+  return `<div class="scrub">
+      <div class="track" data-seek><i style="width:${pct}%"></i><span class="knob" style="left:${pct}%"></span></div>
+      <div class="times"><span>${mmss(elapsed)}</span><span>-${mmss(s.dur - elapsed)}</span></div>
+    </div>`;
+}
+
+function mediaControls() {
+  return `<div class="controls">
+      <button class="icon-btn${STATE.shuffle ? ' on' : ''}" style="color:${STATE.shuffle ? 'var(--accent-safe)' : ''}" data-act="shuffle">${ic('shuffle', 23)}</button>
+      <button class="icon-btn" data-act="prev">${ic('prev', 27)}</button>
+      <button class="play-btn" data-act="toggle-play">${ic(STATE.playing ? 'pause' : 'play', 30)}</button>
+      <button class="icon-btn" data-act="next">${ic('next', 27)}</button>
+      <button class="icon-btn${STATE.repeat ? ' on' : ''}" style="color:${STATE.repeat ? 'var(--accent-safe)' : ''}" data-act="repeat">${ic('repeat', 23)}</button>
+    </div>`;
+}
+
 function screenPlayer() {
   const s = currentSong();
   const a = albumOf(s);
   const pct = progressOf(s, STATE.elapsed);
   const elapsed = Math.min(STATE.elapsed, s.dur);
-  const q = QUALITIES.find((x) => x.id === STATE.quality) || QUALITIES[2];
-  const route = SERVER.routes.find((r) => r.id === STATE.routeId) || SERVER.routes[0];
-  const codec = STATE.quality === 'original' ? 'FLAC' : 'MP3';
 
   return `${ambient(a)}
     <div class="appbar nav">
@@ -777,27 +796,8 @@ function screenPlayer() {
       </div>
     </div>
 
-    <div class="scrub">
-      <div class="track" data-seek><i style="width:${pct}%"></i><span class="knob" style="left:${pct}%"></span></div>
-      <div class="times"><span>${mmss(elapsed)}</span><span>-${mmss(s.dur - elapsed)}</span></div>
-    </div>
-
-    <div class="controls">
-      <button class="icon-btn${STATE.shuffle ? ' on' : ''}" style="color:${STATE.shuffle ? 'var(--accent-safe)' : ''}" data-act="shuffle">${ic('shuffle', 23)}</button>
-      <button class="icon-btn" data-act="prev">${ic('prev', 27)}</button>
-      <button class="play-btn" data-act="toggle-play">${ic(STATE.playing ? 'pause' : 'play', 30)}</button>
-      <button class="icon-btn" data-act="next">${ic('next', 27)}</button>
-      <button class="icon-btn${STATE.repeat ? ' on' : ''}" style="color:${STATE.repeat ? 'var(--accent-safe)' : ''}" data-act="repeat">${ic('repeat', 23)}</button>
-    </div>
-
-    <!-- 只剩「当前档位」这一颗:它是**状态**,顺带能切。
-         队列与线路挪进了右上角的「⋯」—— 那里本来就是「其余动作」的去处,
-         而它们一天用不到几次,不该常驻在拇指够不到的屏幕最下沿。 -->
-    <div class="chip-row-b">
-      <button class="quality-chip on" data-sheet="quality">${ic('wave', 15)} ${q.name} · ${codec}</button>
-      <span class="spacer" style="flex:1"></span>
-      <span class="player-hint">${ic('lyrics', 15)} 点封面看歌词</span>
-    </div>`;
+    ${scrubBar(s, elapsed)}
+    ${mediaControls()}`;
 }
 
 function sheetQuality() {
@@ -878,6 +878,7 @@ function sheetMenu() {
       ['queue', '加入播放队列', 'act:queue-add'],
       ['queue', '查看播放队列', 'sheet:queue'],
       ['route', '切换线路', 'sheet:routes'],
+      ['wave', `转码质量 · ${(QUALITIES.find((x) => x.id === STATE.quality) || QUALITIES[2]).name}`, 'sheet:quality'],
       ['disc', '查看专辑', `album:${a.id}`],
     ];
   } else if (forWhat === 'album') {
@@ -1075,19 +1076,8 @@ function screenLyrics() {
     <div class="lyrics" data-go="player" role="button" title="点一下回到封面">
       ${LYRICS.map((l, i) => `<div class="lyric-line ${i === activeIx ? 'on' : i < activeIx ? 'past' : ''}">${l}</div>`).join('')}
     </div>
-    <div class="scrub" style="padding-bottom:var(--s5)">
-      <div class="track" style="height:5px" data-seek><i style="width:${pct}%"></i></div>
-      <div class="times"><span>${mmss(elapsed)}</span><span>-${mmss(s.dur - elapsed)}</span></div>
-    </div>
-    <div style="display:flex;align-items:center;justify-content:center;gap:var(--s7);
-      padding:0 var(--s6) var(--s5);position:relative;z-index:1">
-      <button class="icon-btn" data-act="prev" style="width:52px;height:52px">${ic('prev', 26)}</button>
-      <button class="play-btn" style="width:64px;height:64px;border-radius:var(--r-full);display:grid;place-items:center;
-        color:var(--accent-ink);background:linear-gradient(155deg,color-mix(in srgb,var(--accent) 88%,#fff),var(--accent));
-        box-shadow:0 18px 36px -12px color-mix(in srgb,var(--accent) 78%,transparent),inset 0 1px 0 rgba(255,255,255,.45)"
-        data-act="toggle-play">${ic(STATE.playing ? 'pause' : 'play', 27)}</button>
-      <button class="icon-btn" data-act="next" style="width:52px;height:52px">${ic('next', 26)}</button>
-    </div>`;
+    ${scrubBar(s, elapsed)}
+    ${mediaControls()}`;
 }
 
 /* ---------------- 搜索 ---------------- */

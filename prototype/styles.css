@@ -1241,7 +1241,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 .controls {
   flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between;
-  padding: var(--s4) var(--s6) var(--s4);
+  /* 底边留得比上边多一点:这一排是整屏的落点,贴着底边会显得「掉出去了」,
+     而它下面(播放页与歌词页)都没有别的东西接着。 */
+  padding: var(--s4) var(--s6) var(--s6);
   position: relative; z-index: 1;
 }
 .controls .icon-btn { width: 48px; height: 48px; color: var(--fg-2); }
@@ -1259,44 +1261,6 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 }
 .controls .play-btn:active { transform: scale(0.93); }
 
-.chip-row-b {
-  display: flex; align-items: center; gap: var(--s2);
-  padding: 0 var(--s5) var(--s4);
-  position: relative; z-index: 1;
-}
-/* 「点封面看歌词」—— 底行右侧那句安静的话。它只是提示,不是按钮:
-   真正的入口在封面上,这里再摆一颗胶囊会把「只剩一颗档位」的清爽又填满。 */
-.player-hint {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: var(--fs-xs);
-  color: var(--fg-4);
-  padding-right: 2px;
-}
-
-.quality-chip {
-  height: 36px; padding: 0 15px;
-  display: inline-flex; align-items: center; gap: 7px;
-  border-radius: var(--r-full);
-  background: var(--glass-4);
-  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
-  border: 1px solid var(--line);
-  box-shadow: inset 0 1px 0 var(--glass-rim);
-  font-size: var(--fs-sm); font-weight: 640;
-  color: var(--fg-2);
-  transition: background 0.18s var(--ease), color 0.18s var(--ease);
-}
-.quality-chip:hover { background: var(--fill-2); color: var(--fg); }
-.quality-chip.on {
-  color: color-mix(in srgb, var(--accent) 82%, var(--fg));
-  border-color: color-mix(in srgb, var(--accent) 44%, transparent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--accent) 26%, transparent),
-    0 6px 18px -10px color-mix(in srgb, var(--accent) 70%, transparent);
-}
-
-/* 播放页底部线路状态 */
 
 /* ============================================================
    底部弹层
