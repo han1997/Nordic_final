@@ -5,6 +5,7 @@ import 'package:nordic/theme/accent.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/theme_mode.dart';
 import 'package:nordic/theme/tokens.dart';
+import 'package:nordic/ui/routes.dart';
 import 'package:nordic/ui/shell/bottom_stack.dart';
 import 'package:nordic/ui/widgets/components.dart';
 import 'package:nordic/ui/shell/shell.dart';
@@ -160,6 +161,33 @@ void main() {
       await tester.pump();
 
       expect(pendingTab.value, AppTab.search);
+    });
+  });
+
+  group('页面过渡', () {
+    /// 播放页 ↔ 歌词页是同一个播放对象的两面,切换要「直接变」。
+    /// 这一条钉住它 —— 免得哪天顺手把它们也塞回统一的滑入里。
+    test('歌词页:直接换,不滑也不飞', () {
+      final route =
+          AppRoutes.generate(const RouteSettings(name: AppRoutes.lyrics));
+
+      expect(route, isA<PageRouteBuilder<dynamic>>());
+      final page = route! as PageRouteBuilder;
+      expect(page.transitionDuration, Duration.zero);
+      expect(page.reverseTransitionDuration, Duration.zero,
+          reason: '点歌词回封面也要一样直接,不然来路去路手感不一致');
+    });
+
+    test('专辑 / 艺人 / 歌单仍是滑入 —— 它们不是「翻面」而是进另一个页面', () {
+      for (final name in [AppRoutes.album, AppRoutes.artist, AppRoutes.playlist]) {
+        final route = AppRoutes.generate(
+          RouteSettings(name: name, arguments: 'x'),
+        );
+        expect(route, isA<PageRouteBuilder<dynamic>>());
+        expect((route! as PageRouteBuilder).transitionDuration,
+            greaterThan(Duration.zero),
+            reason: '$name 该滑入');
+      }
     });
   });
 

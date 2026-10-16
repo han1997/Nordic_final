@@ -42,7 +42,8 @@ abstract final class AppRoutes {
       case player:
         return slide(settings, const PlayerScreen());
       case lyrics:
-        return slide(settings, const LyricsScreen());
+        // 歌词与播放页是**同一个播放对象的两面** —— 见 [flip]。
+        return flip(settings, const LyricsScreen());
       case servers:
         return slide(settings, const ServersScreen());
       case downloads:
@@ -63,6 +64,23 @@ abstract final class AppRoutes {
         return null;
     }
   }
+
+  /// 播放页 ↔ 歌词页:直接换,**不滑也不飞**。
+  ///
+  /// 这两屏是同一个东西的两面(点封面互相翻):位移会读成「进了一个新页面」,
+  /// 而这里要的是「同一张封面翻了个面」。原型也是这么分的 ——
+  /// `go('lyrics')` 不走 View Transition,`render(false)` 原地换掉。
+  ///
+  /// [reverseTransitionDuration] 同样给 0:点歌词回封面也是直接变,
+  /// 不然来路与去路的手感不一致。
+  static Route<dynamic> flip(RouteSettings settings, Widget page) =>
+      PageRouteBuilder(
+        settings: settings,
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, _, _) => page,
+        transitionsBuilder: (_, _, _, child) => child,
+      );
 
   /// 页面统一的滑入过渡。用平台默认的 [CupertinoPageRoute] 语义
   /// (从右滑入 + 手势返回),而不是 Material 的默认上浮 ——
