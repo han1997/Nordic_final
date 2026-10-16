@@ -209,19 +209,18 @@ class _AlbumScreenState extends State<AlbumScreen> {
     AppRoutes.openPlayer(context);
   }
 
-  void _downloadToQueue(Album album) {
-    // 下载进的是「下载管理」的队列,真下载不在这一轮 ——
-    // 但按钮点下去必须有个去处,不能是死的。
+  Future<void> _downloadToQueue(Album album) async {
+    // 下的是**当前已加载的曲目表**:没加载出来的曲目我们不知道 id,
+    // 只报个数量给下载器,它也无从下手。
     final state = context.read<AppState>();
-    state.enqueueDownload(
-      DownloadTask(
-        id: 'dl-album-${album.id}',
-        name: album.name,
-        detail: '${album.songCount} 首 · 整张',
-        sizeMb: (album.songCount * 32.4),
-      ),
-    );
-    _toast('整张专辑已加入下载队列');
+    try {
+      final job = await state.downloadAlbum(album, _songs);
+      if (!mounted) return;
+      _toast(job.queuedNotice);
+    } catch (e) {
+      if (!mounted) return;
+      _toast('$e');
+    }
   }
 
   void _showMenu() {

@@ -182,13 +182,18 @@ class ConfigStore {
 ///
 /// 放在这里而不是各调用点,是为了让「配置 → 鉴权 → 线路」这条接线只有一份,
 /// 免得某处忘了把密码传进去,表现成一连串 40 错误。
+///
+/// [autoRoute] 来自设置页的「线路自动择优」—— 关掉之后客户端只走
+/// 手动锁定的那条,见 [SubsonicClient.autoRoute]。
 SubsonicClient clientFor({
   required ServerConfig config,
   required String password,
+  bool autoRoute = true,
 }) {
   final auto = config.routes.where((r) => r.selected).firstOrNull;
   return SubsonicClient(
     auth: SubsonicAuth(username: config.username, password: password),
+    autoRoute: autoRoute,
     routes: config.routes.isEmpty
         // 没线路时给一条占位,让界面能显示「未配置」而不是抛异常。
         ? const [ServerRoute(id: 'unset', name: '未配置', url: '')]

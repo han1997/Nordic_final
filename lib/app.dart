@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'playback/playback_controller.dart';
 import 'state/app_state.dart';
 import 'theme/nordic_theme.dart';
 import 'theme/theme_mode.dart';
@@ -31,6 +32,10 @@ class NordicApp extends StatelessWidget {
       // 设计的主场是深色(近黑底靠光晕撑层次),系统没表态时按深色走。
       themeMode: mode.material,
       navigatorKey: navigatorKey,
+      // 生命周期规则挂在 MaterialApp 的 builder 上而不是各页面里 ——
+      // 它是应用级的一条,页面来去都不该影响它。
+      builder: (context, child) =>
+          _BackgroundPlayGuard(child: child ?? const SizedBox.shrink()),
       onGenerateRoute: AppRoutes.generate,
       routes: {
         ...AppRoutes.table,
@@ -38,6 +43,51 @@ class NordicApp extends StatelessWidget {
       },
     );
   }
+}
+
+/// 「播放时后台运行」关掉之后:切到后台就暂停。
+///
+/// 用 [WidgetsBindingObserver] 而不是在每个页面里听 `AppLifecycleState`:
+/// 用户是按「应用」理解这个开关的,不是按「页面」。
+class _BackgroundPlayGuard extends StatefulWidget {
+  const _BackgroundPlayGuard({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_BackgroundPlayGuard> createState() => _BackgroundPlayGuardState();
+}
+
+class _BackgroundPlayGuardState extends State<_BackgroundPlayGuard>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.paused) return;
+    // 播放层可能压根没起来(平台侧没建出后台服务)—— 那时也没什么可暂停的。
+    // 这里用可空的 provider 查询,而不是 try/catch 一个「找不到 provider」。
+    final playback = context.read<PlaybackController?>();
+    if (playback == null) return;
+
+    pauseWhenBackgrounded(
+      backgroundPlay: context.read<AppState>().backgroundPlay,
+      pause: playback.pause,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// 全局导航键 —— 播放通知栏点回来、以及「从任意位置跳播放页」都要用。

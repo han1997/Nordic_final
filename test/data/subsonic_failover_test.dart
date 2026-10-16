@@ -122,4 +122,86 @@ void main() {
       );
     });
   });
+
+  group('手动锁定(关掉线路自动择优)', () {
+    test('锁定了哪条就走哪条', () async {
+      final hits = <String>[];
+      final client = SubsonicClient(
+        autoRoute: false,
+        auth: SubsonicAuth(username: 'u', password: 'p'),
+        routes: const [
+          ServerRoute(id: 'lan', name: '局域网', url: 'http://lan.example.com'),
+          ServerRoute(
+            id: 'wan',
+            name: '外网',
+            url: 'http://wan.example.com',
+            selected: true,
+          ),
+        ],
+        dio: recordingDio(
+          hits,
+          handler: (_) => {
+            'subsonic-response': {'status': 'ok', 'version': '1.16.1'}
+          },
+        ),
+      );
+
+      await client.call('ping');
+
+      expect(hits, ['http://wan.example.com']);
+    });
+
+    test('不锁定就用列表第一条 —— 测速说了也不算', () async {
+      final hits = <String>[];
+      final client = SubsonicClient(
+        autoRoute: false,
+        auth: SubsonicAuth(username: 'u', password: 'p'),
+        routes: const [
+          // 故意把慢的放在前面:自动择优会跳过它,手动锁定不该跳。
+          ServerRoute(id: 'slow', name: '慢', url: 'http://slow.example.com'),
+          ServerRoute(id: 'fast', name: '快', url: 'http://fast.example.com'),
+        ],
+        dio: recordingDio(
+          hits,
+          handler: (_) => {
+            'subsonic-response': {'status': 'ok', 'version': '1.16.1'}
+          },
+        ),
+      );
+
+      await client.pingAll();
+      await client.call('ping');
+
+      expect(client.activeRoute?.id, 'slow', reason: '用户点名的是顺序,不是延迟');
+      expect(hits.last, 'http://slow.example.com');
+    });
+
+    test('线路不通也不换线 —— 换线路是自动择优的一部分', () async {
+      final hits = <String>[];
+      final client = SubsonicClient(
+        autoRoute: false,
+        auth: SubsonicAuth(username: 'u', password: 'p'),
+        routes: const [
+          ServerRoute(id: 'lan', name: '局域网', url: 'http://lan.invalid'),
+          ServerRoute(id: 'wan', name: '外网', url: 'http://wan.example.com'),
+        ],
+        dio: recordingDio(
+          hits,
+          handler: (base) {
+            if (base.contains('lan.invalid')) {
+              throw const SubsonicException('局域网 无法连接');
+            }
+            return {'subsonic-response': {'status': 'ok', 'version': '1.16.1'}};
+          },
+        ),
+      );
+
+      await expectLater(
+        client.call('ping'),
+        throwsA(isA<SubsonicException>()),
+      );
+      // 只碰了锁定的那条 —— 悄悄换一条是用户关掉这个开关时最不想要的。
+      expect(hits, ['http://lan.invalid']);
+    });
+  });
 }

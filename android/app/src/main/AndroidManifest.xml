@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 「仅 Wi-Fi 下载」要问系统当前网络是否计费(见 MainActivity 的网络通道)。
+         这是普通权限,不会弹窗。 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
     <application
         android:label="Nordic"

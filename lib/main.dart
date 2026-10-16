@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
+import 'data/download_manager.dart';
+import 'data/download_store.dart';
 import 'data/server_config.dart';
 import 'data/subsonic_repository.dart';
 import 'playback/audio_handler.dart';
@@ -18,6 +20,10 @@ Future<void> main() async {
   final configStore = await ConfigStore.open();
   final credentialStore = CredentialStore();
 
+  // 下载内容的落盘处与下载器。存储不可用时它会退化成一块「用不了」的
+  // 索引(见 DownloadStore.open),应用照常起 —— 只是下载入口会给人话。
+  final downloads = await DownloadStore.open();
+
   final savedConfig = configStore.loadServer();
   final savedPassword = await credentialStore.readPassword();
 
@@ -28,10 +34,23 @@ Future<void> main() async {
 
   // 应用状态先建 —— 播放服务需要它给出**当前**的仓库,
   // 因为服务器配置可以在运行时变。
-  final appState = AppState(
+  //
+  // 用 late 局部变量是为了让「下载器读应用状态」与「应用状态持有下载器」
+  // 不打架:下载器拿到的是取值函数,真正求值要等到第一次下载,
+  // 那时 appState 早就建好了。
+  late final AppState appState;
+
+  final downloadManager = DownloadManager(
+    store: downloads,
+    repository: () => appState.repository,
+    wifiOnly: configStore.loadWifiOnlyDownload,
+  );
+
+  appState = AppState(
     configStore: configStore,
     credentialStore: credentialStore,
     quality: quality,
+    downloadManager: downloadManager,
   );
 
   // 已存过配置就把仓库接上(密码可能为空 —— 那种情况视为「未配置」)。
@@ -54,6 +73,8 @@ Future<void> main() async {
     audioHandler = await startAudioService(
       repository: () => appState.repository,
       quality: quality,
+      // 播放时先查这份索引:下过的曲子直接播本机文件,不再走网络。
+      downloads: downloads,
     ).timeout(const Duration(seconds: 8));
     await audioHandler.configureSession();
   } on TimeoutException catch (e) {
@@ -75,6 +96,9 @@ Future<void> main() async {
         ChangeNotifierProvider<QualityController>.value(value: quality),
         if (playback != null)
           ChangeNotifierProvider<PlaybackController>.value(value: playback),
+        // 可空的那一份给「应用退到后台」这条规则用:播放层起不来时它是 null,
+        // 那件事得有地方表达,而不是让查询抛一个「找不到 provider」。
+        Provider<PlaybackController?>.value(value: playback),
         Provider<ConfigStore>.value(value: configStore),
         Provider<CredentialStore>.value(value: credentialStore),
       ],

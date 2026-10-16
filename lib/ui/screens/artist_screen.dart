@@ -273,12 +273,40 @@ class _ArtistScreenState extends State<ArtistScreen> {
                   _queueAll();
                 },
               ),
+              _MenuRow(
+                icon: Icons.download_outlined,
+                label: '下载全部歌曲',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _downloadAll();
+                },
+              ),
               const SizedBox(height: NordicSpace.s2),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// 下载这位艺人的全部歌曲。
+  ///
+  /// 曲目得在全库里翻页找齐(`getArtist` 只给几首热门),大库上这一步要等
+  /// 几秒 —— 先给一句提示再动手,否则这段时间界面看着像卡住了。
+  Future<void> _downloadAll() async {
+    final artist = _artist;
+    if (artist == null) return;
+    final state = context.read<AppState>();
+
+    _toast('正在整理 ${artist.name} 的曲目…');
+    try {
+      final job = await state.downloadArtist(artist);
+      if (!mounted) return;
+      _toast(job.queuedNotice);
+    } catch (e) {
+      if (!mounted) return;
+      _toast('$e');
+    }
   }
 
   Future<void> _queueAll() async {
@@ -291,6 +319,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
 
   void _songMenu(Song song) {
     final playable = context.read<PlaybackController>();
+    final downloaded = context.read<AppState>().isDownloaded(song.id);
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -309,6 +338,14 @@ class _ArtistScreenState extends State<ArtistScreen> {
                   Navigator.of(context).pop();
                   playable.playNext(song);
                   _toast('已排到下一首');
+                },
+              ),
+              _MenuRow(
+                icon: downloaded ? Icons.download_done : Icons.download_outlined,
+                label: downloaded ? '已下载到本机' : '下载到本机（FLAC）',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  if (!downloaded) _downloadSong(song);
                 },
               ),
               _MenuRow(
@@ -334,6 +371,18 @@ class _ArtistScreenState extends State<ArtistScreen> {
         ),
       ),
     );
+  }
+
+  /// 下载这一首。
+  Future<void> _downloadSong(Song song) async {
+    try {
+      final job = await context.read<AppState>().downloadSong(song);
+      if (!mounted) return;
+      _toast(job.queuedNotice);
+    } catch (e) {
+      if (!mounted) return;
+      _toast('$e');
+    }
   }
 
   void _toast(String message) {

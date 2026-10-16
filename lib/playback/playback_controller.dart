@@ -172,6 +172,9 @@ class PlaybackController extends ChangeNotifier {
   Future<void> toggle() =>
       _state.playing ? _handler.pause() : _handler.play();
 
+  /// 暂停。与 [toggle] 分开:退到后台时的暂停不该依赖界面上的状态判断。
+  Future<void> pause() => _handler.pause();
+
   Future<void> next() => _handler.skipToNext();
 
   Future<void> previous() => _handler.skipToPrevious();
@@ -230,4 +233,19 @@ class PlaybackController extends ChangeNotifier {
     }
     super.dispose();
   }
+}
+
+/// 应用退到后台时的处置:**开关关了就暂停,开着一律不动**。
+///
+/// 抽成顶层的纯函数是为了能直接单测 —— 这一句就是设置页
+/// 「播放时后台运行」在代码里的全部含义。
+///
+/// 返回是否真的暂停了,调用方一般不用管,测试要用。
+Future<bool> pauseWhenBackgrounded({
+  required bool backgroundPlay,
+  required Future<void> Function() pause,
+}) async {
+  if (backgroundPlay) return false;
+  await pause();
+  return true;
 }

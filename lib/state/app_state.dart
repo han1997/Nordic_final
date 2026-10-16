@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../data/download_manager.dart';
 import '../data/models.dart';
 import '../data/server_config.dart';
 import '../data/subsonic_client.dart';
@@ -22,11 +23,17 @@ class AppState extends ChangeNotifier {
     required this.configStore,
     required this.credentialStore,
     required this.quality,
-  });
+    required this.downloadManager,
+  }) {
+    // 下载器的状态变化要能被界面看到,而界面只订阅 [AppState] 一个对象 ——
+    // 这里把它接进来,省掉「下载页要多订阅一个 provider」这件事。
+    downloadManager.addListener(notifyListeners);
+  }
 
   final ConfigStore configStore;
   final CredentialStore credentialStore;
   final QualityController quality;
+  final DownloadManager downloadManager;
 
   SubsonicRepository? _repository;
   SubsonicRepository? get repository => _repository;
@@ -53,7 +60,11 @@ class AppState extends ChangeNotifier {
   /// 存储(前者 SharedPreferences,后者系统密钥库),各有各的失败可能,
   /// 分开之后「配置在但密码读不出来」这种情况有地方表达。
   void attachRepository(ServerConfig config, String password) {
-    _repository = SubsonicRepository(clientFor(config: config, password: password));
+    _repository = SubsonicRepository(clientFor(
+      config: config,
+      password: password,
+      autoRoute: configStore.loadAutoRoute(),
+    ));
     notifyListeners();
   }
 
@@ -79,7 +90,11 @@ class AppState extends ChangeNotifier {
     await configStore.saveServer(config);
 
     _server = config;
-    _repository = SubsonicRepository(clientFor(config: config, password: password));
+    _repository = SubsonicRepository(clientFor(
+      config: config,
+      password: password,
+      autoRoute: configStore.loadAutoRoute(),
+    ));
     notifyListeners();
 
     // 顺手测一次速并把择优结果定下来,这样第一次进音乐库就走最快那条。
@@ -289,7 +304,13 @@ class AppState extends ChangeNotifier {
 
   Future<void> setAutoRoute(bool value) async {
     await configStore.saveAutoRoute(value);
+    // 开关是给**当前**这条连接用的,要立刻生效 —— 只落盘的话得等到
+    // 下次重启应用才作数,用户会以为开关没反应。
+    _repository?.client.autoRoute = value;
     notifyListeners();
+    // 刚打开自动择优时手上可能还没有测速结果,顺手量一次,
+    // 否则它会一直停在列表首条直到下一次请求。
+    if (value) unawaited(refreshRouteLatency());
   }
 
   bool get backgroundPlay => configStore.loadBackgroundPlay();
@@ -303,6 +324,8 @@ class AppState extends ChangeNotifier {
 
   Future<void> setWifiOnlyDownload(bool value) async {
     await configStore.saveWifiOnlyDownload(value);
+    // 门控条件变了:卡在「等待 Wi-Fi」的任务此刻可能就能开始了。
+    downloadManager.onWifiOnlyChanged();
     notifyListeners();
   }
 
@@ -334,87 +357,55 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------------- 下载队列 ----------------
+  // ---------------- 下载 ----------------
 
-  /// 下载任务。
+  /// 下载任务列表。真值在 [downloadManager] 里 —— 状态层只是把它
+  /// forward 给界面,免得界面为了下载再订阅第二个对象。
+  List<DownloadJob> get downloads => downloadManager.jobs;
+
+  int get activeDownloadCount => downloadManager.activeCount;
+
+  /// 这首歌在不在本机。播放层用的是同一份索引,界面上的「已下载」标记
+  /// 也据此显示 —— 两处各判一次迟早会不一致。
+  bool isDownloaded(String songId) => downloadManager.isDownloaded(songId);
+
+  /// 下载整张专辑的曲目。[songs] 必须是**已加载出来的曲目表** ——
+  /// 只报个曲目数就下发,下载器无从知道要拉哪些文件。
+  Future<DownloadJob> downloadAlbum(Album album, List<Song> songs) {
+    if (songs.isEmpty) {
+      throw const DownloadFailure('这张专辑还没有加载出曲目');
+    }
+    return downloadManager.enqueue(DownloadRequest.album(album, songs));
+  }
+
+  Future<DownloadJob> downloadSong(Song song) =>
+      downloadManager.enqueue(DownloadRequest.song(song));
+
+  /// 下载一位艺人的全部歌曲。
   ///
-  /// **这一轮的进度是模拟的**(见 [advanceDownloads]),不做真实落盘与离线播放。
-  /// 界面上如实呈现即可 —— 队列能加能删、状态会走,但按钮背后的文件并不存在,
-  /// 所以界面上不承诺「离线可播」。
-  final List<DownloadTask> _downloads = [];
-  List<DownloadTask> get downloads => List.unmodifiable(_downloads);
-
-  int get activeDownloadCount =>
-      _downloads.where((d) => d.state == DownloadState.active).length;
-
-  void enqueueDownload(DownloadTask task) {
-    // 同一条重复入队没有意义 —— 专辑页来回点两次会看到两个一样的条目。
-    if (_downloads.any((d) => d.id == task.id)) {
-      notifyListeners();
-      return;
+  /// 曲目要在全库里找齐(`getArtist` 只给几首热门),这一步会翻页,
+  /// 大库上要等一会儿 —— 所以界面先提示「正在整理曲目」再调它。
+  Future<DownloadJob> downloadArtist(Artist artist) async {
+    final repo = _repository;
+    if (repo == null) {
+      throw const SubsonicException('还没有连接服务器');
     }
-    _downloads.insert(0, task);
-    notifyListeners();
-  }
-
-  void removeDownload(String id) {
-    _downloads.removeWhere((d) => d.id == id);
-    notifyListeners();
-  }
-
-  void clearDownloads() {
-    _downloads.clear();
-    notifyListeners();
-  }
-
-  /// 推进模拟进度。由界面上的定时器调用 —— 放在 [AppState] 里而不是
-  /// 下载页内部,是为了切走再切回来时进度仍然连续。
-  void advanceDownloads() {
-    final active = _downloads.where((d) => d.state == DownloadState.active);
-    if (active.isEmpty) return;
-    for (final task in active) {
-      task.pct = (task.pct + 7 + task.id.hashCode % 9).clamp(0.0, 100.0);
-      if (task.pct >= 100) task.state = DownloadState.done;
+    final songs = await repo.songsByArtist(artist);
+    if (songs.isEmpty) {
+      throw SubsonicException('在音乐库里没有找到 ${artist.name} 的歌曲');
     }
-    notifyListeners();
+    return downloadManager.enqueue(DownloadRequest.artist(artist, songs));
   }
-}
 
-/// 下载任务的状态。
-enum DownloadState {
-  active('下载中'),
-  done('已完成');
+  Future<void> removeDownload(String id) => downloadManager.remove(id);
 
-  const DownloadState(this.label);
+  Future<void> retryDownload(String id) => downloadManager.retry(id);
 
-  final String label;
-}
-
-/// 一条下载任务。
-class DownloadTask {
-  DownloadTask({
-    required this.id,
-    required this.name,
-    this.detail = '',
-    this.sizeMb = 0,
-    this.pct = 0,
-    this.state = DownloadState.active,
-  });
-
-  final String id;
-  final String name;
-  final String detail;
-  final double sizeMb;
-
-  /// 0–100。
-  double pct;
-
-  DownloadState state;
-
-  /// 文案里的体积。四舍五入到整 MB —— 小数位没有意义。
-  String get sizeLabel => '${sizeMb.round()} MB';
-
-  bool get isDone => state == DownloadState.done;
+  @override
+  void dispose() {
+    downloadManager.removeListener(notifyListeners);
+    super.dispose();
+  }
 }
 
 /// 音乐库的一屏数据。

@@ -61,14 +61,17 @@ void main() {
     expect(result.contentType, startsWith('audio/'),
         reason: '转码后应是 audio/*,实际=${result.contentType}');
     expect(result.firstBytes, greaterThan(0));
-    expect(result.contentLength, isNotNull);
-    // 转码档的文件应当显著小于原音档 —— 否则说明 maxBitRate / format
-    // 没被服务器认下来,用户选了「省流」其实还在拉原文件。
-    expect(
-      result.contentLength!,
-      lessThan(10 * 1024 * 1024),
-      reason: '192kbps 转码不该是几十 MB 的无损体积',
-    );
+    // 转码是现算现发的,Navidrome 用 chunked 编码回,**没有 Content-Length**
+    // (实测 0.64.2)。有长度时才比体积 —— 不能因为服务器没报就判它错。
+    if (result.contentLength != null) {
+      // 转码档的文件应当显著小于原音档 —— 否则说明 maxBitRate / format
+      // 没被服务器认下来,用户选了「省流」其实还在拉原文件。
+      expect(
+        result.contentLength!,
+        lessThan(10 * 1024 * 1024),
+        reason: '192kbps 转码不该是几十 MB 的无损体积',
+      );
+    }
   });
 
   test('封面图返回图片字节', () async {

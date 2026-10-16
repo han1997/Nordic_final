@@ -75,15 +75,47 @@ class SubsonicRepository {
 
   /// 全部歌曲。Subsonic 没有「列全部歌」的端点,用随机歌单凑是错的
   /// (会漏歌)。这里走搜索接口的空查询,拿服务器的字母序全集。
-  Future<List<Song>> allSongs({int size = 500}) async {
+  ///
+  /// [offset] 用于翻页 —— 空查询也能带 `songOffset`,这是协议里
+  /// 唯一的翻页手段(见 [songsByArtist])。
+  Future<List<Song>> allSongs({int size = 500, int offset = 0}) async {
     final body = await client.call('search3', {
       'query': '',
       'songCount': '$size',
+      if (offset > 0) 'songOffset': '$offset',
       'albumCount': '0',
       'artistCount': '0',
     });
     return SubsonicMapper.search(SubsonicPayload.searchResult(body)).songs;
   }
+
+  /// 一位艺人的全部歌曲。
+  ///
+  /// Subsonic 没有「按艺人列全部曲目」的端点:`getArtist` 只给几首热门。
+  /// 只能翻全集再按艺人筛,并且**要翻到底** —— 取前 500 首当全集,
+  /// 会让大库里的用户在「下载这位艺人的歌」时默默少下后半截。
+  Future<List<Song>> songsByArtist(Artist artist) async {
+    const pageSize = 500;
+    // 两万首封顶。真实艺人远远到不了;这是给「筛不出东西时别把库翻穿」
+    // 留的止损点。
+    const maxPages = 40;
+
+    final songs = <Song>[];
+    for (var page = 0; page < maxPages; page++) {
+      final batch = await allSongs(size: pageSize, offset: page * pageSize);
+      songs.addAll(batch.where((s) => _isBy(s, artist)));
+      if (batch.length < pageSize) break;
+    }
+    return songs;
+  }
+
+  /// 一首歌属不属于这位艺人。
+  ///
+  /// 两个条件都要试:`artistId` 在某些服务器上是专辑艺人(合辑里会指到
+  /// 别人),按名字兜一层;反过来名字也可能被服务器改过写法。
+  static bool _isBy(Song song, Artist artist) =>
+      song.artistId == artist.id || song.artist == artist.name;
+
 
   /// 歌单列表。
   Future<List<Playlist>> playlists() async {
@@ -204,6 +236,13 @@ class SubsonicRepository {
         },
         client.auth,
       );
+
+  /// 下载用的地址:**一律取原文件,不吃转码档**。
+  ///
+  /// 下载的卖点是「离线也能听」,那就该存服务器上真正的那个文件。
+  /// 跟着当前档位存一份转码过的,既对不起界面上「下载到本机(FLAC)」
+  /// 那句话,也会让用户在换档位时才发现本地这首比在线的还差。
+  Uri downloadUri(String songId) => streamUri(songId);
 
   ServerRoute get _activeRouteOrThrow {
     final route = client.activeRoute;

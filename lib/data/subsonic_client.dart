@@ -96,6 +96,7 @@ class SubsonicClient {
     required this.auth,
     required List<ServerRoute> routes,
     Dio? dio,
+    this.autoRoute = true,
   })  : _routes = List.of(routes),
         _dio = dio ??
             Dio(BaseOptions(
@@ -108,6 +109,14 @@ class SubsonicClient {
   final SubsonicAuth auth;
   final Dio _dio;
   final List<ServerRoute> _routes;
+
+  /// 是否按延迟自动择优。
+  ///
+  /// 关掉之后**只用手动锁定的那条**(没锁就用列表第一条),并且不再故障
+  /// 切到别的线路。设置页那句「每条线路要手动锁定」说的就是这件事:
+  /// 用户既然点名了走哪条,就不该在他不知情的时候换成另一条。
+  /// 运行中可以改(设置页的开关直接改这个字段)。
+  bool autoRoute;
 
   /// 当前生效的线路 id。优先级:用户锁定 > 实测最快 > 列表首条。
   String? _activeRouteId;
@@ -123,6 +132,8 @@ class SubsonicClient {
     if (_routes.isEmpty) return null;
     final locked = _routes.where((r) => r.selected).firstOrNull;
     if (locked != null) return locked;
+    // 手动锁定模式:不问延迟,按用户配的顺序来。
+    if (!autoRoute) return _routes.first;
     final byId = _routes.where((r) => r.id == _activeRouteId).firstOrNull;
     if (byId != null) return byId;
     return _fastestAvailable ?? _routes.first;
@@ -147,8 +158,8 @@ class SubsonicClient {
     for (final ping in results) {
       _pings[ping.routeId] = ping;
     }
-    // 测速完让择优重新算一次。
-    _activeRouteId = _fastestAvailable?.id;
+    // 测速完让择优重新算一次 —— 手动锁定模式下不动,用户的点名优先。
+    if (autoRoute) _activeRouteId = _fastestAvailable?.id;
     return pings;
   }
 
@@ -202,9 +213,13 @@ class SubsonicClient {
   }
 
   /// 候选线路顺序:当前生效的排第一,其余按延迟升序兜底。
+  ///
+  /// 手动锁定模式下只有一条候选 —— 故障切换是「自动择优」的一部分,
+  /// 关掉之后换线路这件事就该停下来。
   List<ServerRoute> _candidateOrder() {
     final active = activeRoute;
     if (active == null) return const [];
+    if (!autoRoute) return [active];
     final rest = _routes.where((r) => r.id != active.id).toList()
       ..sort((a, b) =>
           (_pings[a.id]?.latency ?? const Duration(days: 1))

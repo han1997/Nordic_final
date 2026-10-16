@@ -1,8 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/download_manager.dart';
+import '../../data/download_store.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
@@ -11,43 +11,23 @@ import '../widgets/components.dart';
 
 /// 下载管理。
 ///
-/// **这一轮的进度是模拟的** —— 队列能加能删、状态会走,但按钮背后的文件
-/// 并不存在。所以界面上不承诺「离线可播」,只说明下载会走哪条线路、
-/// 存到哪个目录(那是真实接入后的行为)。
-class DownloadsScreen extends StatefulWidget {
+/// 队列是真队列:下载按钮会把曲目真的拉到本机(见 [DownloadManager]),
+/// 进度与体积来自实际的传输,失败会带上服务器给的原因。
+/// **已完成的条目播放时走本机文件** —— 断网也能听,那份索引同时喂给
+/// 播放层(见 `playback/audio_handler.dart` 的 `playbackOriginFor`)。
+class DownloadsScreen extends StatelessWidget {
   const DownloadsScreen({super.key});
-
-  @override
-  State<DownloadsScreen> createState() => _DownloadsScreenState();
-}
-
-class _DownloadsScreenState extends State<DownloadsScreen> {
-  Timer? _ticker;
-
-  @override
-  void initState() {
-    super.initState();
-    // 进度推进挂在页面级定时器上,但状态存在 AppState 里 ——
-    // 这样切走再切回来进度是连续的,不会重置。
-    _ticker = Timer.periodic(const Duration(milliseconds: 1200), (_) {
-      if (!mounted) return;
-      context.read<AppState>().advanceDownloads();
-    });
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
     final state = context.watch<AppState>();
-    final tasks = state.downloads;
+    final jobs = state.downloads;
     final active = state.activeDownloadCount;
-    final totalMb = tasks.fold<double>(0, (sum, d) => sum + d.sizeMb);
+    final bytes = jobs.fold<int>(
+      0,
+      (sum, j) => sum + (j.record?.bytes ?? j.receivedBytes),
+    );
 
     return ImmersiveScaffold(
       accent: context.accent,
@@ -62,9 +42,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
               onPressed: () => Navigator.of(context).pop(),
             ),
             actions: [
-              if (tasks.isNotEmpty)
+              if (jobs.isNotEmpty)
                 Text(
-                  '$active 个进行中 · ${tasks.length} 项',
+                  '${active > 0 ? '正在下载' : '空闲'} · ${jobs.length} 项',
                   style: Theme.of(context)
                       .textTheme
                       .labelSmall
@@ -73,11 +53,11 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             ],
           ),
           Expanded(
-            child: tasks.isEmpty
+            child: jobs.isEmpty
                 // 真空白:队列确实空着,不是加载中也不是出错。
                 ? const EmptyState(
                     title: '队列是空的',
-                    detail: '专辑页和播放页的下载按钮会把内容放进这里。',
+                    detail: '专辑页、艺人页和歌曲菜单的下载按钮会把内容放进这里。',
                   )
                 : ListView(
                     padding: EdgeInsets.only(
@@ -87,7 +67,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                     children: [
                       SectionHeader(
                         title: '队列',
-                        count: '约 ${(totalMb / 1024).toStringAsFixed(1)} GB',
+                        count: '约 ${_volumeLabel(bytes)}',
                         padding: const EdgeInsets.fromLTRB(
                           NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s3),
                       ),
@@ -104,22 +84,24 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           clipBehavior: Clip.antiAlias,
                           child: Column(
                             children: [
-                              for (var i = 0; i < tasks.length; i++) ...[
+                              for (var i = 0; i < jobs.length; i++) ...[
                                 if (i > 0)
                                   Divider(
                                       height: 1, thickness: 1, color: t.line),
                                 _DownloadRow(
-                                  task: tasks[i],
+                                  job: jobs[i],
                                   onRemove: () =>
-                                      state.removeDownload(tasks[i].id),
+                                      _remove(context, state, jobs[i]),
+                                  onRetry: () =>
+                                      state.retryDownload(jobs[i].request.id),
                                 ),
                               ],
                             ],
                           ),
                         ),
                       ),
-                      const ListNote(
-                        '下载走当前线路,存到本机的 Nordic/Music 目录。'
+                      ListNote(
+                        '下载走当前线路,存到本机的 ${DownloadStore.label} 目录。'
                         '已完成的条目离线也能播。',
                       ),
                     ],
@@ -129,18 +111,75 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       ),
     );
   }
+
+  /// 删掉一条任务。**已下好的会连同文件一起删**,所以先问一句 ——
+  /// 几百 MB 重新拉一遍要花流量,不该点错一次就没了。
+  Future<void> _remove(
+    BuildContext context,
+    AppState state,
+    DownloadJob job,
+  ) async {
+    if (job.isDone) {
+      final record = job.record;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: dialogContext.nordic.glass3,
+          title: const Text('删除本机文件?'),
+          content: Text(
+            '『${job.request.name}』在本机的 ${record?.files.length ?? 0} 个文件'
+            '会被删掉,释放约 ${record?.sizeLabel ?? '这些'} 空间。'
+            '以后还能重新下载。',
+            style: Theme.of(dialogContext).textTheme.bodySmall,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text('删除', style: TextStyle(color: context.nordic.bad)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    await state.removeDownload(job.request.id);
+    if (!context.mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(job.isDone ? '已删除本机文件' : '已取消这条下载'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// 总量文案。不到 1 GB 就别硬撑「0.1 GB」—— 该显示 MB 的时候显示 MB。
+  static String _volumeLabel(int bytes) {
+    final mb = bytes / (1024 * 1024);
+    if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)} GB';
+    return '${mb.round()} MB';
+  }
 }
 
 class _DownloadRow extends StatelessWidget {
-  const _DownloadRow({required this.task, required this.onRemove});
+  const _DownloadRow({
+    required this.job,
+    required this.onRemove,
+    required this.onRetry,
+  });
 
-  final DownloadTask task;
+  final DownloadJob job;
   final VoidCallback onRemove;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    final done = task.isDone;
+    final accentSafe = context.accentSafe;
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -148,8 +187,12 @@ class _DownloadRow extends StatelessWidget {
       child: Row(
         children: [
           SettingIcon(
-            icon: done ? Icons.check : Icons.download,
-            color: done ? t.ok : context.accentSafe,
+            icon: _icon,
+            color: switch (job.state) {
+              DownloadState.done => t.ok,
+              DownloadState.failed => t.bad,
+              _ => accentSafe,
+            },
           ),
           const SizedBox(width: NordicSpace.s3),
           Expanded(
@@ -157,7 +200,7 @@ class _DownloadRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  task.name,
+                  job.request.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context)
@@ -167,20 +210,32 @@ class _DownloadRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  done
-                      ? '已完成 · ${task.sizeLabel}'
-                      : '${task.sizeLabel} · ${task.pct.round()}%',
+                  job.statusLine,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
-                      ?.copyWith(color: t.fg3),
+                      ?.copyWith(color: job.state == DownloadState.failed
+                          ? t.bad
+                          : t.fg3),
                 ),
                 const SizedBox(height: 6),
-                ProgressLine(progress: task.pct / 100),
+                // 失败的那条也留着进度 —— 它说明「下到哪儿断的」,
+                // 比一条空线更能解释重试会从哪儿接着走。
+                ProgressLine(progress: job.pct / 100),
               ],
             ),
           ),
           const SizedBox(width: NordicSpace.s3),
+          if (job.state == DownloadState.failed)
+            IconButtonRound(
+              icon: Icons.refresh,
+              size: 32,
+              iconSize: 16,
+              quiet: true,
+              onPressed: onRetry,
+            ),
           IconButtonRound(
             icon: Icons.close,
             size: 32,
@@ -192,4 +247,13 @@ class _DownloadRow extends StatelessWidget {
       ),
     );
   }
+
+  IconData get _icon => switch (job.state) {
+        DownloadState.done => Icons.check,
+        DownloadState.failed => Icons.error_outline,
+        DownloadState.active => Icons.download,
+        DownloadState.waitingWifi => Icons.wifi_off,
+        DownloadState.waitingNetwork => Icons.cloud_off,
+        DownloadState.queued => Icons.schedule,
+      };
 }

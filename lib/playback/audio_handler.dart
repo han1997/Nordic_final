@@ -1,10 +1,31 @@
+import 'dart:io';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../data/download_store.dart';
 import '../data/models.dart';
 import '../data/subsonic_repository.dart';
 import 'quality.dart';
+
+/// 一首歌该从哪里播 —— 本机有下载就用本机,否则走服务器的流。
+///
+/// 抽成顶层的纯函数是为了能直接单测:「有下载就走本地」是**离线能不能播**
+/// 的全部逻辑,它不该藏在播放器对象里靠集成测试碰。
+///
+/// [remote] 只在需要网络时才会被调用 —— 离线且没有下载时,连地址都拼不出来
+/// (没有服务器),这里的短路正好避免了那种情况下的抛错。
+({Uri uri, bool local}) playbackOriginFor(
+  Song song, {
+  required Uri Function() remote,
+  String? localPath,
+}) {
+  if (localPath != null && File(localPath).existsSync()) {
+    return (uri: Uri.file(localPath), local: true);
+  }
+  return (uri: remote(), local: false);
+}
 
 /// 启动后台播放服务并返回它的处理器。
 ///
@@ -16,12 +37,19 @@ import 'quality.dart';
 /// [repository] 是一个**取值函数**而不是实例:服务器配置可以在运行时变
 /// (用户改地址、换账号),处理器必须每次都拿到最新的那一个,
 /// 否则改完配置还得重启应用才能播。
+///
+/// [downloads] 同理给的是下载内容的索引 —— 播放时先问它这首歌在不在本地。
 Future<NordicAudioHandler> startAudioService({
   required SubsonicRepository? Function() repository,
   required QualityController quality,
+  DownloadStore? downloads,
 }) =>
     AudioService.init(
-      builder: () => NordicAudioHandler(repository, quality),
+      builder: () => NordicAudioHandler(
+        repository,
+        quality,
+        downloads: downloads,
+      ),
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'fun.han1997.nordic.playback',
         androidNotificationChannelName: '播放控制',
@@ -44,7 +72,7 @@ Future<NordicAudioHandler> startAudioService({
 class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   // 位置参数 + 私有字段的初始化形参:命名参数不能是私有的,
   // 而这两个字段不该暴露出去(界面一律经 PlaybackController 说话)。
-  NordicAudioHandler(this._repository, this._quality) {
+  NordicAudioHandler(this._repository, this._quality, {this._downloads}) {
 
     _player = AudioPlayer();
 
@@ -75,6 +103,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// 取值函数而非实例 —— 见 startAudioService 的说明。
   final SubsonicRepository? Function() _repository;
   final QualityController _quality;
+
+  /// 本机下载内容。为 null 表示这块存储用不了,一切照旧走网络。
+  final DownloadStore? _downloads;
 
   late final AudioPlayer _player;
 
@@ -285,28 +316,43 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// 不要在这里造一个连不上任何东西的假仓库。
   SubsonicRepository? get _repo => _repository();
 
-  /// 域模型 → 播放源。转码档位在这里落成查询参数。
+  /// 域模型 → 播放源。**先看本机有没有下载,再谈转码档位。**
   ///
-  /// 拿不到仓库说明配置在播放途中被清掉了(用户移除了服务器)——
-  /// 这时给一个必然失败的源是没有意义的,所以退回原音地址的空实现由
-  /// [setQueue] 提前拦下(见那里的判断)。
+  /// 下载过的那首无论当前档位是什么都走本机文件:它已经在磁盘上了,
+  /// 质量还比转码档高(下的是原文件),再打一次网络请求没有任何好处。
+  /// 这也是「已完成的条目离线也能播」那句话的落点。
+  ///
+  /// 拿不到仓库说明配置在播放途中被清掉了(用户移除了服务器)。
+  /// 那种情况下没有下载的曲子给不出地址 —— 由 [setQueue] 提前拦下。
   AudioSource _sourceFor(Song song) {
-    final repo = _repo;
-    if (repo == null) {
-      throw StateError('还没有配置服务器,无法构建播放源');
-    }
+    final origin = playbackOriginFor(
+      song,
+      localPath: _downloads?.localPathFor(song.id),
+      remote: () {
+        final repo = _repo;
+        if (repo == null) {
+          throw StateError('还没有配置服务器,无法构建播放源');
+        }
+        return repo.streamUri(
+          song.id,
+          maxBitRate: _quality.value.maxBitRate,
+          format: _quality.value.format,
+        );
+      },
+    );
+
     return AudioSource.uri(
-      repo.streamUri(
-        song.id,
-        maxBitRate: _quality.value.maxBitRate,
-        format: _quality.value.format,
+      origin.uri,
+      tag: _mediaItemFor(
+        song,
+        // 本机文件配本机的封面 —— 离线时通知栏不该只剩一块灰。
+        localCover: origin.local ? _downloads?.coverPathForSong(song.id) : null,
       ),
-      tag: _mediaItemFor(song),
     );
   }
 
   /// 封面一律用专辑封面:Subsonic 里单曲通常没有独立的图。
-  MediaItem _mediaItemFor(Song song) {
+  MediaItem _mediaItemFor(Song song, {String? localCover}) {
     final repo = _repo;
     return MediaItem(
       id: song.id,
@@ -314,9 +360,12 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       artist: song.artist,
       album: song.album,
       duration: song.duration,
-      artUri: song.hasCover && repo != null
-          ? repo.coverUri(song.coverArtId!, size: 512)
-          : null,
+      artUri: switch ((localCover, song.hasCover, repo)) {
+        (final String path, _, _) => Uri.file(path),
+        (_, true, final SubsonicRepository r) =>
+          r.coverUri(song.coverArtId!, size: 512),
+        _ => null,
+      },
     );
   }
 

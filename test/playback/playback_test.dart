@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nordic/data/models.dart';
+import 'package:nordic/playback/audio_handler.dart';
 import 'package:nordic/playback/playback_controller.dart';
 import 'package:nordic/playback/quality.dart';
 
@@ -73,6 +77,98 @@ void main() {
       expect(failed.copyWith(clearError: true).error, isNull);
       // 不显式清除时保留 —— 否则重绘一次错误提示就没了。
       expect(failed.copyWith(playing: true).error, '连不上');
+    });
+  });
+
+  group('后台运行开关', () {
+    test('开关开着:退到后台不动', () async {
+      var paused = false;
+
+      final did = await pauseWhenBackgrounded(
+        backgroundPlay: true,
+        pause: () async => paused = true,
+      );
+
+      expect(did, isFalse);
+      expect(paused, isFalse, reason: '开着后台运行就得继续放');
+    });
+
+    test('开关关掉:退到后台就暂停', () async {
+      var paused = false;
+
+      final did = await pauseWhenBackgrounded(
+        backgroundPlay: false,
+        pause: () async => paused = true,
+      );
+
+      expect(did, isTrue);
+      expect(paused, isTrue);
+    });
+  });
+
+  group('离线优先', () {
+    // 「下载过的曲子离线也能播」这句话的落点就是下面的规则:
+    // 本机有文件就走本机,没有才拼网络地址。
+    const song = Song(
+      id: 's1',
+      title: '曲目',
+      artist: '艺人',
+      album: '专辑',
+      albumId: 'al-1',
+    );
+
+    late Directory dir;
+
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('nordic-offline');
+    });
+
+    tearDown(() async {
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    });
+
+    test('本机有下载就走本机文件,连网络地址都不拼', () {
+      final file = File('${dir.path}${Platform.pathSeparator}01 - 曲目.flac')
+        ..writeAsBytesSync([1, 2, 3]);
+      var askedRemote = false;
+
+      final origin = playbackOriginFor(
+        song,
+        localPath: file.path,
+        remote: () {
+          askedRemote = true;
+          return Uri.parse('http://nas.local/rest/stream.view?id=s1');
+        },
+      );
+
+      expect(origin.local, isTrue);
+      expect(origin.uri.scheme, 'file');
+      expect(origin.uri.toFilePath(), file.path);
+      // 离线时根本拼不出网络地址(没有服务器),这条短路正是它能播的原因。
+      expect(askedRemote, isFalse, reason: '有本机文件就不该再问网络要地址');
+    });
+
+    test('记录里有路径但文件没了 —— 回退到网络,而不是播一个空', () {
+      final missing = '${dir.path}${Platform.pathSeparator}被删掉了.flac';
+
+      final origin = playbackOriginFor(
+        song,
+        localPath: missing,
+        remote: () => Uri.parse('http://nas.local/rest/stream.view?id=s1'),
+      );
+
+      expect(origin.local, isFalse);
+      expect(origin.uri.toString(), contains('nas.local'));
+    });
+
+    test('没下过的走服务器流', () {
+      final origin = playbackOriginFor(
+        song,
+        remote: () => Uri.parse('http://nas.local/rest/stream.view?id=s1'),
+      );
+
+      expect(origin.local, isFalse);
+      expect(origin.uri.queryParameters['id'], 's1');
     });
   });
 }

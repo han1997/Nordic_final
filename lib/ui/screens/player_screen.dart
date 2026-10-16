@@ -122,6 +122,7 @@ class PlayerScreen extends StatelessWidget {
     final playable = context.read<PlaybackController>();
     final appState = context.read<AppState>();
     final starred = appState.isSongStarred(song.id);
+    final downloaded = appState.isDownloaded(song.id);
 
     showModalBottomSheet<void>(
       context: context,
@@ -140,6 +141,17 @@ class PlayerScreen extends StatelessWidget {
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   appState.toggleSongStar(song.id);
+                },
+              ),
+              _SheetItem(
+                // 已经在本机的那首不必再装作能下 —— 图标与文案直接说清楚。
+                icon: downloaded
+                    ? Icons.download_done
+                    : Icons.download_outlined,
+                label: downloaded ? '已下载到本机' : '下载到本机（FLAC）',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  if (!downloaded) _download(context, song, appState);
                 },
               ),
               _SheetItem(
@@ -171,6 +183,28 @@ class PlayerScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  /// 下载这首到本机。失败要有话说 —— 按了没反应比报错更糟。
+  Future<void> _download(
+    BuildContext context,
+    Song song,
+    AppState state,
+  ) async {
+    try {
+      final job = await state.downloadSong(song);
+      if (!context.mounted) return;
+      _notify(context, job.queuedNotice);
+    } catch (e) {
+      if (!context.mounted) return;
+      _notify(context, '$e');
+    }
+  }
+
+  void _notify(BuildContext context, String message) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
   }
 }
