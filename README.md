@@ -137,9 +137,10 @@ flutter test
 - 氛围背景那两层各自隔了 `RepaintBoundary`(它们对同一套配色是静态的),
   并且明说了 `isComplex/willChange` 让光栅缓存愿意缓存;下载进度播报有
   「差 0.5% 且间隔 250ms」两道闸。
-- **`BackdropFilter` 只能收裸 `ImageFilter.blur`**:别把原型的 `saturate()`
-  塞回组合过滤器里 —— 真机上那条路不生效(坞背后的文字会清晰可读,毛玻璃等于没有),
-  这是踩过的坑。
+- **`BackdropFilter` 只能收裸 `ImageFilter.blur`**:**真机实测**过 —— 原先按原型写的
+  `ImageFilter.compose(blur + saturate 色矩阵)` 在 Android(Impeller)上不生效,
+  表现是坞背后滚动过去的曲目文字**清晰可读**,毛玻璃等于没有(只有 80% 的填充色挡着)。
+  换回裸模糊后立刻恢复。别为了那点饱和度再塞回组合过滤器。
 - **歌词的滚动落点靠 `GlobalKey` + `Scrollable.ensureVisible(alignment: 0.5)`**,
   不要自己估每行高度(估过:与真实行高差 40%,误差累积到副歌就跑到屏幕外)。
 
