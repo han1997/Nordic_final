@@ -7,6 +7,7 @@ import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../routes.dart';
+import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/states.dart';
@@ -157,22 +158,33 @@ class _ServersScreenState extends State<ServersScreen> {
 
     return Scaffold(
       backgroundColor: context.nordic.bg,
-      body: Column(
+      body: Stack(
         children: [
-          NordicAppBar(
-            title: state.hasServer ? '服务器与线路' : '连接服务器',
-            subtitle: state.hasServer
-                ? '一个账号,多个地址'
-                : '填上你自己的音乐服务器',
-            big: false,
-            leading: IconButtonRound(
-              icon: Icons.arrow_back,
-              onPressed: () => Navigator.of(context).maybePop(),
+          Column(
+            children: [
+              NordicAppBar(
+                title: state.hasServer ? '服务器与线路' : '连接服务器',
+                subtitle: state.hasServer
+                    ? '一个账号,多个地址'
+                    : '填上你自己的音乐服务器',
+                big: false,
+                leading: IconButtonRound(
+                  icon: Icons.arrow_back,
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+              ),
+              Expanded(
+                child: state.hasServer ? _manageBody(state) : _formBody(state),
+              ),
+            ],
+          ),
+          // 线路列表这一屏原型也浮着胶囊;**还没配服务器时的录入表单不给**
+          // ——那是「添加服务器」那张表单,原型上同样没有。
+          if (state.hasServer)
+            BottomStack(
+              activeTab: null,
+              onTabSelected: (tab) => openTab(context, tab),
             ),
-          ),
-          Expanded(
-            child: state.hasServer ? _manageBody(state) : _formBody(state),
-          ),
         ],
       ),
     );
@@ -300,9 +312,8 @@ class _ServersScreenState extends State<ServersScreen> {
     final active = state.activeRoute;
 
     return ListView(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.paddingOf(context).bottom + NordicSpace.s6,
-      ),
+      // 这一屏浮着播放坞 + 标签栏,列表要让出它的高度。
+      padding: EdgeInsets.only(bottom: BottomStack.listInset(context)),
       children: [
         // 服务器概览卡。
         Padding(

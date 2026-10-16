@@ -32,9 +32,20 @@ class _NordicShellState extends State<NordicShell> {
     setState(() => _tab = tab);
   }
 
+  /// 沉浸页上那颗胶囊点了某个 tab(见 [openTab])。
+  ///
+  /// 用掉就清掉,不然下次从沉浸页退回来还会莫名其妙跳一次。
+  void _applyPendingTab() {
+    final tab = pendingTab.value;
+    if (tab == null) return;
+    pendingTab.value = null;
+    _select(tab);
+  }
+
   @override
   void initState() {
     super.initState();
+    pendingTab.addListener(_applyPendingTab);
     // 首帧之后再拉数据 —— 在 initState 里直接发起会让第一次 build
     // 就撞上「正在加载」而白闪一下。
     //
@@ -49,6 +60,12 @@ class _NordicShellState extends State<NordicShell> {
         state.loadLibrary();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    pendingTab.removeListener(_applyPendingTab);
+    super.dispose();
   }
 
   @override
@@ -84,6 +101,7 @@ class ImmersiveScaffold extends StatelessWidget {
     required this.child,
     this.bottomBar,
     this.showAmbient = true,
+    this.showNav = false,
   });
 
   final NordicAccent accent;
@@ -94,6 +112,13 @@ class ImmersiveScaffold extends StatelessWidget {
 
   /// 沉浸页默认铺氛围背景;列表型的二级页(如服务器设置)关掉它。
   final bool showAmbient;
+
+  /// 是否浮出底部的播放坞 + 标签栏胶囊。
+  ///
+  /// 原型在专辑 / 艺人 / 服务器这几屏上是浮着的(`bottom()` 与一级页面同一颗),
+  /// 播放页与歌词页则整屏都是播放控制,不给。带着它的页面用
+  /// [BottomStack.listInset] 留出底部空间。
+  final bool showNav;
 
   @override
   Widget build(BuildContext context) {
@@ -119,6 +144,12 @@ class ImmersiveScaffold extends StatelessWidget {
                 ),
               ),
             ),
+            if (showNav)
+              BottomStack(
+                // 这几屏不属于任何 tab —— 原型上也是谁都不高亮。
+                activeTab: null,
+                onTabSelected: (tab) => openTab(context, tab),
+              ),
           ],
         ),
       ),

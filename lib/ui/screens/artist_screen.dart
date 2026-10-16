@@ -10,6 +10,7 @@ import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../routes.dart';
 import 'playlist_picker_sheet.dart';
+import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
@@ -81,6 +82,9 @@ class _ArtistScreenState extends State<ArtistScreen> {
 
     return ImmersiveScaffold(
       accent: accent,
+      // 原型在这几屏上也浮着播放坞 + 标签栏(音乐一直在放,不该因为
+      // 进了专辑页就断了入口)。
+      showNav: true,
       child: Column(
         children: [
           NordicAppBar(
@@ -124,7 +128,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
 
     return ListView(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.paddingOf(context).bottom + NordicSpace.s6,
+        bottom: BottomStack.listInset(context),
       ),
       children: [
         _ArtistHead(artist: artist),

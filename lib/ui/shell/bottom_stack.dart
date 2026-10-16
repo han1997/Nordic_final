@@ -25,7 +25,10 @@ class BottomStack extends StatelessWidget {
     this.showDock = true,
   });
 
-  final AppTab activeTab;
+  /// 当前选中的 tab。**可以为空** —— 专辑 / 艺人 / 服务器这几屏也浮着同一颗
+  /// 胶囊(原型如此),但它们不属于任何一个 tab,那时谁都不高亮。
+  final AppTab? activeTab;
+
   final ValueChanged<AppTab> onTabSelected;
 
   /// 沉浸页(播放 / 歌词)不显示坞 —— 那一屏整屏都是播放控制。
@@ -33,6 +36,10 @@ class BottomStack extends StatelessWidget {
 
   /// 列表需要留出的底部空间。坞 62 + 间距 8 + 标签栏 66 + 四周留白。
   static const bottomInset = 150.0;
+
+  /// 带胶囊的页面里,列表底部该留多少(已含系统指示条)。
+  static double listInset(BuildContext context) =>
+      bottomInset + MediaQuery.paddingOf(context).bottom;
 
   @override
   Widget build(BuildContext context) {
@@ -68,12 +75,17 @@ class _PlayerDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    final appState = context.watch<AppState>();
-    final playback = context.watch<PlaybackController>();
-    final song = playback.state.song;
 
+    // 播放层可能压根没起来(audio_service 初始化失败,见 main.dart 的兜底)。
+    // 那种情况下应用照样该能浏览 —— 查可空的那一份,坞整个不出现。
+    final playback = context.watch<PlaybackController?>();
+    if (playback == null) return const SizedBox.shrink();
+
+    final song = playback.state.song;
     // 还没放过任何东西时不占位 —— 空坞是一块没有意义的玻璃。
     if (song == null) return const SizedBox.shrink();
+
+    final appState = context.watch<AppState>();
 
     final playing = playback.state.playing;
     final progress = playback.state.progress / 100;
@@ -171,7 +183,7 @@ class _PlayerDock extends StatelessWidget {
 class _TabBar extends StatelessWidget {
   const _TabBar({required this.active, required this.onSelected});
 
-  final AppTab active;
+  final AppTab? active;
   final ValueChanged<AppTab> onSelected;
 
   @override
@@ -228,6 +240,21 @@ class _TabBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 沉浸页上那颗胶囊要让主壳切 tab —— 用一句全局的「请切到这个 tab」。
+///
+/// 专辑 / 艺人 / 服务器 / 歌单这几屏是**独立路由**(见 [AppRoutes]),不属于
+/// 任何一个 tab,却各自浮着一颗同样的胶囊。点它得先退回主壳、再切 tab;
+/// 为此把回调从主壳一路传进这些页面的每一层并不划算,一个 notifier 说完。
+final ValueNotifier<AppTab?> pendingTab = ValueNotifier(null);
+
+/// 在哪一屏点了胶囊上的哪个 tab。
+void openTab(BuildContext context, AppTab tab) {
+  pendingTab.value = tab;
+  // 回到主壳。它是根路由,一直活着,所以不必等它重建再切 —— 见 shell.dart
+  // 里对 pendingTab 的订阅。
+  Navigator.of(context).popUntil((route) => route.isFirst);
 }
 
 /// 三个一级页面 —— 原型 tabbar 的取值。

@@ -9,6 +9,7 @@ import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../routes.dart';
+import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
@@ -85,6 +86,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
     return ImmersiveScaffold(
       accent: accent,
+      // 原型在这几屏上也浮着播放坞 + 标签栏(音乐一直在放,不该因为
+      // 进了专辑页就断了入口)。
+      showNav: true,
       child: Column(
         children: [
           NordicAppBar(
@@ -131,7 +135,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
     return ListView(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.paddingOf(context).bottom + NordicSpace.s6,
+        bottom: BottomStack.listInset(context),
       ),
       children: [
         _AlbumHead(
