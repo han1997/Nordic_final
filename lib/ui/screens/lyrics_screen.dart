@@ -171,6 +171,8 @@ class _LyricsScreenState extends State<LyricsScreen> {
             title: '${song.title} · ${song.artist}',
             big: false,
             transparent: true,
+            // 与播放页同一副顶栏骨架:返回在左、标题居中、「⋯」在右。
+            centerTitle: true,
             leading: IconButtonRound(
               icon: Icons.arrow_back,
               onPressed: () => Navigator.of(context).pop(),

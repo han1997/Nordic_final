@@ -38,15 +38,7 @@ class PlayerScreen extends StatelessWidget {
         accent: NordicAccent.neutral(context.nordic.brightness),
         child: Column(
           children: [
-            NordicAppBar(
-              title: '正在播放',
-              big: false,
-              transparent: true,
-              leading: IconButtonRound(
-                icon: Icons.keyboard_arrow_down,
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-            ),
+            _nowPlayingBar(context),
             const Expanded(
               child: EmptyState(
                 title: '还没有在播的歌',
@@ -64,14 +56,8 @@ class PlayerScreen extends StatelessWidget {
       accent: accent,
       child: Column(
         children: [
-          NordicAppBar(
-            title: '正在播放',
-            big: false,
-            transparent: true,
-            leading: IconButtonRound(
-              icon: Icons.keyboard_arrow_down,
-              onPressed: () => Navigator.of(context).maybePop(),
-            ),
+          _nowPlayingBar(
+            context,
             actions: [
               IconButtonRound(
                 icon: Icons.more_horiz,
@@ -80,32 +66,38 @@ class PlayerScreen extends StatelessWidget {
               ),
             ],
           ),
+          // 骨架与原型一致:`flex: 1` 的封面区(在里头居中)+ 底部一组
+          // (信息 / 进度 / 控制)。
+          //
+          // 这里**不是**一个可滚动的长条:之前用「滚动 + minHeight」把内容
+          // 顶在上边,去掉底部两排胶囊之后底下就空了一大块 —— 封面也不再居中。
+          // 封面高度同时受宽与高约束(窄屏 / 分屏按高度收一档),于是不必靠
+          // 滚动兜底。
           Expanded(
             child: LayoutBuilder(
-              builder: (context, constraints) {
-                // 封面区吃掉所有剩余高度 —— 原型里封面是这一屏的主角。
-                return SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                    child: Column(
-                      children: [
-                        // 封面与唱片。高度不够时自己收一档,不溢出。
-                        _HeroStack(
-                          song: song,
-                          playing: playable.state.playing,
-                          maxSize: math.min(
+              builder: (context, constraints) => Column(
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: _HeroStack(
+                        song: song,
+                        playing: playable.state.playing,
+                        maxSize: math.min(
+                          math.min(
                             constraints.maxWidth - NordicSpace.s6 * 2,
-                            300,
+                            292,
                           ),
+                          // 高度也吃得下才行 —— 0.55 是给下面那组留的位置。
+                          constraints.maxHeight * 0.55,
                         ),
-                        _SongInfo(song: song),
-                        PlaybackScrubber(playable: playable),
-                        MediaControls(playable: playable),
-                      ],
+                      ),
                     ),
                   ),
-                );
-              },
+                  _SongInfo(song: song),
+                  PlaybackScrubber(playable: playable),
+                  MediaControls(playable: playable),
+                ],
+              ),
             ),
           ),
         ],
@@ -116,6 +108,35 @@ class PlayerScreen extends StatelessWidget {
   void _showSongMenu(BuildContext context, Song song) =>
       showSongMenu(context, song);
 }
+
+/// 播放页顶栏 —— 与原型同款:左边一个返回箭头,中间一颗**居中的小字标签**,
+/// 右边「⋯」(空态时没有右边的动作)。
+///
+/// 那颗标签不是标题:11px、字距 0.1em、三级前景色 —— 它只说「这是哪一屏」,
+/// 真正的主角在下面的封面。
+Widget _nowPlayingBar(BuildContext context, {List<Widget> actions = const []}) =>
+    NordicAppBar(
+      title: '正在播放',
+      big: false,
+      transparent: true,
+      centerTitle: true,
+      titleWidget: Text(
+        '正在播放',
+        style: TextStyle(
+          fontSize: 11,
+          letterSpacing: 1.1,
+          fontWeight: FontWeight.w600,
+          color: context.nordic.fg3,
+        ),
+      ),
+      leading: IconButtonRound(
+        // 原型用的是左箭头(不是往下)。播放页现在也是从右侧滑入的,
+        // 左箭头与来路对得上。
+        icon: Icons.chevron_left,
+        onPressed: () => Navigator.of(context).maybePop(),
+      ),
+      actions: actions,
+    );
 
 /// 封面 —— 播放页唯一的主角。
 ///
@@ -149,13 +170,11 @@ class _HeroStack extends StatelessWidget {
       }
     }
 
-    final size = maxSize.clamp(180.0, 320.0);
+    // 原型:`.hero-cover` 上限 292,光晕比封面大一圈(inset -6%)。
+    final size = maxSize.clamp(140.0, 292.0);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: NordicSpace.s6,
-        vertical: NordicSpace.s4,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s6),
       child: GestureDetector(
         onTap: () => AppRoutes.openLyrics(context),
         behavior: HitTestBehavior.opaque,
@@ -232,7 +251,7 @@ class _CoverGlowState extends State<_CoverGlow>
   @override
   Widget build(BuildContext context) {
     final accent = context.accent.accent;
-    final side = widget.size * 1.34;
+    final side = widget.size * 1.12;
 
     return IgnorePointer(
       child: FadeTransition(
@@ -277,7 +296,9 @@ class _SongInfo extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(
         NordicSpace.s6, NordicSpace.s5, NordicSpace.s6, NordicSpace.s3),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        // 原型 `.player-info .top-row` 是居中:心形对着标题与艺人那一块居中,
+        // 不是贴着标题顶。
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
             child: Column(
@@ -291,6 +312,8 @@ class _SongInfo extends StatelessWidget {
                   style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                         fontSize: 26,
                         fontWeight: FontWeight.w700,
+                        // 原型:letter-spacing -0.035em。
+                        letterSpacing: -0.9,
                       ),
                 ),
                 const SizedBox(height: 6),

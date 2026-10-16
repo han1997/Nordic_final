@@ -133,9 +133,15 @@ class MediaControls extends StatelessWidget {
     final state = playable.state;
     final accent = context.accent.accent;
 
+    // 底边留得比上边多一点(原型 `--s4 --s6 --s6`),并让开系统指示条 ——
+    // 这一排是整屏的落点,贴着底边会显得「掉出去了」。
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        NordicSpace.s6, NordicSpace.s4, NordicSpace.s6, NordicSpace.s4),
+      padding: EdgeInsets.fromLTRB(
+        NordicSpace.s6,
+        NordicSpace.s4,
+        NordicSpace.s6,
+        NordicSpace.s6 + MediaQuery.paddingOf(context).bottom,
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [

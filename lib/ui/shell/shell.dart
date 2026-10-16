@@ -177,6 +177,8 @@ class NordicAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.actions = const [],
     this.big = true,
     this.transparent = false,
+    this.centerTitle = false,
+    this.titleWidget,
   });
 
   final String title;
@@ -185,11 +187,59 @@ class NordicAppBar extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget> actions;
   final bool big;
 
+  /// 标题居中 —— 播放页与歌词页的顶栏(`back … 标题 … ⋯`)是这副样子。
+  /// 只对窄标题([big] 为 false)有意义。
+  final bool centerTitle;
+
+  /// 自定义标题。给了就用它 —— 播放页那颗「正在播放」是**小字标签**,
+  /// 不是标题,套默认大标题的字号与字重都不对。
+  final Widget? titleWidget;
+
   /// 沉浸页顶栏不加底色,让氛围背景透上来。
   final bool transparent;
 
   @override
   Size get preferredSize => Size.fromHeight(big ? 84 : 60);
+
+  /// 标题本体:自定义的优先,否则按大小归类铺。
+  Widget _titleOf(BuildContext context, NordicTokens t) {
+    final custom = titleWidget;
+    if (custom != null) return custom;
+
+    if (!big) {
+      return Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontSize: NordicType.h3,
+              fontWeight: FontWeight.w600,
+            ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.headlineLarge,
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 3),
+          Text(
+            subtitle!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: t.fg3),
+          ),
+        ],
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -216,41 +266,9 @@ class NordicAppBar extends StatelessWidget implements PreferredSizeWidget {
                   const SizedBox(width: NordicSpace.s3),
                 ],
                 Expanded(
-                  child: big
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.headlineLarge,
-                            ),
-                            if (subtitle != null) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                subtitle!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: t.fg3),
-                              ),
-                            ],
-                          ],
-                        )
-                      : Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                    fontSize: NordicType.h3,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                        ),
+                  child: centerTitle
+                      ? Center(child: _titleOf(context, t))
+                      : _titleOf(context, t),
                 ),
                 for (final action in actions) ...[
                   const SizedBox(width: NordicSpace.s1),
