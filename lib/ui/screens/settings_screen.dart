@@ -30,7 +30,7 @@ class SettingsScreen extends StatelessWidget {
       backgroundColor: context.nordic.bg,
       body: ListView(
         padding: EdgeInsets.only(
-          bottom: BottomStack.bottomInset + MediaQuery.paddingOf(context).bottom,
+          bottom: BottomStack.listInset(context),
         ),
         children: [
           NordicAppBar(

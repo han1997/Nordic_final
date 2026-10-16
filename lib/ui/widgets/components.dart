@@ -655,6 +655,63 @@ class EmptyState extends StatelessWidget {
 }
 
 /// 底部弹层 —— `.sheet`。玻璃面 + 顶部把手 + 上滑动画。
+/// 线路信号条 —— `.sig`。四根递增的条,亮的根数表示延迟档位。
+///
+/// 原型里这几个值是手写的 mock(12ms → 4 根、86ms → 3 根),这里按实测延迟
+/// 折算 —— 界面上要的是「一眼看出哪条快」,精确数字就在旁边。
+class SignalBars extends StatelessWidget {
+  const SignalBars({super.key, required this.bars, this.height = 22});
+
+  /// 亮几根,0–4。
+  final int bars;
+  final double height;
+
+  /// 四根条的高度比例 —— 照搬原型的 `:nth-child`。
+  static const _fractions = [0.30, 0.50, 0.72, 1.0];
+
+  /// 延迟 → 根数。
+  ///
+  /// 门槛按「局域网 / 公网」的实感定:30ms 以内是内网直连,80ms 以内是就近
+  /// 的公网,200ms 还可用,再往上就是「能连但不好用」。没测出延迟(线路不通、
+  /// 或还没测)不亮 —— 不亮比亮错一根强。
+  static int forLatency(Duration? latency) {
+    if (latency == null) return 0;
+    final ms = latency.inMilliseconds;
+    if (ms <= 30) return 4;
+    if (ms <= 80) return 3;
+    if (ms <= 200) return 2;
+    if (ms <= 600) return 1;
+    return 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    final accent = context.accent.accent;
+
+    return SizedBox(
+      height: height,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < _fractions.length; i++) ...[
+            if (i > 0) const SizedBox(width: 3),
+            Container(
+              width: 4,
+              height: height * _fractions[i],
+              decoration: BoxDecoration(
+                color: i < bars ? accent : t.fg4,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// 底部纸里的一行动作 —— `.menu-item`。
 ///
 /// 专辑页、艺人页、播放页、歌单页的「⋯」背后铺的都是这个。

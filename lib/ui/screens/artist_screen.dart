@@ -9,7 +9,7 @@ import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../routes.dart';
-import 'playlist_picker_sheet.dart';
+import 'song_menu_sheet.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
@@ -322,81 +322,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
     _toast('${_topSongs.length} 首已加入队列');
   }
 
-  void _songMenu(Song song) {
-    final playable = context.read<PlaybackController>();
-    final downloaded = context.read<AppState>().isDownloaded(song.id);
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => NordicScrim(
-        onTap: () => Navigator.of(context).pop(),
-        child: NordicSheet(
-          title: song.title,
-          subtitle: '${song.artist} · ${song.album}',
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              NordicMenuRow(
-                icon: Icons.playlist_play,
-                label: '下一首播放',
-                onTap: () {
-                  Navigator.of(context).pop();
-                  playable.playNext(song);
-                  _toast('已排到下一首');
-                },
-              ),
-              NordicMenuRow(
-                icon: downloaded ? Icons.download_done : Icons.download_outlined,
-                label: downloaded ? '已下载到本机' : '下载到本机（FLAC）',
-                onTap: () {
-                  Navigator.of(context).pop();
-                  if (!downloaded) _downloadSong(song);
-                },
-              ),
-              NordicMenuRow(
-                icon: Icons.queue_music,
-                label: '加入播放队列',
-                onTap: () {
-                  Navigator.of(context).pop();
-                  playable.append(song);
-                  _toast('已加入队列');
-                },
-              ),
-              NordicMenuRow(
-                icon: Icons.playlist_add,
-                label: '加入歌单',
-                onTap: () {
-                  Navigator.of(context).pop();
-                  showPlaylistPicker(this.context, song: song);
-                },
-              ),
-              NordicMenuRow(
-                icon: Icons.album_outlined,
-                label: '查看专辑',
-                onTap: () {
-                  Navigator.of(context).pop();
-                  AppRoutes.openAlbum(context, song.albumId);
-                },
-              ),
-              const SizedBox(height: NordicSpace.s2),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 下载这一首。
-  Future<void> _downloadSong(Song song) async {
-    try {
-      final job = await context.read<AppState>().downloadSong(song);
-      if (!mounted) return;
-      _toast(job.queuedNotice);
-    } catch (e) {
-      if (!mounted) return;
-      _toast('$e');
-    }
-  }
+  void _songMenu(Song song) => showSongMenu(context, song);
 
   void _toast(String message) {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(

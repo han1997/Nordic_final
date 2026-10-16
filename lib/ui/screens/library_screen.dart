@@ -175,7 +175,7 @@ class _AlbumsTab extends StatelessWidget {
 
     return ListView(
       padding: EdgeInsets.only(
-        bottom: BottomStack.bottomInset + MediaQuery.paddingOf(context).bottom,
+        bottom: BottomStack.listInset(context),
       ),
       children: [
         if (song != null) _ContinueCard(song: song, album: albumOfSong, playable: playable),
@@ -527,7 +527,7 @@ class _ArtistsTab extends StatelessWidget {
 
     return ListView(
       padding: EdgeInsets.only(
-        bottom: BottomStack.bottomInset + MediaQuery.paddingOf(context).bottom,
+        bottom: BottomStack.listInset(context),
       ),
       children: [
         SectionHeader(title: '常听艺人', count: '${library.artists.length} 位'),
@@ -608,7 +608,7 @@ class _SongsTab extends StatelessWidget {
     final repo = state.repository;
     return ListView.builder(
       padding: EdgeInsets.only(
-        bottom: BottomStack.bottomInset + MediaQuery.paddingOf(context).bottom,
+        bottom: BottomStack.listInset(context),
       ),
       itemCount: library.songs.length + 1,
       itemBuilder: (context, index) {
@@ -645,7 +645,7 @@ class _PlaylistsTab extends StatelessWidget {
 
     return ListView(
       padding: EdgeInsets.only(
-        bottom: BottomStack.bottomInset + MediaQuery.paddingOf(context).bottom,
+        bottom: BottomStack.listInset(context),
       ),
       children: [
         SectionHeader(title: '我的歌单', count: '${library.playlists.length} 个'),

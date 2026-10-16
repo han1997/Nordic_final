@@ -16,8 +16,8 @@ import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
 import '../widgets/rows.dart';
-import 'playlist_picker_sheet.dart';
 import 'queue_sheet.dart';
+import 'song_menu_sheet.dart';
 import 'quality_sheet.dart';
 import 'routes_sheet.dart';
 
@@ -119,103 +119,8 @@ class PlayerScreen extends StatelessWidget {
     );
   }
 
-  void _showSongMenu(BuildContext context, Song song) {
-    final playable = context.read<PlaybackController>();
-    final appState = context.read<AppState>();
-    final starred = appState.isSongStarred(song.id);
-    final downloaded = appState.isDownloaded(song.id);
-
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => NordicScrim(
-        onTap: () => Navigator.of(sheetContext).pop(),
-        child: NordicSheet(
-          title: song.title,
-          subtitle: '${song.artist} · ${song.album}',
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              NordicMenuRow(
-                icon: starred ? Icons.favorite : Icons.favorite_border,
-                label: starred ? '取消收藏' : '收藏这首歌',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  appState.toggleSongStar(song.id);
-                },
-              ),
-              NordicMenuRow(
-                // 已经在本机的那首不必再装作能下 —— 图标与文案直接说清楚。
-                icon: downloaded
-                    ? Icons.download_done
-                    : Icons.download_outlined,
-                label: downloaded ? '已下载到本机' : '下载到本机（FLAC）',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  if (!downloaded) _download(context, song, appState);
-                },
-              ),
-              NordicMenuRow(
-                icon: Icons.playlist_add,
-                label: '加入歌单',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  showPlaylistPicker(context, song: song);
-                },
-              ),
-              NordicMenuRow(
-                icon: Icons.playlist_play,
-                label: '下一首播放',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  playable.playNext(song);
-                },
-              ),
-              NordicMenuRow(
-                icon: Icons.queue_music,
-                label: '查看播放队列',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  showQueueSheet(context);
-                },
-              ),
-              NordicMenuRow(
-                icon: Icons.album_outlined,
-                label: '查看专辑',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  AppRoutes.openAlbum(context, song.albumId);
-                },
-              ),
-              const SizedBox(height: NordicSpace.s2),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 下载这首到本机。失败要有话说 —— 按了没反应比报错更糟。
-  Future<void> _download(
-    BuildContext context,
-    Song song,
-    AppState state,
-  ) async {
-    try {
-      final job = await state.downloadSong(song);
-      if (!context.mounted) return;
-      _notify(context, job.queuedNotice);
-    } catch (e) {
-      if (!context.mounted) return;
-      _notify(context, '$e');
-    }
-  }
-
-  void _notify(BuildContext context, String message) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-    );
-  }
+  void _showSongMenu(BuildContext context, Song song) =>
+      showSongMenu(context, song);
 }
 
 /// 封面 + 背后露出的黑胶盘面 —— `.hero-stack`。

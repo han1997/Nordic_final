@@ -221,6 +221,12 @@ class _RouteRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: NordicSpace.s3),
+            // 通着的线路给一眼「快不快」的信号条;不通的不给 —— 空条说不出
+            // 比「不可用」更多的话。
+            if (ping?.isOk ?? false) ...[
+              SignalBars(bars: SignalBars.forLatency(ping!.latency)),
+              const SizedBox(width: NordicSpace.s4),
+            ],
             if (failed)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,

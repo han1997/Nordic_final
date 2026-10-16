@@ -7,6 +7,7 @@ import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/theme_mode.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/shell/bottom_stack.dart';
+import 'package:nordic/ui/widgets/components.dart';
 import 'package:nordic/ui/shell/shell.dart';
 import 'package:nordic/ui/widgets/cover.dart';
 
@@ -162,6 +163,21 @@ void main() {
       expect(tester.takeException(), isNull);
       // 坞不在,但标签栏还在:浏览不该因为播放服务起不来而瘫痪。
       expect(find.text('设置'), findsOneWidget);
+    });
+  });
+
+  group('线路信号条', () {
+    test('延迟越短亮的根数越多 —— 门槛照内网 / 公网的实感定', () {
+      expect(SignalBars.forLatency(const Duration(milliseconds: 8)), 4);
+      expect(SignalBars.forLatency(const Duration(milliseconds: 30)), 4);
+      expect(SignalBars.forLatency(const Duration(milliseconds: 60)), 3);
+      expect(SignalBars.forLatency(const Duration(milliseconds: 150)), 2);
+      expect(SignalBars.forLatency(const Duration(milliseconds: 400)), 1);
+      expect(SignalBars.forLatency(const Duration(seconds: 2)), 0);
+    });
+
+    test('没测出延迟时一根不亮 —— 不亮比亮错一根强', () {
+      expect(SignalBars.forLatency(null), 0);
     });
   });
 }

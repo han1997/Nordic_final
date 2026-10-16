@@ -8,13 +8,13 @@ import '../../state/app_state.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
-import '../routes.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
 import '../widgets/rows.dart';
 import '../widgets/states.dart';
+import 'song_menu_sheet.dart';
 
 /// 歌单详情 —— 曲目表 + 整单播放。
 class PlaylistScreen extends StatefulWidget {
@@ -423,62 +423,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     }
   }
 
-  void _songMenu(int index) {
-    final song = _songs[index];
-    final playable = context.read<PlaybackController>();
-
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => NordicScrim(
-        onTap: () => Navigator.of(sheetContext).pop(),
-        child: NordicSheet(
-          title: song.title,
-          subtitle: '${song.artist} · ${song.album}',
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              NordicMenuRow(
-                icon: Icons.playlist_remove,
-                label: '从这个歌单移除',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _removeAt(index);
-                },
-              ),
-              NordicMenuRow(
-                icon: Icons.playlist_play,
-                label: '下一首播放',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  playable.playNext(song);
-                  _toast('已排到下一首');
-                },
-              ),
-              NordicMenuRow(
-                icon: Icons.queue_music,
-                label: '加入播放队列',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  playable.append(song);
-                  _toast('已加入队列');
-                },
-              ),
-              NordicMenuRow(
-                icon: Icons.album_outlined,
-                label: '查看专辑',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  AppRoutes.openAlbum(context, song.albumId);
-                },
-              ),
-              const SizedBox(height: NordicSpace.s2),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  void _songMenu(int index) => showSongMenu(
+        context,
+        _songs[index],
+        onRemoveFromPlaylist: () => _removeAt(index),
+      );
 
   /// 从歌单里移除一首。**按位置移除** —— 同一首歌在歌单里出现两次时,
   /// 只有位置说得清要移掉哪一次(见 [SubsonicRepository.removeFromPlaylist])。

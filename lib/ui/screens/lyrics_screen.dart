@@ -11,6 +11,7 @@ import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/rows.dart';
 import '../widgets/states.dart';
+import 'song_menu_sheet.dart';
 
 /// 歌词页 —— 逐句高亮,带时间轴时跟真实进度走。
 ///
@@ -145,11 +146,12 @@ class _LyricsScreenState extends State<LyricsScreen> {
               onPressed: () => Navigator.of(context).pop(),
             ),
             actions: [
+              // 与播放页同一张「⋯」—— 在歌词页听到一半想收藏 / 下载时,
+              // 不必先退回播放页(原型在这屏上也是这颗)。
               IconButtonRound(
-                icon: Icons.music_note,
+                icon: Icons.more_horiz,
                 quiet: true,
-                // 回到播放页看封面 —— 歌词页与播放页是同一个播放对象的两面。
-                onPressed: () => Navigator.of(context).maybePop(),
+                onPressed: () => showSongMenu(context, song),
               ),
             ],
           ),

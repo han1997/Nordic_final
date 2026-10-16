@@ -727,6 +727,10 @@ class _RouteManageRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: NordicSpace.s3),
+            if (ping?.isOk ?? false) ...[
+              SignalBars(bars: SignalBars.forLatency(ping!.latency)),
+              const SizedBox(width: NordicSpace.s4),
+            ],
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [

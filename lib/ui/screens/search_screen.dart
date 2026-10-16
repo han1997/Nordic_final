@@ -210,7 +210,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
     return ListView(
       padding: EdgeInsets.only(
-        bottom: BottomStack.bottomInset + MediaQuery.paddingOf(context).bottom,
+        bottom: BottomStack.listInset(context),
       ),
       children: [
         if (show(SearchScope.songs) && _hits.songs.isNotEmpty) ...[
