@@ -12,6 +12,9 @@
 - **歌单管理**:新建 / 重命名 / 删除,把歌加进歌单,从歌单里按位置移除
 - **排序**:专辑与歌曲两栏各一套口径 —— 专辑走服务器(Navidrome 的「最近添加 /
   最近播放 / 常听」本地算不出来),歌曲在本地排(标题 / 艺人 / 专辑 / 添加时间)
+- **缓存**:音乐库列表落盘一份,启动先铺出来再静默刷新(不必空等一次全量拉取);
+  刷新失败时留在屏幕上并说明一句是什么时候同步的 —— 断网也还有东西可看。
+  封面走磁盘缓存(按封面 id + 尺寸作键,不按 URL —— Subsonic 每次请求换 salt)
 - **平台**:Android、iOS、Windows、macOS、Linux、Web(单一 Flutter 代码库)
 
 ## 当前阶段:M2 — Android 客户端
@@ -24,6 +27,7 @@ lib/
   theme/      设计 token(styles.css :root 的 Dart 翻译)、强调色取色、玻璃、氛围背景
   data/       Subsonic 协议:鉴权、客户端(多线路择优 + 故障切换)、映射、配置
               以及下载:落盘索引(download_store)、下载器(download_manager)、网络探针
+              缓存:音乐库快照(library_cache)、排序口径(sorting)
   playback/   just_audio + audio_service:队列、四档转码、通知栏 / 锁屏控制、
               播放源选取(本机有下载就走本机文件)
   state/      应用级状态:连接、音乐库、收藏、偏好、下载
@@ -100,6 +104,10 @@ flutter test
 `download_live_test.dart` 则拿真服务器上的一首小歌走完
 「拉流 → 落盘 → 索引 → 删除」,验协议那一半。
 **但目录归属、存储权限、后台存活只有真机算数**,这几项请在真机上走一遍。
+
+缓存那部分:`library_cache_test.dart` 钉住存读往返、换服务器不认旧缓存、文件坏了
+不炸;`app_state_test.dart` 里那几条钉住「铺完缓存就是 ready」「刷新失败但手上有
+缓存时不切错误态」「刷新成功之后『来自缓存』归位」。
 
 排序那部分:口径换算与排序本身是纯函数(`sorting_test.dart`),状态层那几条
 (`app_state_test.dart`)钉住「专辑换口径要按新 `type` 重拉、歌曲换口径不再打

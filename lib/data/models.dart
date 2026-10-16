@@ -38,6 +38,35 @@ class Album {
 
   bool get hasCover => coverArtId != null && coverArtId!.isNotEmpty;
 
+  /// 落盘用(音乐库缓存,见 `data/library_cache.dart`)。
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'artist': artist,
+        'artistId': artistId,
+        'coverArtId': coverArtId,
+        'year': year,
+        'songCount': songCount,
+        'duration': duration.inSeconds,
+        'genre': genre,
+        'created': created?.toIso8601String(),
+      };
+
+  static Album fromJson(Map<String, dynamic> json) => Album(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? '未知专辑',
+        artist: json['artist'] as String? ?? '未知艺人',
+        artistId: json['artistId'] as String?,
+        coverArtId: json['coverArtId'] as String?,
+        year: (json['year'] as num?)?.toInt(),
+        songCount: (json['songCount'] as num?)?.toInt() ?? 0,
+        duration: Duration(seconds: (json['duration'] as num?)?.toInt() ?? 0),
+        genre: json['genre'] as String?,
+        created: json['created'] is String
+            ? DateTime.tryParse(json['created'] as String)
+            : null,
+      );
+
   @override
   bool operator ==(Object other) => other is Album && other.id == id;
 
@@ -75,6 +104,26 @@ class Artist {
 
   /// 无头像时显示的两个字。中文取前两字,英文取首字母(与原型 `.plate` 一致)。
   String get initials => name.characters.take(2).toString();
+
+  /// 落盘用(音乐库缓存)。
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'albumCount': albumCount,
+        'coverArtId': coverArtId,
+        'albumIds': albumIds,
+      };
+
+  static Artist fromJson(Map<String, dynamic> json) => Artist(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? '未知艺人',
+        albumCount: (json['albumCount'] as num?)?.toInt() ?? 0,
+        coverArtId: json['coverArtId'] as String?,
+        albumIds: [
+          for (final id in (json['albumIds'] as List? ?? const []))
+            if (id is String) id,
+        ],
+      );
 
   @override
   bool operator ==(Object other) => other is Artist && other.id == id;
@@ -222,6 +271,33 @@ class Playlist {
 
   bool get hasCover => coverArtId != null && coverArtId!.isNotEmpty;
 
+  /// 落盘用(音乐库缓存)。
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'songCount': songCount,
+        'duration': duration.inSeconds,
+        'description': description,
+        'coverArtId': coverArtId,
+        'owner': owner,
+        'readonly': readonly,
+        'changed': changed?.toIso8601String(),
+      };
+
+  static Playlist fromJson(Map<String, dynamic> json) => Playlist(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? '未命名歌单',
+        songCount: (json['songCount'] as num?)?.toInt() ?? 0,
+        duration: Duration(seconds: (json['duration'] as num?)?.toInt() ?? 0),
+        description: json['description'] as String?,
+        coverArtId: json['coverArtId'] as String?,
+        owner: json['owner'] as String?,
+        readonly: json['readonly'] as bool? ?? false,
+        changed: json['changed'] is String
+            ? DateTime.tryParse(json['changed'] as String)
+            : null,
+      );
+
   /// 只用于**本地快照的就地更新**:改完名字或增删曲目后,库里那一项要跟着变,
   /// 但重拉整库会打断浏览。其余字段不在这里改 —— 它们由服务器说了算。
   Playlist copyWith({String? name, int? songCount}) => Playlist(
@@ -291,4 +367,50 @@ class Lyrics {
   bool get isEmpty => lines.isEmpty;
 
   static const empty = Lyrics(lines: []);
+}
+
+/// 音乐库的一屏数据 —— 五份列表一起换,界面据此一次性重绘。
+///
+/// 放在数据层(而不是状态层)是因为**它要落盘**:音乐库缓存存的正是这一份
+/// (见 `library_cache.dart`),缓存不该反过来依赖状态层。
+@immutable
+class LibrarySnapshot {
+  const LibrarySnapshot({
+    required this.albums,
+    required this.artists,
+    required this.songs,
+    required this.playlists,
+    required this.recentlyAdded,
+  });
+
+  final List<Album> albums;
+  final List<Artist> artists;
+  final List<Song> songs;
+  final List<Playlist> playlists;
+  final List<Album> recentlyAdded;
+
+  static const empty = LibrarySnapshot(
+    albums: <Album>[],
+    artists: <Artist>[],
+    songs: <Song>[],
+    playlists: <Playlist>[],
+    recentlyAdded: <Album>[],
+  );
+
+  bool get isEmpty =>
+      albums.isEmpty &&
+      artists.isEmpty &&
+      songs.isEmpty &&
+      playlists.isEmpty;
+
+  /// 服务器上标称的总曲目数。取专辑的 songCount 之和而不是 songs.length ——
+  /// 后者受我们一次拉多少条的限制,不是库的真实规模。
+  int get totalSongs =>
+      albums.fold(0, (sum, a) => sum + a.songCount);
+
+  /// 常听艺人:按专辑数取前几位。没有真实播放统计时的合理近似。
+  List<Artist> get topArtists {
+    final sorted = [...artists]..sort((a, b) => b.albumCount.compareTo(a.albumCount));
+    return sorted.take(6).toList();
+  }
 }

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'app.dart';
 import 'data/download_manager.dart';
 import 'data/download_store.dart';
+import 'data/library_cache.dart';
 import 'data/server_config.dart';
 import 'data/subsonic_repository.dart';
 import 'playback/audio_handler.dart';
@@ -23,6 +24,9 @@ Future<void> main() async {
   // 下载内容的落盘处与下载器。存储不可用时它会退化成一块「用不了」的
   // 索引(见 DownloadStore.open),应用照常起 —— 只是下载入口会给人话。
   final downloads = await DownloadStore.open();
+
+  // 音乐库列表的缓存。同样「用不了就算了」—— 它只是让冷启动快一点。
+  final libraryCache = await LibraryCache.open();
 
   final savedConfig = configStore.loadServer();
   final savedPassword = await credentialStore.readPassword();
@@ -51,12 +55,16 @@ Future<void> main() async {
     credentialStore: credentialStore,
     quality: quality,
     downloadManager: downloadManager,
+    libraryCache: libraryCache,
   );
 
   // 已存过配置就把仓库接上(密码可能为空 —— 那种情况视为「未配置」)。
   if (savedConfig != null && savedPassword != null) {
     appState.adoptServer(savedConfig);
     appState.attachRepository(savedConfig, savedPassword);
+    // 先把上次的库铺出来:冷启动不必空等一次全量拉取,随后主壳会静默刷新
+    // (见 shell.dart 的 post-frame 那一段)。
+    await appState.loadCachedLibrary();
   }
 
   // 播放服务**无条件启动**。它必须有:

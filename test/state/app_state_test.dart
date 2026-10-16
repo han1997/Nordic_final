@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nordic/data/download_manager.dart';
 import 'package:nordic/data/download_store.dart';
+import 'package:nordic/data/library_cache.dart';
 import 'package:nordic/data/server_config.dart';
 import 'package:nordic/data/subsonic_client.dart';
 import 'package:nordic/data/sorting.dart';
@@ -77,7 +78,12 @@ void main() {
         'getStarred2': _ok({'starred2': {}}),
       };
 
-  Future<AppState> buildState(Dio dio, Directory root) async {
+  Future<AppState> buildState(
+    Dio dio,
+    Directory root, {
+    LibraryCache? cache,
+    ServerConfig server = config,
+  }) async {
     final configStore = await ConfigStore.open();
     final downloads = await DownloadStore.open(root: root);
 
@@ -92,11 +98,12 @@ void main() {
         repository: () => appState.repository,
         wifiOnly: () => false,
       ),
+      libraryCache: cache ?? await LibraryCache.open(root: root),
       dio: dio,
     );
 
-    appState.adoptServer(config);
-    appState.attachRepository(config, 'p');
+    appState.adoptServer(server);
+    appState.attachRepository(server, 'p');
     return appState;
   }
 
@@ -174,6 +181,7 @@ void main() {
         credentialStore: state.credentialStore,
         quality: state.quality,
         downloadManager: state.downloadManager,
+        libraryCache: state.libraryCache,
       );
 
       await expectLater(
@@ -181,6 +189,134 @@ void main() {
         throwsA(isA<SubsonicException>()
             .having((e) => e.message, 'message', contains('还没有连接服务器'))),
       );
+    });
+  });
+
+  /// 一条也发不出去的 dio —— 「网断了」用。
+  Dio offlineDio() {
+    final dio = Dio(BaseOptions(validateStatus: (_) => true));
+    dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, interceptor) => interceptor.reject(DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+        message: '连不上',
+      )),
+    ));
+    return dio;
+  }
+
+  group('音乐库缓存', () {
+    late Directory root;
+    late LibraryCache cache;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      root = await Directory.systemTemp.createTemp('nordic-cache');
+      cache = await LibraryCache.open(root: root);
+    });
+
+    tearDown(() async {
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+
+    test('刷新一次之后,快照落到缓存里 —— 重启就能直接铺出来', () async {
+      final warm = await buildState(
+        payloadDio([], libraryFixtures()),
+        root,
+        cache: cache,
+      );
+      await warm.loadLibrary();
+
+      // 换一个 AppState 读同一块目录,相当于重启应用。
+      final fresh = await buildState(
+        payloadDio([], libraryFixtures()),
+        root,
+        cache: cache,
+      );
+      await fresh.loadCachedLibrary();
+
+      expect(fresh.library.albums.length, 2);
+      expect(fresh.library.songs.length, 3);
+      expect(fresh.libraryFromCache, isTrue, reason: '这是缓存铺出来的,还没刷新');
+      expect(fresh.libraryCachedAt, isNotNull);
+      expect(fresh.phase, LoadPhase.ready, reason: '铺完缓存就该 ready,不该空等');
+    });
+
+    test('刷新失败但手上有缓存:不切错误态,只留一句「这次没刷上」', () async {
+      final warm = await buildState(
+        payloadDio([], libraryFixtures()),
+        root,
+        cache: cache,
+      );
+      await warm.loadLibrary();
+
+      // 冷启动:先铺缓存,再刷新 —— 这次连不上。
+      final offline = await buildState(offlineDio(), root, cache: cache);
+      await offline.loadCachedLibrary();
+      await offline.loadLibrary();
+
+      expect(offline.phase, LoadPhase.ready, reason: '有缓存就别把界面切成错误态');
+      expect(offline.library.albums, isNotEmpty, reason: '缓存那份要留着');
+      expect(offline.refreshError, isNotNull);
+      expect(offline.libraryFromCache, isTrue);
+    });
+
+    test('刷新成功之后,「来自缓存」归位', () async {
+      final warm = await buildState(
+        payloadDio([], libraryFixtures()),
+        root,
+        cache: cache,
+      );
+      await warm.loadLibrary();
+
+      final fresh = await buildState(
+        payloadDio([], libraryFixtures()),
+        root,
+        cache: cache,
+      );
+      await fresh.loadCachedLibrary();
+      await fresh.loadLibrary();
+
+      expect(fresh.libraryFromCache, isFalse);
+      expect(fresh.refreshError, isNull);
+    });
+
+    test('一点缓存都没有时照旧如实报错', () async {
+      final offline = await buildState(offlineDio(), root, cache: cache);
+      await offline.loadCachedLibrary(); // 空的
+      await offline.loadLibrary();
+
+      expect(offline.phase, LoadPhase.failed);
+      expect(offline.refreshError, isNull);
+    });
+
+    test('换了服务器就不认上一台的缓存', () async {
+      final warm = await buildState(
+        payloadDio([], libraryFixtures()),
+        root,
+        cache: cache,
+      );
+      await warm.loadLibrary();
+
+      // 同一块缓存目录,但配置里的账号换了 —— 那是另一台库。
+      final other = await buildState(
+        payloadDio([], libraryFixtures()),
+        root,
+        cache: cache,
+        server: const ServerConfig(
+          id: 's1',
+          name: '另一个账号',
+          kind: ServerKind.navidrome,
+          username: 'someone-else',
+          routes: [
+            ServerRoute(id: 'lan', name: '局域网', url: 'http://nas.example.com'),
+          ],
+        ),
+      );
+      await other.loadCachedLibrary();
+
+      expect(other.library.albums, isEmpty, reason: '别拿上一台服务器的库顶上来');
+      expect(other.libraryFromCache, isFalse);
     });
   });
 

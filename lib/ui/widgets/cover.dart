@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
@@ -95,6 +96,7 @@ class Cover extends StatelessWidget {
             if (_hasArt)
               _CoverArt(
                 uri: uri!,
+                coverArtId: coverArtId,
                 displaySize: _displayEdge(w, h),
                 fallback: _Fallback(accent: accent),
               )
@@ -129,14 +131,29 @@ class _CoverArt extends StatelessWidget {
   const _CoverArt({
     required this.uri,
     required this.fallback,
+    this.coverArtId,
     this.displaySize,
   });
 
   final Uri uri;
   final Widget fallback;
 
+  /// 封面标识 —— 磁盘缓存的键要它(见 [_cacheKey])。
+  final String? coverArtId;
+
   /// 这张图实际要画多大(logical px)。不传就按原图解码。
   final double? displaySize;
+
+  /// 磁盘缓存的键。
+  ///
+  /// **不能用 URL 本身**:Subsonic 的鉴权每次换一个 salt(见 `SubsonicAuth`),
+  /// 同一张封面每次的 URL 都不一样 —— 拿 URL 当键等于永远不命中,缓存目录还会
+  /// 攒下一堆同一张图的副本。用「封面 id + 尺寸」当键:换线路(内网 / 公网)
+  /// 也照样命中,而不同尺寸各自一份(服务端本来就按 size 缩过,那是不同的图)。
+  static String? _cacheKey(String? coverArtId, Uri uri) {
+    if (coverArtId == null || coverArtId.isEmpty) return null;
+    return 'cover|$coverArtId|${uri.queryParameters['size'] ?? ''}';
+  }
 
   /// 解码边长:显示尺寸 × 像素密度,**向上取到 2 的幂**再夹在 128–1024。
   ///
@@ -176,14 +193,18 @@ class _CoverArt extends StatelessWidget {
       );
     }
 
-    return Image.network(
-      uri.toString(),
+    // 走 `cached_network_image` 而不是 `Image.network`:后者只有内存缓存,
+    // 冷启动每张封面都要重新下一遍。磁盘缓存也顺带让封面在断网时还看得见。
+    return Image(
+      image: CachedNetworkImageProvider(
+        uri.toString(),
+        cacheKey: _cacheKey(coverArtId, uri),
+        // 按显示尺寸解码,别把整张 1024 的图解进内存 ——
+        // 切页面时动画正跑、解码还在进行,顿挫就出在这种地方。
+        maxWidth: decode,
+        maxHeight: decode,
+      ),
       fit: BoxFit.cover,
-      // 本机那份封面是下载时按 1024 存的,而这里可能只要画 46 ——
-      // 不设这一对参数就会把整张图解进内存,切页面时正撞上动画。
-      // (网络那份多数已经由服务器按 size 缩过,设了也无害。)
-      cacheWidth: decode,
-      cacheHeight: decode,
       errorBuilder: (_, _, _) => fallback,
       frameBuilder: placeholder,
     );

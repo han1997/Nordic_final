@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../data/download_manager.dart';
+import '../data/library_cache.dart';
 import '../data/models.dart';
 import '../data/server_config.dart';
 import '../data/subsonic_client.dart';
@@ -26,6 +27,7 @@ class AppState extends ChangeNotifier {
     required this.credentialStore,
     required this.quality,
     required this.downloadManager,
+    required this.libraryCache,
     this._dio,
   }) {
     // 下载器的状态变化要能被界面看到,而界面只订阅 [AppState] 一个对象 ——
@@ -37,6 +39,9 @@ class AppState extends ChangeNotifier {
   final CredentialStore credentialStore;
   final QualityController quality;
   final DownloadManager downloadManager;
+
+  /// 音乐库快照的本机缓存(见 `data/library_cache.dart`)。
+  final LibraryCache libraryCache;
 
   /// 建客户端时用的 HTTP 客户端。生产走默认(见 [clientFor]),
   /// 测试塞一个假 Dio 进来 —— 写歌单这类操作要验的是「发了什么、本地跟着变了吗」。
@@ -122,6 +127,8 @@ class AppState extends ChangeNotifier {
   Future<void> disconnect() async {
     await credentialStore.clear();
     await configStore.clearServer();
+    // 缓存也清掉 —— 那台机器的库不再属于这里。
+    await libraryCache.clear();
     _server = null;
     _repository = null;
     _library = LibrarySnapshot.empty;
@@ -175,6 +182,44 @@ class AppState extends ChangeNotifier {
   LibrarySnapshot _library = LibrarySnapshot.empty;
   LibrarySnapshot get library => _library;
 
+  /// 眼下这份库是不是**本机缓存**(还没跟服务器对上过一次)。
+  bool _fromCache = false;
+  bool get libraryFromCache => _fromCache;
+
+  /// 上次同步成功的时间。界面用它说「上次同步 …」。
+  DateTime? _cachedAt;
+  DateTime? get libraryCachedAt => _cachedAt;
+
+  /// 最近一次刷新失败了(但手上有缓存,于是没把界面切成错误态)。
+  String? _refreshError;
+  String? get refreshError => _refreshError;
+
+  /// 把上次的快照先铺出来。
+  ///
+  /// 冷启动时先走这一步:库立刻可见,随后 [loadLibrary] 再静默刷新。
+  /// 读不到(第一次装 / 换了服务器 / 缓存坏了)就什么也不做,一切照旧。
+  Future<void> loadCachedLibrary() async {
+    final server = _server;
+    if (server == null || _library.albums.isNotEmpty) return;
+
+    final cached = await libraryCache.read(_serverKey(server));
+    if (cached == null) return;
+
+    _library = cached.snapshot;
+    _cachedAt = cached.savedAt;
+    _fromCache = true;
+    _phase = LoadPhase.ready;
+    notifyListeners();
+  }
+
+  /// 这台服务器在缓存里的标识。
+  ///
+  /// 用「类型 + 账号 + 第一条线路」而不是服务器的显示名:名字可以随便改,
+  /// 而这三样变了就是真的换了另一台库 —— 那时绝不能拿旧的顶上来。
+  static String _serverKey(ServerConfig config) =>
+      '${config.kind.name}|${config.username}|'
+      '${config.routes.isEmpty ? '' : config.routes.first.url}';
+
   /// 拉取音乐库首页需要的全部数据。
   ///
   /// 并发拉而不是串行 —— 四个端点互不依赖,串起来会让进音乐库白等三倍时间。
@@ -213,21 +258,45 @@ class AppState extends ChangeNotifier {
       _error = null;
       _errorIsAuth = false;
       _errorIsNetwork = false;
+      _fromCache = false;
+      _refreshError = null;
+      _cachedAt = DateTime.now();
+      // 缓存**在通知界面之前**写完:它是「顺手」的事,但不能飘在后台 ——
+      // 飘着的话,下一次冷启动可能正好撞上没写完的那一份,而这台机器上
+      // 一直开着的东西(测试、桌面端)还会因为文件句柄和清理动作打架。
+      // write 自己吞掉写失败,所以这里不必防。
+      await libraryCache.write(_serverKey(_server!), _library);
       // 顺手把收藏名单取回来 —— 界面上的心形要显示当前状态,
       // 否则每次重绘都从「未收藏」开始,点了才变,看着像没记住。
       unawaited(refreshStarred());
     } on SubsonicException catch (e) {
-      _phase = LoadPhase.failed;
-      _error = e.message;
-      _errorIsAuth = e.isAuthFailure;
-      _errorIsNetwork = e.isNetworkFailure;
+      _failLoad(e.message, isAuth: e.isAuthFailure, isNetwork: e.isNetworkFailure);
     } catch (e) {
-      _phase = LoadPhase.failed;
-      _error = '$e';
-      _errorIsAuth = false;
-      _errorIsNetwork = false;
+      _failLoad('$e');
     }
     notifyListeners();
+  }
+
+  /// 刷新失败时的处置。
+  ///
+  /// **手上有缓存就不切成错误态**:把上次的内容留在屏幕上,只记一句
+  /// 「这次没刷上」—— 断网时「看到的是上周的库」比「一片空白加重试」有用得多。
+  /// 一点都没有才如实报错(第一次进来就失败,那确实没东西可看)。
+  void _failLoad(String message, {bool isAuth = false, bool isNetwork = false}) {
+    final hasSomething = _library.albums.isNotEmpty || _library.songs.isNotEmpty;
+
+    _error = message;
+    _errorIsAuth = isAuth;
+    _errorIsNetwork = isNetwork;
+
+    if (hasSomething) {
+      _phase = LoadPhase.ready;
+      _fromCache = true;
+      _refreshError = message;
+    } else {
+      _phase = LoadPhase.failed;
+      _refreshError = null;
+    }
   }
 
   // ---------------- 排序 ----------------
@@ -594,48 +663,5 @@ class AppState extends ChangeNotifier {
   void dispose() {
     downloadManager.removeListener(notifyListeners);
     super.dispose();
-  }
-}
-
-/// 音乐库的一屏数据。
-@immutable
-class LibrarySnapshot {
-  const LibrarySnapshot({
-    required this.albums,
-    required this.artists,
-    required this.songs,
-    required this.playlists,
-    required this.recentlyAdded,
-  });
-
-  final List<Album> albums;
-  final List<Artist> artists;
-  final List<Song> songs;
-  final List<Playlist> playlists;
-  final List<Album> recentlyAdded;
-
-  static const empty = LibrarySnapshot(
-    albums: <Album>[],
-    artists: <Artist>[],
-    songs: <Song>[],
-    playlists: <Playlist>[],
-    recentlyAdded: <Album>[],
-  );
-
-  bool get isEmpty =>
-      albums.isEmpty &&
-      artists.isEmpty &&
-      songs.isEmpty &&
-      playlists.isEmpty;
-
-  /// 服务器上标称的总曲目数。取专辑的 songCount 之和而不是 songs.length ——
-  /// 后者受我们一次拉多少条的限制,不是库的真实规模。
-  int get totalSongs =>
-      albums.fold(0, (sum, a) => sum + a.songCount);
-
-  /// 常听艺人:按专辑数取前几位。没有真实播放统计时的合理近似。
-  List<Artist> get topArtists {
-    final sorted = [...artists]..sort((a, b) => b.albumCount.compareTo(a.albumCount));
-    return sorted.take(6).toList();
   }
 }

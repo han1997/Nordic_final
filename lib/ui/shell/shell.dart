@@ -56,8 +56,15 @@ class _NordicShellState extends State<NordicShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final state = context.read<AppState>();
-      if (state.hasServer && state.phase == LoadPhase.idle) {
+      if (!state.hasServer) return;
+
+      // 两种情况都要拉:一次还没拉过(idle),或者眼下铺的是**本机缓存** ——
+      // 缓存那份是拿来立刻可见的,不是拿来当真的,得在后台换成最新的。
+      // 后者走 silent:屏幕上已经有内容,不该再闪一次加载态。
+      if (state.phase == LoadPhase.idle) {
         state.loadLibrary();
+      } else if (state.libraryFromCache) {
+        state.loadLibrary(silent: true);
       }
     });
   }

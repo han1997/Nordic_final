@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nordic/theme/accent.dart';
@@ -114,7 +115,9 @@ void main() {
     );
 
     final image = tester.widget<Image>(find.byType(Image));
-    expect(_inner(image.image), isA<NetworkImage>());
+    // 网络那一份走**磁盘缓存**(cached_network_image):URL 每次请求都带新的
+    // salt,所以它的键另有算法(封面 id + 尺寸),不是 URL 本身。
+    expect(image.image, isA<CachedNetworkImageProvider>());
   });
 
   group('底部胶囊', () {
