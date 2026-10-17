@@ -1010,12 +1010,13 @@ function screenPlayer() {
       <button class="icon-btn quiet" data-menu-for="song">${ic('more', 20)}</button>
     </div>
 
-    <div class="player-hero">
-      <!-- 封面即入口:点它翻到歌词,歌词页点回来。背后不再有黑胶盘面 ——
-           那一圈盘面是为了「转起来表示在放」,但它也把封面挤窄了,
-           而播放状态本来就由播放键与进度条说清了。 -->
-      <div class="hero-cover${STATE.playing ? ' playing' : ''}" data-go="lyrics"
-        role="button" aria-label="查看歌词" title="点封面看歌词">
+    <!-- 这一整块都是入口:点封面、点封面四周的留白都翻到歌词。原先只有封面本身
+         可点,周围那一大圈空白按下去什么也不发生 —— 而这一屏除了控件就没有别的
+         去处了。封面背后不再有黑胶盘面:那一圈盘面是为了「转起来表示在放」,
+         但它也把封面挤窄了,而播放状态本来就由播放键与进度条说清了。 -->
+    <div class="player-hero" data-go="lyrics" role="button"
+      aria-label="查看歌词" title="点这里看歌词">
+      <div class="hero-cover${STATE.playing ? ' playing' : ''}">
         <span class="hero-glow" aria-hidden="true"></span>
         ${cover(a, 'sq')}
       </div>
@@ -1024,7 +1025,9 @@ function screenPlayer() {
     <div class="player-info">
       <div class="top-row">
         <div style="min-width:0">
-          <div class="t">${s.title}</div>
+          <!-- 歌名同样是入口(与封面同一件事的两处来路)。它原先谁都不指向,
+               而艺人 / 专辑那两条链接各有各的去处,别动。 -->
+          <div class="t" data-go="lyrics" role="button" title="点歌名看歌词">${s.title}</div>
           <div class="a">${artistIdOf(s.artist)
             ? `<span class="p-link" data-artist="${artistIdOf(s.artist)}">${s.artist}</span>`
             : `<span class="p-link inert">${s.artist}</span>`}<span class="p-dot">·</span><span class="p-link" data-album="${a.id}">${a.name}</span></div>

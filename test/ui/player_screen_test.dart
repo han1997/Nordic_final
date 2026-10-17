@@ -18,6 +18,8 @@ import 'package:nordic/state/app_state.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/screens/player_screen.dart';
+import 'package:nordic/ui/screens/lyrics_screen.dart';
+import 'package:nordic/ui/routes.dart';
 import 'package:nordic/ui/widgets/cover.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -129,7 +131,13 @@ void main() {
         ],
         child: MaterialApp(
           theme: NordicTheme.build(NordicTokens.dark),
-          home: const PlayerScreen(),
+          // 这一组要点进歌词页 —— 而歌词是**一条推入的路由**,路由表得在场。
+          // '/' 是起点(这一屏自己),其余照 `AppRoutes.generate`:
+          // 歌词那条是零时长的翻面,与产品里走的同一条。
+          onGenerateRoute: (settings) =>
+              settings.name == Navigator.defaultRouteName
+                  ? MaterialPageRoute<void>(builder: (_) => const PlayerScreen())
+                  : AppRoutes.generate(settings),
         ),
       ),
     );
@@ -144,6 +152,39 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump();
   }
+
+  /// 进歌词页那一下的收尾:那一屏会去拉一次歌词,裸 `pump()` 推不动 Dio 的
+  /// 拦截器链(它落在一条零延迟的 Timer 上),留着它测试结束会报 Pending timers。
+  Future<void> settleLyrics(WidgetTester tester) async {
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+  }
+
+  testWidgets('点封面区里的留白也翻到歌词 —— 不只是封面那一块算数', (tester) async {
+    await pumpPlayer(tester);
+
+    // 封面旁边那一片空白:它属于封面区(原型里整块 `.player-hero` 是入口),
+    // 而原先只有一个裹着封面的 GestureDetector —— 点这儿什么也不发生。
+    final cover = tester.getRect(find.byType(Cover));
+    await tester.tapAt(Offset(cover.left - 40, cover.center.dy));
+    await tester.pump();
+
+    expect(find.byType(LyricsScreen), findsOneWidget);
+    await settleLyrics(tester);
+  });
+
+  testWidgets('点歌名也翻到歌词', (tester) async {
+    await pumpPlayer(tester);
+
+    // 歌名原先谁都不指向;艺人 / 专辑那两条链接各有各的去处(它们的用例在
+    // 原型自检里),这里只钉歌名这一处新入口。
+    await tester.tap(find.text(playing.title));
+    await tester.pump();
+
+    expect(find.byType(LyricsScreen), findsOneWidget);
+    await settleLyrics(tester);
+  });
 
   testWidgets('播放页不做封面的共享元素过渡 —— 没有 Hero', (tester) async {
     await pumpPlayer(tester);

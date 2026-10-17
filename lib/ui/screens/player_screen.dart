@@ -79,17 +79,26 @@ class PlayerScreen extends StatelessWidget {
               builder: (context, constraints) => Column(
                 children: [
                   Expanded(
-                    child: Center(
-                      child: _HeroStack(
-                        song: song,
-                        playing: playable.state.playing,
-                        maxSize: math.min(
-                          math.min(
-                            constraints.maxWidth - NordicSpace.s6 * 2,
-                            292,
+                    // **整块封面区(含四周留白)都是「看歌词」的入口**,与原型一致:
+                    // 原先只有封面那一块算数,周围按下去什么也不发生 ——
+                    // 而这一屏除了控件就没有别的去处了。
+                    //
+                    // `opaque`:这一片大多是空白,默认的 hit test 只认画了东西的地方。
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => AppRoutes.openLyrics(context),
+                      child: Center(
+                        child: _HeroStack(
+                          song: song,
+                          playing: playable.state.playing,
+                          maxSize: math.min(
+                            math.min(
+                              constraints.maxWidth - NordicSpace.s6 * 2,
+                              292,
+                            ),
+                            // 高度也吃得下才行 —— 0.55 是给下面那组留的位置。
+                            constraints.maxHeight * 0.55,
                           ),
-                          // 高度也吃得下才行 —— 0.55 是给下面那组留的位置。
-                          constraints.maxHeight * 0.55,
                         ),
                       ),
                     ),
@@ -145,7 +154,9 @@ Widget _nowPlayingBar(BuildContext context, {List<Widget> actions = const []}) =
 /// 又把视线分成两半。现在播放状态交给播放键与进度条说,封面独占居中,
 /// 背后只留一层光晕:在放时缓慢呼吸。
 ///
-/// 封面**可点** —— 点它翻到歌词,歌词页点回来,进出都不必去够返回键。
+/// 封面**可点** —— 点它翻到歌词,歌词页点空白翻回来,进出都不必去够返回键。
+/// 那个手势**不在这一层**:包在外面的是整块封面区(含四周留白),
+/// 见 `PlayerScreen` 里那一处 —— 入口只有一份,免得两处各管一半。
 class _HeroStack extends StatelessWidget {
   const _HeroStack({
     required this.song,
@@ -183,41 +194,37 @@ class _HeroStack extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s6),
-      child: GestureDetector(
-        onTap: () => AppRoutes.openLyrics(context),
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          height: size,
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: [
-              _CoverGlow(size: size, playing: playing),
-              // **不套 `Hero`** —— 播放页不是共享元素过渡的终点。
-              //
-              // 原型的起点是**从被点的那个元素**上取的(app.js 里的
-              // `t.closest('[data-morph]')`),而坞与歌曲行都不带 `data-morph`:
-              // 点坞进播放页那一程原型**故意不飞**(「那块的尺寸太小,
-              // 飞过去的观感不如不加」)。留一个谁都能来匹配的 tag 则会出事 ——
-              // 框架按 tag 在**整个来源路由**里找起点、**不看它在不在屏幕上**
-              // (heroes.dart 的 `_allHeroesFor` 只认 `HeroMode`),于是音乐库那张
-              // 被 IndexedStack 保活、却根本看不见的专辑网格会被抓来当起点:
-              // 每帧都在一个**变化的矩形**里重画这张封面(含 38px 的投影)
-              // 并按新约束重算一次解码桶,还压在满屏氛围模糊之上 ——
-              // 进 320ms、出 260ms 各来一次。
-              Cover(
-                coverArtId: song.coverArtId,
-                seed: song.albumId,
-                uri: coverUri,
-                size: size,
-                radius: 28,
-                // 换歌就是换一张图,而新图解码要几十毫秒 —— 不留旧帧的话
-                // 每次切歌这张大封面都先闪一下渐变兜底。原型是浏览器画的,
-                // 本来就把上一张一直画到新图解码完,所以这是向原型对齐。
-                gaplessPlayback: true,
-              ),
-            ],
-          ),
+      child: SizedBox(
+        height: size,
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            _CoverGlow(size: size, playing: playing),
+            // **不套 `Hero`** —— 播放页不是共享元素过渡的终点。
+            //
+            // 原型的起点是**从被点的那个元素**上取的(app.js 里的
+            // `t.closest('[data-morph]')`),而坞与歌曲行都不带 `data-morph`:
+            // 点坞进播放页那一程原型**故意不飞**(「那块的尺寸太小,
+            // 飞过去的观感不如不加」)。留一个谁都能来匹配的 tag 则会出事 ——
+            // 框架按 tag 在**整个来源路由**里找起点、**不看它在不在屏幕上**
+            // (heroes.dart 的 `_allHeroesFor` 只认 `HeroMode`),于是音乐库那张
+            // 被 IndexedStack 保活、却根本看不见的专辑网格会被抓来当起点:
+            // 每帧都在一个**变化的矩形**里重画这张封面(含 38px 的投影)
+            // 并按新约束重算一次解码桶,还压在满屏氛围模糊之上 ——
+            // 进 320ms、出 260ms 各来一次。
+            Cover(
+              coverArtId: song.coverArtId,
+              seed: song.albumId,
+              uri: coverUri,
+              size: size,
+              radius: 28,
+              // 换歌就是换一张图,而新图解码要几十毫秒 —— 不留旧帧的话
+              // 每次切歌这张大封面都先闪一下渐变兜底。原型是浏览器画的,
+              // 本来就把上一张一直画到新图解码完,所以这是向原型对齐。
+              gaplessPlayback: true,
+            ),
+          ],
         ),
       ),
     );
@@ -333,16 +340,22 @@ class _SongInfo extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  song.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w700,
-                        // 原型:letter-spacing -0.035em。
-                        letterSpacing: -0.9,
-                      ),
+                // 歌名也是入口 —— 与封面区同一件事的两处来路(原型里 `.player-info .t`
+                // 同样挂着 `data-go="lyrics"`)。它原先谁都不指向,而下面那两条
+                // 艺人 / 专辑链接各有各的去处,这里别动它们。
+                GestureDetector(
+                  onTap: () => AppRoutes.openLyrics(context),
+                  child: Text(
+                    song.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w700,
+                          // 原型:letter-spacing -0.035em。
+                          letterSpacing: -0.9,
+                        ),
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Row(

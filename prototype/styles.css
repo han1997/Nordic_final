@@ -1174,12 +1174,15 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
    播放页
    ============================================================ */
 
+/* 这一整块是「看歌词」的入口 —— 封面本身可点,它四周那一大圈留白也可点
+   (原先只有封面那 292px 算数,周围按下去什么也不发生)。 */
 .player-hero {
   flex: 1 1 auto; min-height: 0;
   display: flex; align-items: center; justify-content: center;
   padding: 0 var(--s6);
   position: relative;
   z-index: 1;
+  cursor: pointer;
 }
 
 /* ---- 封面 ---- 
@@ -1235,9 +1238,13 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   display: flex; align-items: center;
   justify-content: space-between; gap: var(--s4);
 }
+/* 歌名也是「看歌词」的入口之一(与封面同一件事的两处来路)。只给一个指针提示、
+   不换色 —— 它是这一屏最亮的一行字,变暗或染色都会读成「禁用 / 变成链接」,
+   而它两样都不是。 */
 .player-info .t {
   font-size: 26px; font-weight: 730;
   letter-spacing: -0.035em;
+  cursor: pointer;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .player-info .a {
