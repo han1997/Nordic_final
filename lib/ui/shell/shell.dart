@@ -8,16 +8,18 @@ import '../../theme/context_ext.dart';
 import '../../theme/ambient.dart';
 import '../../theme/tokens.dart';
 import '../routes.dart';
+import '../screens/home_screen.dart';
 import '../screens/library_screen.dart';
-import '../screens/search_screen.dart';
 import '../screens/settings_screen.dart';
+import '../widgets/components.dart';
 import 'bottom_stack.dart';
 
-/// 应用主壳:三个常驻 tab。
+/// 应用主壳:三个常驻 tab(首页 / 音乐库 / 设置)。
 ///
-/// 沉浸页(播放 / 歌词 / 专辑 / 艺人)走**独立路由**(见 [AppRoutes])而不是
+/// 沉浸页(播放 / 歌词 / 专辑 / 艺人)**走独立路由**(见 [AppRoutes])而不是
 /// 塞进 tab 的子页面 —— 它们要盖住标签栏、要自己的氛围背景与共享元素过渡,
-/// 挂在 tab 下面会让这三件事都别扭。
+/// 挂在 tab 下面会让这三件事都别扭。搜索也是这条路(2026-10-17 起:
+/// 它不再是常驻 tab,而是一张推入的页面)。
 class NordicShell extends StatefulWidget {
   const NordicShell({super.key});
 
@@ -25,13 +27,26 @@ class NordicShell extends StatefulWidget {
   State<NordicShell> createState() => _NordicShellState();
 }
 
-class _NordicShellState extends State<NordicShell> {
-  AppTab _tab = AppTab.library;
+class _NordicShellState extends State<NordicShell>
+    with SingleTickerProviderStateMixin {
+  /// 冷启动落在**首页**:「现在在听 / 最近在听」是打开播放器最想先看到的一屏。
+  AppTab _tab = AppTab.home;
 
-  /// 已经露过面的 tab。**没露过面的先不建**:冷启动时把搜索与设置那两棵树
-  /// 也建出来是白花的 —— 用户可能整场都不点它们,而设置页有几十行。
-  /// 建过之后 IndexedStack 照旧保活,滚动位置不丢。
-  final Set<AppTab> _built = {AppTab.library};
+  /// 已经露过面的 tab。**没露过面的先不建**:冷启动时把音乐库与设置那两棵树
+  /// 也建出来是白花的 —— 用户可能整场都不点它们,而音乐库有四百多张专辑的网格、
+  /// 设置页有几十行。建过之后 IndexedStack 照旧保活,滚动位置不丢。
+  final Set<AppTab> _built = {AppTab.home};
+
+  /// 切 tab 时那一下淡入。**与底部悬浮 tab 的胶囊同一套缓动**(`NordicMotion.ease`)——
+  /// 高亮滑过去、内容淡进来,两件事读起来才是一下。
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+    value: 1,
+  );
+
+  late final Animation<double> _fadeCurve =
+      CurvedAnimation(parent: _fade, curve: NordicMotion.ease);
 
   void _select(AppTab tab) {
     if (tab == _tab && _built.contains(tab)) return;
@@ -39,12 +54,15 @@ class _NordicShellState extends State<NordicShell> {
       _tab = tab;
       _built.add(tab);
     });
+    // **整屏淡入**而不是只淡 IndexedStack 里的新一屏:停在同一棵树上时
+    // 位置是保活的,淡的是「换过来」这一下本身,来回切不会越切越糊。
+    _fade.forward(from: 0);
   }
 
   /// tab → 那一屏。没建过的用空盒子占位(IndexedStack 要按 index 取用)。
   static Widget _screenOf(AppTab tab) => switch (tab) {
+        AppTab.home => const HomeScreen(),
         AppTab.library => const LibraryScreen(),
-        AppTab.search => const SearchScreen(),
         AppTab.settings => const SettingsScreen(),
       };
 
@@ -58,17 +76,10 @@ class _NordicShellState extends State<NordicShell> {
     _select(tab);
   }
 
-  /// 顶栏那个放大镜(见 `AppRoutes.openSearchTab`)。
-  ///
-  /// 这条线**断过一阵**:`searchTabRequest` 一直有人发、没人听,于是音乐库
-  /// 顶栏的放大镜点了什么也不发生 —— 一颗死按钮。现在接回来。
-  void _applySearchRequest() => _select(AppTab.search);
-
   @override
   void initState() {
     super.initState();
     pendingTab.addListener(_applyPendingTab);
-    searchTabRequest.addListener(_applySearchRequest);
     // 首帧之后再拉数据 —— 在 initState 里直接发起会让第一次 build
     // 就撞上「正在加载」而白闪一下。
     //
@@ -95,28 +106,55 @@ class _NordicShellState extends State<NordicShell> {
   @override
   void dispose() {
     pendingTab.removeListener(_applyPendingTab);
-    searchTabRequest.removeListener(_applySearchRequest);
+    _fade.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          // IndexedStack 而不是条件渲染 —— 切回来时滚动位置还在。
-          IndexedStack(
-            index: _tab.index,
-            children: [
-              for (final tab in AppTab.values)
-                if (_built.contains(tab))
-                  _screenOf(tab)
-                else
-                  const SizedBox.shrink(),
-            ],
-          ),
-          BottomStack(activeTab: _tab, onTabSelected: _select),
-        ],
+      // 点空白处收起软键盘 —— 主壳自己没输入框,但沉浸页推上来时键盘可能还开着
+      // (比如从搜索页点进专辑),那一下点击要能收掉它(理由见 [DismissKeyboardOnTap])。
+      body: DismissKeyboardOnTap(
+        child: Stack(
+          children: [
+            // IndexedStack 而不是条件渲染 —— 切回来时滚动位置还在。
+            //
+            // 外面那层 FadeTransition 是切 tab 的**唯一动效**:与底部胶囊的
+            // 高亮同一套缓动,新一屏淡进来而不是硬切。
+            FadeTransition(
+              opacity: _fadeCurve,
+              // 淡入时给下面这棵子树一张**缓存层**。`IndexedStack` 里挂着各
+              // tab 保活的整棵子树(含首页那层 62px 的 `ImageFiltered` 氛围),
+              // 少了这层边界,透明度每变一次就把整屏重画一遍 —— 与
+              // `routes.dart` 里「页面过渡只做位移、不做淡入」是同一个道理。
+              // 透明度、时长、缓动一个字没改,只是让它合成一张现成的层。
+              child: RepaintBoundary(
+                child: IndexedStack(
+                  index: _tab.index,
+                  children: [
+                    for (final tab in AppTab.values)
+                      if (_built.contains(tab))
+                        // **只有屏幕上那一屏的 `Hero` 才参与共享元素过渡。**
+                        //
+                        // 框架按 tag 在**整个来源路由**里找起点,不看元素在不在
+                        // 屏幕上(`heroes.dart` 的 `_allHeroesFor` 只认 `HeroMode`)。
+                        // 而 IndexedStack 把逛过的 tab **整棵保活**:只要切过一次
+                        // 音乐库的「专辑」分段,那张网格就一直挂着 —— 于是
+                        // 「在首页点一张专辑 / 点播放坞」时起点会被**看不见的那张
+                        // 网格**偷走,封面从屏幕外飞进来(每帧重画一次,
+                        // 正好落在滑入动画上)。`HeroMode` 就是框架给这件事的做法:
+                        // 关掉的子树整个跳过,英雄名字空间于是**每个 tab 一份**。
+                        HeroMode(enabled: tab == _tab, child: _screenOf(tab))
+                      else
+                        const SizedBox.shrink(),
+                  ],
+                ),
+              ),
+            ),
+            BottomStack(activeTab: _tab, onTabSelected: _select),
+          ],
+        ),
       ),
     );
   }
@@ -159,31 +197,34 @@ class ImmersiveScaffold extends StatelessWidget {
       accent: accent,
       child: Scaffold(
         backgroundColor: context.nordic.bg,
-        body: Stack(
-          children: [
-            if (showAmbient) ...[
-              NordicAmbient(accent: accent),
-              const NordicAmbientShade(),
-            ],
-            Positioned.fill(
-              child: SafeArea(
-                bottom: false,
-                // 沉浸页自己管底部留白 —— 歌词页的控制排要贴着指示条。
-                child: Column(
-                  children: [
-                    Expanded(child: child),
-                    if (bottomBar != null) bottomBar!,
-                  ],
+        // 二级页面里也有输入框(搜索、新建歌单、加线路)—— 点空白处收起软键盘。
+        body: DismissKeyboardOnTap(
+          child: Stack(
+            children: [
+              if (showAmbient) ...[
+                NordicAmbient(accent: accent),
+                const NordicAmbientShade(),
+              ],
+              Positioned.fill(
+                child: SafeArea(
+                  bottom: false,
+                  // 沉浸页自己管底部留白 —— 歌词页的控制排要贴着指示条。
+                  child: Column(
+                    children: [
+                      Expanded(child: child),
+                      ?bottomBar,
+                    ],
+                  ),
                 ),
               ),
-            ),
-            if (showNav)
-              BottomStack(
-                // 这几屏不属于任何 tab —— 原型上也是谁都不高亮。
-                activeTab: null,
-                onTabSelected: (tab) => openTab(context, tab),
-              ),
-          ],
+              if (showNav)
+                BottomStack(
+                  // 这几屏不属于任何 tab —— 原型上也是谁都不高亮。
+                  activeTab: null,
+                  onTabSelected: (tab) => openTab(context, tab),
+                ),
+            ],
+          ),
         ),
       ),
     );

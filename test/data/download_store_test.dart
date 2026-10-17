@@ -84,6 +84,20 @@ void main() {
     expect(store.coverPathForArt(null), isNull);
   });
 
+  test('封面索引跟着记录一起变 —— 加了能查到,删了就查不到', () async {
+    final (store, _) = await givenDownloaded();
+    expect(store.coverPathForArt('cover-1'), isNotNull);
+
+    // 重开一次:索引是**从记录重新摊平**出来的,不是只活在内存里。
+    final reopened = await DownloadStore.open(root: root);
+    expect(reopened.coverPathForArt('cover-1'), isNotNull);
+
+    // 删掉之后必须跟着消失 —— 留着一个指向已删文件的路径,
+    // 界面会去读一张不存在的图(离线时那块封面就直接空着)。
+    await reopened.remove('dl-album-al-1');
+    expect(reopened.coverPathForArt('cover-1'), isNull);
+  });
+
   test('重开一次记录还在 —— 存的是相对路径,换根目录也还原得出来', () async {
     await givenDownloaded();
 

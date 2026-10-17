@@ -49,6 +49,54 @@ List<Song> sortSongs(Iterable<Song> songs, SongSort sort) {
   return list;
 }
 
+/// 「最近添加」那几条 —— 按入库时间倒序取前 [limit] 首。
+///
+/// **只从已加载的 `songs` 里排**,所以它准不准取决于 `songs` 全不全:
+/// 服务器(`search3`)给的是 `created` 升序,最新的那几首排在最后 ——
+/// 只加载了前几页时,这条排出来的是「已加载里最新的」,不是库里最新的。
+/// 因此整库取全之后必须**重算一次**(见 `mergeSongPage` 与
+/// `AppState._completeSongs`),否则货架会与服务器对不上。
+List<Song> recentlyAddedSongsOf(Iterable<Song> songs, {int limit = 20}) {
+  final sorted = [...songs]..sort((a, b) {
+    final da = a.created;
+    final db = b.created;
+    if (da == null && db == null) return 0;
+    if (da == null) return 1;
+    if (db == null) return -1;
+    return db.compareTo(da);
+  });
+  return sorted.take(limit).toList();
+}
+
+/// 翻页取回一页之后并上去 —— **按 id 去重 + 按同一口径重排 + 重算「最近添加」**。
+///
+/// 伺服器的「全部歌曲」一次给一页(见 `AppState._songPageSize`),余下的
+/// 一页页补(滚动懒加载 / 后台补齐)。三件事必须在这里一起做:
+///
+/// - **去重**:翻页期间服务器上可能增删曲目,页与页会重叠或错位 ——
+///   偏移量在那种时候本来就不可靠,不去重会出重复行;
+/// - **重排**:不重排的话新取的那一页会整块挂在列表末尾,按标题排的列表里
+///   会突然冒出「B 开头的歌排在 Z 后面」;
+/// - **重算「最近添加」**:它依赖全量,每补一页就该重排一次 —— 不然补齐之后
+///   货架还停在「只有第一页时」算出来的那一版。
+LibrarySnapshot mergeSongPage(
+  LibrarySnapshot library,
+  List<Song> page, {
+  required bool complete,
+  required SongSort sort,
+}) {
+  final seen = {for (final s in library.songs) s.id};
+  final merged = [
+    ...library.songs,
+    ...page.where((s) => seen.add(s.id)),
+  ];
+  return library.copyWith(
+        songs: sortSongs(merged, sort),
+        recentlyAddedSongs: recentlyAddedSongsOf(merged),
+      )
+      .markSongsComplete(complete);
+}
+
 /// 排序用的入库时间。缺了给一个「比谁都旧」的值,于是落到末尾。
 int _addedRank(Song song) =>
     song.created?.millisecondsSinceEpoch ?? -0x7FFFFFFFFFFFF;

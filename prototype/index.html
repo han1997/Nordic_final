@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nordic · 原型设计板</title>
 <link rel="stylesheet" href="styles.css">
+<!-- 图标片段:候选 / 定稿 / 遮罩预览都从这一份取(由 tool/app_icon.py 生成) -->
+<script src="icon.js"></script>
+<!-- 页签那颗就是定稿那颗。挂 <link rel=icon> 得等 icon.js 先定义出 ICON_FAVICON,
+     所以在它后面插 —— 一个数据 URI,原型仍然零外链。 -->
+<script>document.head.insertAdjacentHTML('beforeend', `<link rel="icon" href="${ICON_FAVICON}">`);</script>
 </head>
 <!-- 设计板:所有屏并排铺开,一屏看全貌。要点击走链路请开 player.html -->
 <body data-mode="board">

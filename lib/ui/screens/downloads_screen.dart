@@ -73,7 +73,7 @@ class DownloadsScreen extends StatelessWidget {
                     children: [
                       SectionHeader(
                         title: '队列',
-                        count: '约 ${_volumeLabel(bytes)}',
+                        count: '约 ${formatBytes(bytes)}',
                         padding: const EdgeInsets.fromLTRB(
                           NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s3),
                       ),
@@ -131,9 +131,8 @@ class DownloadsScreen extends StatelessWidget {
   /// 队列就是这一整条,所以「从第一首开始」不用另设一个按钮 ——
   /// 列表本身就摆在那里。
   void _openTask(BuildContext context, DownloadRecord record) {
-    showModalBottomSheet<void>(
+    showNordicSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (sheetContext) => NordicScrim(
         onTap: () => Navigator.of(sheetContext).pop(),
         child: NordicSheet(
@@ -188,13 +187,6 @@ class DownloadsScreen extends StatelessWidget {
         duration: const Duration(seconds: 2),
       ),
     );
-  }
-
-  /// 总量文案。不到 1 GB 就别硬撑「0.1 GB」—— 该显示 MB 的时候显示 MB。
-  static String _volumeLabel(int bytes) {
-    final mb = bytes / (1024 * 1024);
-    if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)} GB';
-    return '${mb.round()} MB';
   }
 }
 
@@ -289,7 +281,15 @@ class _DownloadRow extends StatelessWidget {
     );
 
     if (onOpen == null) return row;
-    return InkWell(onTap: onOpen, child: row);
+    // 这张卡在玻璃上,InkWell 的涟漪会被玻璃盖住(理由见 quality_sheet.dart)。
+    return Pressable(
+      onTap: onOpen,
+      pressedDecoration: BoxDecoration(
+        color: t.fill1,
+        borderRadius: BorderRadius.circular(NordicRadius.lg),
+      ),
+      child: row,
+    );
   }
 
   IconData get _icon => switch (job.state) {

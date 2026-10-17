@@ -1,12 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!-- 启动那一下:窗口是系统在 Dart 起来之前画的,只能填一块纯色。
+     填 @color/nordic_bg(和应用第一帧同一个 #07070C),所以冷启动看不出接缝。
+     不放图标:那要维护五档 launch_image,而它紧接着就撞上 Flutter 自己画的第一帧。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
-
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+    <item android:drawable="@color/nordic_bg" />
 </layer-list>

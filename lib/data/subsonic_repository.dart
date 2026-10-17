@@ -21,6 +21,38 @@ class SubsonicRepository {
   /// 角落的封面没了」。
   final String? Function(String coverArtId)? _localCover;
 
+  // ---------------- 详情缓存 ----------------
+
+  /// 详情页的短期缓存(专辑 / 艺人 / 歌单)。
+  ///
+  /// **为什么放在仓库这一层**:三张详情页各自在 `initState` 里拉一次,
+  /// 而「进专辑 → 返回 → 再进同一张」是很常见的路径。每次都打一轮网络
+  /// 是白等的,而详情在一两分钟内不会变。缓存只活在进程里(不落盘):
+  /// 详情数据比库快照小得多,内存里放几十份不心疼;重启后重新取,
+  /// 也顺带保证「服务器上改了东西,重开就能看到」。
+  static const _detailTtl = Duration(minutes: 2);
+
+  final Map<String, ({Object value, DateTime at})> _detailCache = {};
+
+  T? _cachedDetail<T>(String key) {
+    final entry = _detailCache[key];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.at) > _detailTtl) {
+      _detailCache.remove(key);
+      return null;
+    }
+    return entry.value as T;
+  }
+
+  void _rememberDetail(String key, Object value) {
+    _detailCache[key] = (value: value, at: DateTime.now());
+  }
+
+  /// 让某张详情的缓存失效 —— 歌单增删改之后要调,否则再进去还是旧列表。
+  void invalidateDetail(String endpoint, String id) {
+    _detailCache.remove('$endpoint:$id');
+  }
+
   // ---------------- 音乐库 ----------------
 
   /// 全部艺人。按首字母分组由服务器给出,这里拉平 ——
@@ -40,10 +72,17 @@ class SubsonicRepository {
     return SubsonicMapper.albums(SubsonicPayload.albums(body));
   }
 
-  /// 最近添加。用于音乐库首页的「最近添加」货架。
-  Future<List<Album>> recentlyAdded({int size = 20}) async {
+  /// 最近添加。用于首页的「最近添加」货架。
+  Future<List<Album>> recentlyAdded({int size = 20}) =>
+      albumList(AlbumSort.newest, size: size);
+
+  /// 按口径拉一小版专辑 —— 首页那几条货架(最近添加 / 最近播放 / 常听)。
+  ///
+  /// 与 [albums] 的区别只在**要多少**:整库浏览要 500 条,货架只要一屏 ——
+  /// 为了几行横滑去拉五百张专辑的元数据是白花的。
+  Future<List<Album>> albumList(AlbumSort sort, {int size = 20}) async {
     final body = await client.call('getAlbumList2', {
-      'type': 'newest',
+      'type': sort.wireName,
       'size': '$size',
     });
     return SubsonicMapper.albums(SubsonicPayload.albums(body));
@@ -51,18 +90,29 @@ class SubsonicRepository {
 
   /// 专辑详情(含曲目)。
   Future<({Album album, List<Song> songs})> album(String albumId) async {
+    final cached = _cachedDetail<({Album album, List<Song> songs})>('album:$albumId');
+    if (cached != null) return cached;
+
     final body = await client.call('getAlbum', {'id': albumId});
     final json = SubsonicPayload.album(body);
-    return (
+    final detail = (
       album: SubsonicMapper.album(json),
       songs: SubsonicMapper.songs(_mapList(json['song'])),
     );
+    _rememberDetail('album:$albumId', detail);
+    return detail;
   }
 
   /// 艺人详情。`getArtist` 一次给回艺人信息 + 专辑列表 + 曲目列表。
   Future<({Artist artist, List<Album> albums, List<Song> topSongs})> artist(
     String artistId,
   ) async {
+    final cached = _cachedDetail<
+        ({Artist artist, List<Album> albums, List<Song> topSongs})>(
+      'artist:$artistId',
+    );
+    if (cached != null) return cached;
+
     final body = await client.call('getArtist', {'id': artistId});
     final json = SubsonicPayload.artist(body);
     final albums = SubsonicMapper.albums(_mapList(json['album']));
@@ -74,18 +124,24 @@ class SubsonicRepository {
     final songJson = _mapList(json['song']).toList()
       ..sort((a, b) => _playCount(b).compareTo(_playCount(a)));
 
-    return (
+    final detail = (
       artist: SubsonicMapper.artist(json),
       albums: albums,
       topSongs: SubsonicMapper.songs(songJson).take(5).toList(),
     );
+    _rememberDetail('artist:$artistId', detail);
+    return detail;
   }
 
-  /// 全部歌曲。Subsonic 没有「列全部歌」的端点,用随机歌单凑是错的
+  /// 全部歌曲的**一页**。Subsonic 没有「列全部歌」的端点,用随机歌单凑是错的
   /// (会漏歌)。这里走搜索接口的空查询,拿服务器的字母序全集。
   ///
   /// [offset] 用于翻页 —— 空查询也能带 `songOffset`,这是协议里
   /// 唯一的翻页手段(见 [songsByArtist])。
+  ///
+  /// **一页 500 是服务器的常见上限**(实测这台 Navidrome 就卡在 500):
+  /// 要全集就得一页页取,所以界面上的「全部歌曲」是按需翻页的
+  /// (见 `LibraryScreen` 的翻页小节),不是一次取完。
   Future<List<Song>> allSongs({int size = 500, int offset = 0}) async {
     final body = await client.call('search3', {
       'query': '',
@@ -133,12 +189,19 @@ class SubsonicRepository {
 
   /// 歌单详情(含曲目)。
   Future<({Playlist playlist, List<Song> songs})> playlist(String playlistId) async {
+    final cached = _cachedDetail<({Playlist playlist, List<Song> songs})>(
+      'playlist:$playlistId',
+    );
+    if (cached != null) return cached;
+
     final body = await client.call('getPlaylist', {'id': playlistId});
     final json = SubsonicPayload.playlist(body);
-    return (
+    final detail = (
       playlist: SubsonicMapper.playlist(json),
       songs: SubsonicMapper.songs(_mapList(json['entry'])),
     );
+    _rememberDetail('playlist:$playlistId', detail);
+    return detail;
   }
 
   // ---------------- 搜索 ----------------
@@ -233,27 +296,65 @@ class SubsonicRepository {
     final local = _localCover?.call(coverArtId);
     if (local != null) return Uri.file(local);
 
-    return SubsonicClient.buildUri(
-      _activeRouteOrThrow,
-      'getCoverArt',
-      {'id': coverArtId, 'size': '$size'},
-      client.auth,
-    );
+    // 本机那份**不进备忘录**:它跟着下载状态变,记下来就不认新下的了。
+    final route = _activeRouteOrThrow;
+    return _rememberUri('cover|${route.url}|$coverArtId|$size', () =>
+        SubsonicClient.buildUri(
+          route,
+          'getCoverArt',
+          {'id': coverArtId, 'size': '$size'},
+          client.auth,
+        ));
   }
 
   /// 音频流 URL。转码档位在这里落成 `maxBitRate` / `format` 参数;
   /// 原音档不传参数,直接取原文件。
-  Uri streamUri(String songId, {int? maxBitRate, String? format}) =>
-      SubsonicClient.buildUri(
-        _activeRouteOrThrow,
-        'stream',
-        {
-          'id': songId,
-          'maxBitRate': ?maxBitRate?.toString(),
-          'format': ?format,
-        },
-        client.auth,
-      );
+  Uri streamUri(String songId, {int? maxBitRate, String? format}) {
+    final route = _activeRouteOrThrow;
+    return _rememberUri('stream|${route.url}|$songId|$maxBitRate|$format', () =>
+        SubsonicClient.buildUri(
+          route,
+          'stream',
+          {
+            'id': songId,
+            'maxBitRate': ?maxBitRate?.toString(),
+            'format': ?format,
+          },
+          client.auth,
+        ));
+  }
+
+  // ---------------- 地址的短期备忘录 ----------------
+
+  /// 拼好的地址按「线路 + 参数」记一份。
+  ///
+  /// **为什么值得记**:一次 `setQueue` 会把整条队列的播放源都拼出来
+  /// (见 `audio_handler.dart` 的 `_sourceFor`),上千首的队列就是上千次
+  /// 「新生成盐 + MD5」,而其中绝大多数地址到播完也不会被请求一次;同一张专辑
+  /// 底下的几十首歌更是共用同一个封面地址。命中即复用,省下的是那几千次哈希。
+  ///
+  /// **盐的口径说清楚**:命中时复用同一条 URL,连同它那一份盐。盐在这里的作用是
+  /// 「不把密码送上网」,而不是一次性票据(服务器不回收盐);同一张封面、同一首歌
+  /// 在同一次会话里重复取址本来也不带额外信息 —— 要的只是「别为它算一千遍」。
+  /// 未命中时照旧**当场新生成**一个盐。
+  ///
+  /// 键里带线路的 **url** 而不只是 id:某条线路的地址可以被改掉而 id 不变,
+  /// 只按 id 作键会把改动前的那条 URL 一直喂回去(表现是「改了地址还走旧的」)。
+  /// 换服务器 / 换账号会重建整个仓库(见 `app_state.attachRepository`),
+  /// 备忘录跟着一起换新。
+  static const _uriMemoLimit = 2048;
+  final Map<String, Uri> _uriMemo = {};
+
+  Uri _rememberUri(String key, Uri Function() build) {
+    final hit = _uriMemo[key];
+    if (hit != null) return hit;
+    final uri = build();
+    // 满了就整体清掉:这是备忘录,不是缓存 —— 清空只是多算一遍,
+    // 而它省下的是队列装载那一下的几千次哈希。
+    if (_uriMemo.length >= _uriMemoLimit) _uriMemo.clear();
+    _uriMemo[key] = uri;
+    return uri;
+  }
 
   /// 下载用的地址:**一律取原文件,不吃转码档**。
   ///
@@ -307,33 +408,41 @@ class SubsonicRepository {
   }
 
   /// 把一首歌加进歌单。
-  Future<void> addToPlaylist(String playlistId, String songId) =>
-      client.call('updatePlaylist', {
-        'playlistId': playlistId,
-        'songIdToAdd': songId,
-      });
+  Future<void> addToPlaylist(String playlistId, String songId) async {
+    await client.call('updatePlaylist', {
+      'playlistId': playlistId,
+      'songIdToAdd': songId,
+    });
+    invalidateDetail('playlist', playlistId);
+  }
 
   /// 从歌单里移除某一首。
   ///
   /// **按位置移除**:协议给的是 `songIndexToRemove`,索引指服务器那份列表里的
   /// 位置。同一首歌在歌单里出现两次时,「移除哪一次」只有位置说得清,
   /// 所以这里收位置而不是歌曲 id。
-  Future<void> removeFromPlaylist(String playlistId, int index) =>
-      client.call('updatePlaylist', {
-        'playlistId': playlistId,
-        'songIndexToRemove': '$index',
-      });
+  Future<void> removeFromPlaylist(String playlistId, int index) async {
+    await client.call('updatePlaylist', {
+      'playlistId': playlistId,
+      'songIndexToRemove': '$index',
+    });
+    invalidateDetail('playlist', playlistId);
+  }
 
   /// 重命名歌单。
-  Future<void> renamePlaylist(String playlistId, String name) =>
-      client.call('updatePlaylist', {
-        'playlistId': playlistId,
-        'name': name,
-      });
+  Future<void> renamePlaylist(String playlistId, String name) async {
+    await client.call('updatePlaylist', {
+      'playlistId': playlistId,
+      'name': name,
+    });
+    invalidateDetail('playlist', playlistId);
+  }
 
   /// 删除歌单。
-  Future<void> deletePlaylist(String playlistId) =>
-      client.call('deletePlaylist', {'id': playlistId});
+  Future<void> deletePlaylist(String playlistId) async {
+    await client.call('deletePlaylist', {'id': playlistId});
+    invalidateDetail('playlist', playlistId);
+  }
 }
 
 /// 专辑列表的排序口径,对应 `getAlbumList2` 的 `type`。

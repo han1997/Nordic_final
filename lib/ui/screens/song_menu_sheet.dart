@@ -34,9 +34,8 @@ Future<void> showSongMenu(
   // 那一项顺带报出当前档位,不然「切档」这件事就没地方看了。
   final quality = context.read<QualityController>().value;
 
-  return showModalBottomSheet<void>(
+  return showNordicSheet<void>(
     context: context,
-    backgroundColor: Colors.transparent,
     builder: (sheetContext) {
       void close() => Navigator.of(sheetContext).pop();
 

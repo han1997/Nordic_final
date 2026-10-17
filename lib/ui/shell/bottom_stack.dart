@@ -3,11 +3,13 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/subsonic_payload.dart';
+import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
+import '../routes.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
 
@@ -63,20 +65,25 @@ class BottomStack extends StatelessWidget {
           right: 10,
           bottom: MediaQuery.paddingOf(context).bottom + 10,
         ),
-        child: NordicGlass(
-          panel: NordicGlassPanel.nav,
-          // 一行时是胶囊,两行时取大圆角 —— 一整块两行的东西做成胶囊,
-          // 上下缘会鼓得像药丸。
-          borderRadius: BorderRadius.circular(
-            docked ? NordicRadius.xl : NordicRadius.full,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (docked) const _PlayerDock(),
-              if (docked) const _TrayProgress(),
-              _TabBar(active: activeTab, onSelected: onTabSelected),
-            ],
+        child: RepaintBoundary(
+          // 坞里那行曲目名字、进度条、标签高亮都是会变的,而这块玻璃
+          // (`BackdropFilter` + 一层 80% 填充)本身不变 —— 隔一层重绘边界,
+          // 播放状态一变就只重画坞里那点内容,不再连玻璃一起重扫一遍背景。
+          child: NordicGlass(
+            panel: NordicGlassPanel.nav,
+            // 一行时是胶囊,两行时取大圆角 —— 一整块两行的东西做成胶囊,
+            // 上下缘会鼓得像药丸。
+            borderRadius: BorderRadius.circular(
+              docked ? NordicRadius.xl : NordicRadius.full,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (docked) const _PlayerDock(),
+                if (docked) const _TrayProgress(),
+                _TabBar(active: activeTab, onSelected: onTabSelected),
+              ],
+            ),
           ),
         ),
       ),
@@ -99,13 +106,23 @@ class _PlayerDock extends StatelessWidget {
     // 还没放过任何东西时不占位 —— 空坞是一块没有意义的玻璃。
     if (song == null) return const SizedBox.shrink();
 
-    final appState = context.watch<AppState>();
+    // 坞只用到 `AppState` 里的一件事:**仓库**(拼封面地址用)。
+    // 所以这里 select 那一件,而不是 watch 整个 `AppState` —— 否则下载进度
+    // (最多每秒四次,见 download_manager 的时间闸)和缓存淘汰都会把这片
+    // `BackdropFilter` 玻璃拖着重建一遍,而坞上没有任何东西跟着变。
+    final repo = context.select<AppState, SubsonicRepository?>(
+      (s) => s.repository,
+    );
 
     final playing = playback.state.playing;
 
-    return GestureDetector(
-      onTap: () => Navigator.of(context).pushNamed('/player'),
-      behavior: HitTestBehavior.opaque,
+    // 整条坞按下去**亮一层底色**,与所有列表行同一套(`pressedDecoration`)。
+    // 原先这里是裸 `GestureDetector`:按下去屏幕上什么都不动 —— 而坞是一整条
+    // 大块面,手感上就读成「这机器慢」(README 的「性能姿态」记过这条)。
+    // 跳转走 [AppRoutes.openPlayer],路由名只留一处。
+    return Pressable(
+      onTap: () => AppRoutes.openPlayer(context),
+      pressedDecoration: BoxDecoration(color: t.fill1),
       child: SizedBox(
         height: 60,
         child: Padding(
@@ -115,7 +132,7 @@ class _PlayerDock extends StatelessWidget {
               Cover(
                 coverArtId: song.coverArtId,
                 seed: song.albumId,
-                uri: _coverUriFor(appState, song),
+                uri: _coverUriFor(repo, song),
                 size: 46,
                 radius: 13,
                 showShadow: false,
@@ -165,8 +182,7 @@ class _PlayerDock extends StatelessWidget {
     );
   }
 
-  static Uri? _coverUriFor(AppState state, Song song) {
-    final repo = state.repository;
+  static Uri? _coverUriFor(SubsonicRepository? repo, Song song) {
     final id = song.coverArtId;
     if (repo == null || id == null) return null;
     try {
@@ -187,15 +203,25 @@ class _TrayProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final playback = context.watch<PlaybackController>();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s4),
-      child: ValueListenableBuilder<Duration>(
-        valueListenable: playback.position,
-        builder: (context, position, _) => ProgressLine(
-          progress:
-              playbackProgress(position, playback.state.duration) / 100,
-          height: 2,
+    // **分开订**:时长只有换歌才变,位置每秒跳好几次。原先整份
+    // `PlaybackController` 都订着,于是每一次位置变化都要连时长一起重读。
+    final duration = context.select<PlaybackController, Duration>(
+      (p) => p.state.duration,
+    );
+    final position = context.read<PlaybackController>().position;
+
+    // 单独隔一层:这条线每秒要重画好几次,而它只改自己那一条的宽度 ——
+    // 隔开之后不会把整片玻璃子树标脏(坞那片 `BackdropFilter` 也就不必
+    // 跟着每跳一次重画一遍)。`_CoverGlow` 已经是同一个做法(见 player_screen)。
+    return RepaintBoundary(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s4),
+        child: ValueListenableBuilder<Duration>(
+          valueListenable: position,
+          builder: (context, position, _) => ProgressLine(
+            progress: playbackProgress(position, duration) / 100,
+            height: 2,
+          ),
         ),
       ),
     );
@@ -229,7 +255,7 @@ class _TabBar extends StatelessWidget {
                       height: 54,
                       decoration: BoxDecoration(
                         color: tab == active
-                            ? accent.withValues(alpha: 0.17)
+                            ? selectFill(accent)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(NordicRadius.full),
                       ),
@@ -277,10 +303,13 @@ void openTab(BuildContext context, AppTab tab) {
   Navigator.of(context).popUntil((route) => route.isFirst);
 }
 
-/// 三个一级页面 —— 原型 tabbar 的取值。
+/// 三个一级页面 —— 原型 tabbar 是「音乐库 / 搜索 / 设置」,这里是**刻意偏离**
+/// 的一处(2026-10-17 用户要求):搜索是「知道要找什么」时的动作,占一个常驻
+/// 位置不划算,挪进首页顶栏那颗放大镜;空出来的位置给**首页** ——
+/// 「不知道听什么」时才需要一直有个地方可去。
 enum AppTab {
+  home('/home', '首页', Icons.home_outlined),
   library('/library', '音乐库', Icons.menu_book_outlined),
-  search('/search', '搜索', Icons.search),
   settings('/settings', '设置', Icons.settings_outlined);
 
   const AppTab(this.route, this.label, this.icon);

@@ -6,6 +6,87 @@ import '../../theme/context_ext.dart';
 import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
 
+/// 按下去缩一点 —— 原型里 `.icon-btn` / `.btn` / `.play-btn` 都带
+/// `transform: scale(0.92~0.975)`。
+///
+/// 移植时漏了这一层:全应用的可点元素差不多都是裸 [GestureDetector],
+/// **按下去屏幕上什么都不动**,直到抬起手才发生跳转 —— 手感上就是「这机器慢」。
+/// 这里收成一处,免得二十来个调用点各写一遍(写漏一处就是又一处没反应)。
+class Pressable extends StatefulWidget {
+  const Pressable({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.scale = 0.97,
+    this.behavior = HitTestBehavior.opaque,
+    this.pressedDecoration,
+  });
+
+  final Widget child;
+  final VoidCallback? onTap;
+
+  /// 按压时的缩放。大块面(卡片 / 整行)用 0.97 就够 ——
+  /// 按原型那颗 0.92 缩在整屏宽的卡片上会晃眼。
+  final double scale;
+
+  final HitTestBehavior behavior;
+
+  /// 换成点按时的底色,不走缩放。
+  ///
+  /// 整行 / 整条那种大面积用这个:原型的 `.row:hover{background:var(--fill-1)}`、
+  /// `.menu-item:hover` 都是这个路子 —— 一条 64px 高的行整体缩一下会晃眼,
+  /// 而「底下亮了一层」既明显又不动布局。
+  final Decoration? pressedDecoration;
+
+  @override
+  State<Pressable> createState() => _PressableState();
+}
+
+class _PressableState extends State<Pressable> {
+  bool _down = false;
+
+  void _set(bool value) {
+    if (!mounted || _down == value) return;
+    setState(() => _down = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 不可点就完全走原样 —— 不给一个「按得下去但没反应」的假反馈。
+    if (widget.onTap == null) return widget.child;
+
+    final decoration = widget.pressedDecoration;
+    if (decoration != null) {
+      return GestureDetector(
+        behavior: widget.behavior,
+        onTap: widget.onTap,
+        onTapDown: (_) => _set(true),
+        onTapUp: (_) => _set(false),
+        onTapCancel: () => _set(false),
+        child: DecoratedBox(
+          decoration: _down ? decoration : const BoxDecoration(),
+          child: widget.child,
+        ),
+      );
+    }
+
+    return GestureDetector(
+      behavior: widget.behavior,
+      onTap: widget.onTap,
+      onTapDown: (_) => _set(true),
+      onTapUp: (_) => _set(false),
+      onTapCancel: () => _set(false),
+      child: AnimatedScale(
+        scale: _down ? widget.scale : 1,
+        // 按下要立刻、回弹可以慢一点 —— 与原型 `0.14s var(--ease)` 一致。
+        duration: Duration(milliseconds: _down ? 70 : 140),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
 /// 主按钮 —— `.btn.primary`,实心强调色,整宽。
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
@@ -58,8 +139,9 @@ class PrimaryButton extends StatelessWidget {
     return Opacity(
       // 不可用时压暗而不是隐藏 —— 按钮还在原位,用户知道它存在。
       opacity: enabled ? 1 : 0.45,
-      child: GestureDetector(
+      child: Pressable(
         onTap: onPressed,
+        scale: 0.975,
         child: Container(
           height: height,
           width: fillMaxWidth ? double.infinity : null,
@@ -113,8 +195,9 @@ class GhostButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    return GestureDetector(
+    return Pressable(
       onTap: onPressed,
+      scale: 0.975,
       child: Container(
         height: height,
         width: double.infinity,
@@ -169,8 +252,9 @@ class PillButton extends StatelessWidget {
 
     return Opacity(
       opacity: enabled ? 1 : 0.45,
-      child: GestureDetector(
+      child: Pressable(
         onTap: onPressed,
+        scale: 0.97,
         child: Container(
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -200,6 +284,34 @@ class PillButton extends StatelessWidget {
   }
 }
 
+/// 点空白处收起软键盘。
+///
+/// 为什么要它:`TextField.onTapOutside` 的**默认回退在触屏上什么都不做**
+/// (桌面才收起),所以键盘会一直杵着把界面挤掉半屏,用户只能去按系统返回键。
+/// 包一层整屏内容就能接住落在空白处的点击;落在控件上的点击仍归控件 ——
+/// 手势竞技场里更深的那一层先赢,这里只吃「没人要」的那些。
+///
+/// 主壳([NordicShell])与沉浸页外壳([ImmersiveScaffold])各包了一次,
+/// 于是全应用只有这两处,页面自己不用操心。
+class DismissKeyboardOnTap extends StatelessWidget {
+  const DismissKeyboardOnTap({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: child,
+      );
+}
+
+/// 「选中 / 开着」的那层底色。
+///
+/// 标签栏的选中胶囊与传输控制上的随机 / 循环共用这一档 —— 两处本就说的
+/// 是同一件事(这个位置现在是活的),分头写两个数字迟早会漂开。
+Color selectFill(Color accent) => accent.withValues(alpha: 0.17);
+
 /// 圆形图标按钮 —— `.icon-btn`,可带一层淡填充(`halo`)。
 class IconButtonRound extends StatelessWidget {
   const IconButtonRound({
@@ -210,6 +322,7 @@ class IconButtonRound extends StatelessWidget {
     this.iconSize = 22,
     this.color,
     this.halo = false,
+    this.background,
     this.quiet = false,
   });
 
@@ -222,26 +335,40 @@ class IconButtonRound extends StatelessWidget {
   /// 带一层极淡的填充底色 —— 详情页动作排上的那几个圆按钮。
   final bool halo;
 
+  /// 指定底色,盖过 [halo] 的那档默认填充。
+  ///
+  /// 给「开着 / 关着」这类**要一眼看出来**的开关键用(传输控制上的随机与循环):
+  /// 图标本身在两态之间只是颜色不同,幅度太小,真机上读不出来。
+  /// 取值与标签栏的选中胶囊同源(强调色 17%),两处选中态才是一套说法。
+  final Color? background;
+
   /// 次级图标,颜色退一档。
   final bool quiet;
 
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    return GestureDetector(
+    return Pressable(
+      // 图标键照原型的 `.icon-btn:active` 缩 0.92 —— 比按钮明显一档。
       onTap: onPressed,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: halo ? t.fill1 : null,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          icon,
-          size: iconSize,
-          color: color ?? (quiet ? t.fg2 : t.fg),
+      scale: 0.92,
+      child: Opacity(
+        // 不可点就压暗。**代表「到头了」的那两颗键**(上一首 / 下一首)全靠这一个
+        // 记号 —— 不压暗的话它跟能点的一模一样,点下去什么也不发生,
+        // 读起来就是「这个键坏了」。
+        opacity: onPressed == null ? 0.35 : 1,
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: background ?? (halo ? t.fill1 : null),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            size: iconSize,
+            color: color ?? (quiet ? t.fg2 : t.fg),
+          ),
         ),
       ),
     );
@@ -301,7 +428,7 @@ class SectionHeader extends StatelessWidget {
             ),
           ],
           const Spacer(),
-          if (trailing != null) trailing!,
+          ?trailing,
         ],
       ),
     );
@@ -331,9 +458,9 @@ class SortButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    return GestureDetector(
+    return Pressable(
       onTap: busy ? null : onTap,
-      behavior: HitTestBehavior.opaque,
+      scale: 0.97,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         child: Row(
@@ -392,8 +519,9 @@ class NordicChip extends StatelessWidget {
     final accent = color ?? context.accent.accent;
 
     if (selected) {
-      return GestureDetector(
+      return Pressable(
         onTap: onTap,
+        scale: 0.96,
         child: Container(
           height: height,
           padding: const EdgeInsets.symmetric(horizontal: 15),
@@ -422,8 +550,9 @@ class NordicChip extends StatelessWidget {
     }
 
     // 未选中:薄玻璃底 + 发丝边,能透出背景。
-    return GestureDetector(
+    return Pressable(
       onTap: onTap,
+      scale: 0.96,
       child: SizedBox(
         height: height,
         child: NordicGlass(
@@ -678,11 +807,23 @@ class ListNote extends StatelessWidget {
 /// 空态 —— `.empty`。**只在「确实为空」时用**;
 /// 加载中与出错时另走 [LoadingState] / [ErrorState](见「不造假空态」约定)。
 class EmptyState extends StatelessWidget {
-  const EmptyState({super.key, required this.title, this.detail, this.topPadding = 120});
+  const EmptyState({
+    super.key,
+    required this.title,
+    this.detail,
+    this.topPadding = 120,
+    this.action,
+  });
 
   final String title;
   final String? detail;
   final double topPadding;
+
+  /// 空态底下那颗「接下来该做什么」的按钮。
+  ///
+  /// 只写一句「到设置里填地址」等于把活交给用户去找 —— 空态说的是「这儿没有」,
+  /// 那就得顺手给出**怎么让它有**。
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -706,6 +847,10 @@ class EmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall,
             ),
+          ],
+          if (action != null) ...[
+            const SizedBox(height: NordicSpace.s5),
+            action!,
           ],
         ],
       ),
@@ -790,8 +935,10 @@ class NordicMenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    return InkWell(
+    return Pressable(
       onTap: onTap,
+      // 原型的 `.menu-item:hover { background: var(--fill-1) }`。
+      pressedDecoration: BoxDecoration(color: t.fill1),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
@@ -900,7 +1047,34 @@ class NordicSheet extends StatelessWidget {
   }
 }
 
+/// 揭开一张底部纸 —— **所有弹层都从这里走**。
+///
+/// 两个参数收在一处,别在调用点各写一遍(写漏一处就是一层多余的黑):
+///
+/// - `barrierColor: Colors.transparent`:框架默认那层 `Colors.black54` 会与
+///   [NordicScrim] 叠成**两层黑**,而且它是一整块纯黑、不模糊 —— 弹层背后发闷
+///   就是它。透明之后 barrier 仍然拦点击、仍然点外面就关
+///   (`bottom_sheet.dart` 里 `barrierColor.a == 0` 走的是不绘制的那条分支)。
+/// - `isScrollControlled: true`:不写的话框架只给内容盒子**屏幕高度的 9/16**,
+///   而 [NordicScrim] 就是 sheet 的内容 → 它只能盖住下半屏,上半屏剩一块没有
+///   模糊的纯黑。顺带:[NordicSheet] 自己那句 86% 上限也才真的生效
+///   (原型 `.sheet` 是 `max-height: 86%`)。
+Future<T?> showNordicSheet<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+}) =>
+    showModalBottomSheet<T>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      barrierColor: Colors.transparent,
+      builder: builder,
+    );
+
 /// 弹层遮罩 —— `.sheet-scrim`。
+///
+/// **就这一层**:原型的 `.sheet-scrim`(66% 压暗 + `blur(6px)`),铺满整屏。
+/// 框架自带的那层黑由 [showNordicSheet] 关掉 —— 两层叠起来是 84% 黑。
 class NordicScrim extends StatelessWidget {
   const NordicScrim({super.key, required this.child, this.onTap});
 
@@ -910,18 +1084,44 @@ class NordicScrim extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
+
+    final layer = GestureDetector(
+      onTap: onTap,
+      // 遮罩也轻轻糊一下(原型 `blur(6px)`)—— 弹层后面的内容
+      // 从「被压暗」变成「退到后面」,层次才分得开。
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+        child: ColoredBox(color: t.scrim),
+      ),
+    );
+
+    // 路由的入场过渡是把**整块内容**从屏幕下方挪上来(不是 `SlideTransition`,
+    // 是 `_BottomSheetLayout` 按 `animationValue` 给整块定位)。蒙板在路由里就会
+    // 跟着走:整屏的暗层从下往上「擦」,上半屏最后才暗下来。
+    //
+    // 补一个等量的反向位移抵消掉,蒙板就成了原地淡入。位移量取 LayoutBuilder 的
+    // `maxHeight` —— 它与路由定位用的那个高度是同一个(内容铺满整屏),能精确抵消。
+    // 若哪天真机上反而看到位移,把这一层去掉就退回「跟着纸一起上滑」,不会坏。
+    final animation = ModalRoute.of(context)?.animation;
+
     return Stack(
       children: [
         Positioned.fill(
-          child: GestureDetector(
-            onTap: onTap,
-            // 遮罩也轻轻糊一下(原型 `blur(6px)`)—— 弹层后面的内容
-            // 从「被压暗」变成「退到后面」,层次才分得开。
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-              child: ColoredBox(color: t.scrim),
-            ),
-          ),
+          child: animation == null
+              ? layer
+              : LayoutBuilder(
+                  builder: (context, constraints) => AnimatedBuilder(
+                    animation: animation,
+                    builder: (context, child) => Transform.translate(
+                      offset: Offset(
+                        0,
+                        (animation.value - 1) * constraints.maxHeight,
+                      ),
+                      child: FadeTransition(opacity: animation, child: child),
+                    ),
+                    child: layer,
+                  ),
+                ),
         ),
         child,
       ],

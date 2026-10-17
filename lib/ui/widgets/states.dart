@@ -4,6 +4,79 @@ import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import 'components.dart';
 
+/// 「显示的是本机缓存」那一条 —— 刷新失败但手上有内容时出现。
+///
+/// 有东西看总比一片空白强,所以这时**不切成错误态**;但也不能装作是最新的,
+/// 于是留这一条,并带一个「重试」。首页与音乐库共用一份。
+class StaleBanner extends StatelessWidget {
+  const StaleBanner({
+    super.key,
+    required this.message,
+    required this.savedAt,
+    required this.onRetry,
+    this.padding = const EdgeInsets.fromLTRB(
+      NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, 0),
+  });
+
+  final String message;
+
+  /// 上次同步成功的时间。null 就只说这一次没刷上。
+  final DateTime? savedAt;
+
+  final VoidCallback onRetry;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    final when = savedAt == null ? null : '上次同步 ${_clock(savedAt!)}';
+
+    return Padding(
+      padding: padding,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+        decoration: BoxDecoration(
+          color: t.fill1,
+          borderRadius: BorderRadius.circular(NordicRadius.md),
+          border: Border.all(color: t.line),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.cloud_off_outlined, size: 16, color: t.warn),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                [?when, message].join(' · '),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: t.fg3, height: 1.5),
+              ),
+            ),
+            const SizedBox(width: 8),
+            NordicChip(
+              label: '重试',
+              icon: Icons.refresh,
+              height: 30,
+              onTap: onRetry,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// `10 月 16 日 17:20` —— 只到分钟:再细没有意义,这里只想说「是哪时候的」。
+  static String _clock(DateTime at) {
+    final local = at.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${local.month} 月 ${local.day} 日 '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+}
+
 /// 加载中。
 ///
 /// 刻意**不是**骨架屏:骨架屏在一屏列表上看着像「内容已经在路上了」,
@@ -136,8 +209,9 @@ class ErrorState extends StatelessWidget {
           ),
           if (hint != null) ...[
             const SizedBox(height: NordicSpace.s4),
-            GestureDetector(
+            Pressable(
               onTap: onHintTap,
+              behavior: HitTestBehavior.deferToChild,
               child: Text(
                 hint!,
                 textAlign: TextAlign.center,

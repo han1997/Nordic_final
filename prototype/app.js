@@ -41,11 +41,15 @@ const ICONS = {
   disc:    '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.3"/>',
   wave:    '<path d="M4 12h2.2M9 6.5v11M14 9v6M19.5 12H22"/>',
   book:    '<path d="M4 5.5A2 2 0 0 1 6 3.5h13v15H6a2 2 0 0 0-2 2z"/><path d="M4 18.5V5.5"/>',
+  home:    '<path d="M3.8 10.6L12 4.2l8.2 6.4"/><path d="M6.2 9.6V20h11.6V9.6"/><path d="M9.8 20v-5.2h4.4V20"/>',
   sparkle: '<path d="M12 4l1.9 5.1L19 11l-5.1 1.9L12 18l-1.9-5.1L5 11l5.1-1.9z"/>',
   bell:    '<path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M13.7 19.5a2 2 0 0 1-3.4 0"/>',
   shield:  '<path d="M12 3.6l7 2.6v5.4c0 4.3-3 7.3-7 8.8-4-1.5-7-4.5-7-8.8V6.2z"/>',
   play2:   '<circle cx="12" cy="12" r="8.4"/><path d="M10.2 8.8l5.6 3.2-5.6 3.2z" fill="currentColor" stroke="none"/>',
   theme:   '<circle cx="12" cy="12" r="8.2"/><path d="M12 3.8v16.4" /><path d="M12 3.8a8.2 8.2 0 0 0 0 16.4z" fill="currentColor" stroke="none"/>',
+  /* 缓存:两层叠起来的盘 —— 「本机还留着一份」 */
+  stack:   '<ellipse cx="12" cy="6.4" rx="7" ry="2.9"/><path d="M5 6.4v11.2c0 1.6 3.13 2.9 7 2.9s7-1.3 7-2.9V6.4"/><path d="M5 12c0 1.6 3.13 2.9 7 2.9s7-1.3 7-2.9"/>',
+  trash:   '<path d="M5.4 7.4h13.2"/><path d="M9.8 7.4V5.7a1.3 1.3 0 0 1 1.3-1.3h1.8a1.3 1.3 0 0 1 1.3 1.3v1.7"/><path d="M7.4 7.4l.75 11.3A1.4 1.4 0 0 0 9.55 20h4.9a1.4 1.4 0 0 0 1.4-1.3l.75-11.3"/>',
 };
 
 function ic(name, size = 22, cls = '') {
@@ -171,6 +175,19 @@ const ARTISTS = [
   { id: 'ar6', name: '柳爽',         albums: 4,  songs: 37,  c1: '#38294A', c2: '#130E1C', accent: '#A88BFF' },
 ];
 
+/* 首页那两条货架 —— **服务器口径**(getAlbumList2 的 recent / frequent)。
+   本地算不出「最近播放 / 最常播放」:那要播放次数与时间,只有服务器有。
+   原型库小(6 张专辑),这里按序号错开摆出与「最近添加」不同的顺序,
+   好让三条货架一眼看出不是同一份;真实客户端上它们各自铺满一屏。 */
+const RECENT_PLAYED = ['a4', 'a1', 'a6', 'a3'];
+const MOST_PLAYED   = ['a2', 'a5', 'a1', 'a4'];
+
+/* 「最近添加」按**歌曲**排(2026-10-17 用户要求):服务器没有「最近添加歌曲」
+   端点,真实客户端从已拉的歌曲列表按入库时间本地排。原型这里挑几首跨专辑的
+   曲子示意 —— 一眼能看出它不是「最近添加专辑」那一份。 */
+const RECENT_ADDED_SONGS = ['s13', 's7', 's11', 's2', 's10', 's14'];
+const SONG_BY_ID = (id) => SONGS.find((s) => s.id === id);
+
 const PLAYLISTS = [
   { id: 'p1', name: '深夜通勤',     count: 32, desc: '低速、情绪化、适合夜色', c1: '#1B2440', c2: '#0A0F1C', accent: '#6E8BFF' },
   { id: 'p2', name: '工作专注',     count: 58, desc: '器乐为主，无人声干扰',   c1: '#14342E', c2: '#08170F', accent: '#4FD8C4' },
@@ -192,6 +209,19 @@ const QUALITIES = [
   { id: 'high',     name: '高质量',   desc: '转码为 320 kbps。音质接近原始，流量约减半。' },
   { id: 'medium',   name: '均衡',     desc: '转码为 192 kbps。移动网络下推荐，拖动进度更快。' },
   { id: 'low',      name: '省流',     desc: '转码为 96 kbps。弱网或流量紧张时使用。' },
+];
+
+/* 歌曲缓存的上限档位。
+   「不缓存」是**真的不写盘**,而不是写一个小额度 —— 开关说关就得关。
+   首数按 320 kbps(约 9.6 MB/首)估,写成整数是为了读起来是个约数;
+   实际还取决于当前转码档与曲目长短,所以文案说「约」。 */
+const CACHE_LIMITS = [
+  { id: 'off', name: '不缓存', desc: '听过的歌每次都从服务器拉,本机不留音频', mb: 0 },
+  { id: '256', name: '256 MB', desc: '约 25 首',  mb: 256 },
+  { id: '512', name: '512 MB', desc: '约 50 首',  mb: 512 },
+  { id: '1g',  name: '1 GB',   desc: '约 100 首 · 默认', mb: 1024 },
+  { id: '2g',  name: '2 GB',   desc: '约 200 首', mb: 2048 },
+  { id: '4g',  name: '4 GB',   desc: '约 400 首', mb: 4096 },
 ];
 
 const STATE = {
@@ -241,6 +271,12 @@ const STATE = {
      但队列要有进度的样子 —— 下载中 → 已完成,几个条目各在各的阶段。 */
   downloads: [],
   dlSeq: 0,
+  /* 下过的与听过的分开记:
+     - downloads 是**用户点名要的**,永远不删;
+     - cacheUsed 是「听过的歌留一份」,上限到了就先扔最久没听的。
+     原型不真拉文件,这里只摆一个已经用掉的数字。 */
+  cacheLimit: '1g',
+  cacheUsedMb: 138,
   /* 新建歌单表单:名字与封面色实时反映在预览卡上 */
   plName: '',
   plHue: 0,
@@ -368,9 +404,13 @@ function ambient(album) {
 }
 
 function tabbar(active) {
+  /* 原型原本是「音乐库 / 搜索 / 设置」。**2026-10-17 改成「首页 / 音乐库 / 设置」**:
+     搜索是「知道要找什么」时的动作,用完就退,占一个常驻位置不划算 ——
+     它挪进首页与音乐库顶栏那颗放大镜,变成一张推入的页面(见 data-go="search")。
+     空出来的位置给首页:「不知道听什么」时才需要一个一直能回的地方。 */
   const tabs = [
+    ['home',     'home',   '首页'],
     ['library',  'book',   '音乐库'],
-    ['search',   'search', '搜索'],
     ['settings', 'gear',   '设置'],
   ];
   return `<nav class="tabbar">${tabs.map(([id, icon, label]) =>
@@ -619,25 +659,119 @@ function songRow(s, playing = false, trail = null) {
   </div>`;
 }
 
-function screenLibrary(tab = 'albums') {
+/* ---------------- 首页 ----------------
+
+   一级 tab 的第一屏(2026-10-17 取代了原先的「搜索」那一格)。
+   它回答的是「现在听什么 / 最近在听什么」,而音乐库回答「库里有什么」——
+   两屏的分工就这么一条线:首页不铺全量,只铺**最近动过的那几摞**。
+
+   三条货架都是服务器口径:**本地算不出「最近播放 / 最常播放」**
+   (那要播放次数与时间,只有服务器有),所以真实客户端各拉一份
+   (`getAlbumList2` 的 recent / frequent;最近添加是 newest)。 */
+function screenHome() {
+  const s = currentSong();
+  const a = albumOf(s);
+  const pct = progressOf(s, STATE.elapsed);
+
+  /* 正在播放是这一屏的主角:封面 + 「在听什么」+ 三颗键。
+     键**竖着排** —— 横着塞在 92 的封面右边会把歌名挤没。
+     还没播过东西时给一张说明性的卡(卡里有「随机播放」这颗入口),
+     而不是留白:那一条空白会被读成加载失败。
+     注意:可点击原型**一进门就有歌在放**(见 STATE.songId / STATE.playing),
+     所以这一屏的可点原型里落不到空态那一支 —— 那是真机冷启动才有的样子,
+     标记留着是为了让设计意图跟着代码走。 */
+  const now = s
+    ? `<div class="hero-card" style="${accentVars(a.accent)}">
+        ${cover(a, '', 'width:92px;height:92px;border-radius:20px')}
+        <div class="grow" style="min-width:0">
+          <div class="label">${STATE.playing ? '正在播放' : '已暂停'}</div>
+          <div class="t">${s.title}</div>
+          <div class="a">${s.artist} · ${a.name}</div>
+          <div class="time">${mmss(STATE.elapsed)} / ${mmss(s.dur)}</div>
+        </div>
+        <div class="stack">
+          <button class="icon-btn" data-act="prev">${ic('prev', 19)}</button>
+          <button class="go" data-act="toggle-play">${ic(STATE.playing ? 'pause' : 'play', 24)}</button>
+          <button class="icon-btn" data-act="next">${ic('next', 19)}</button>
+        </div>
+      </div>
+      <div class="prog-line" style="margin:0 var(--s5) var(--s2)"><i style="width:${pct}%"></i></div>`
+    : `<div class="hero-card" style="flex-direction:column;align-items:stretch;gap:var(--s4)">
+        <div style="display:flex;align-items:center;gap:var(--s4)">
+          <span style="width:46px;height:46px;display:grid;place-items:center;color:var(--fg-3);flex:0 0 auto">${ic('play2', 30)}</span>
+          <div class="grow" style="min-width:0">
+            <div class="t" style="font-size:var(--fs-lg)">还没有在播的歌</div>
+            <div class="a">随机放一首,或者从下面挑一张专辑。</div>
+          </div>
+        </div>
+        <button class="btn primary" data-act="shuffle-all" style="height:46px">${ic('shuffle', 18)} 随机播放</button>
+      </div>`;
+
+  /* 一条货架。**没内容就整条不出现** —— 空标题下面挂一行「暂无」只是噪音。 */
+  const shelf = (title, albums, trail = '') => albums.length ? `
+      <div class="section"><h2>${title}</h2>${trail ? `<span class="trail">${trail}</span>` : ''}</div>
+      <div class="rail"><div class="rail-track">${albums.map((x) => `
+        <div class="rail-item" data-album="${x.id}" data-morph>
+          ${cover(x, 'sq')}
+          <div><div class="name">${x.name}</div><div class="meta">${x.artist}</div></div>
+        </div>`).join('')}</div></div>` : '';
+
+  /* 「最近添加」那条 —— 货架从专辑换成**歌曲**(见 RECENT_ADDED_SONGS 的说明)。
+     骨架与 album 货架一致,只是取歌曲字段、点一下直接播那一首。 */
+  const songShelf = (title, songs, trail = '') => songs.length ? `
+      <div class="section"><h2>${title}</h2>${trail ? `<span class="trail">${trail}</span>` : ''}</div>
+      <div class="rail"><div class="rail-track">${songs.map((s) => {
+        const a = albumOf(s);
+        return `
+        <div class="rail-item" data-song="${s.id}" style="flex-basis:132px">
+          ${cover(a, 'sq')}
+          <div><div class="name">${s.title}</div><div class="meta">${s.artist}</div></div>
+        </div>`;
+      }).join('')}</div></div>` : '';
+
+  /* 底部托盘与音乐库 / 设置是**同一颗**(`bottom()`)。
+     2026-10-17 补:首页当初是从音乐库那两栏搬过来的,托盘漏了 ——
+     而首页是冷启动的落点,少了它这一屏就没有路去别处。 */
+  return `<div class="appbar">
+      <div>
+        <div class="h1">首页</div>
+        <div class="sub">${SERVER.name} · ${SERVER.songs} 首</div>
+      </div>
+      <span class="spacer"></span>
+      <button class="icon-btn quiet" data-go="search">${ic('search', 21)}</button>
+    </div>
+    <div class="scroll">
+      <div class="section" style="padding-top:0"><h2>正在播放</h2></div>
+      ${now}
+      ${songShelf('最近添加', RECENT_ADDED_SONGS.map(SONG_BY_ID), '10 月 12 日扫描')}
+      ${shelf('最近播放', RECENT_PLAYED.map(ALBUM_BY_ID))}
+      ${shelf('最常播放', MOST_PLAYED.map(ALBUM_BY_ID))}
+      <div class="section"><h2>歌单</h2><span class="count">${PLAYLISTS.length} 个</span></div>
+      <div class="rail" style="padding-bottom:var(--s2)"><div class="rail-track">
+        ${PLAYLISTS.map((p) => `
+          <div class="pl-chip" data-go="library">
+            ${cover(p, '', 'width:30px;height:30px;border-radius:9px')}
+            <div class="name">${p.name}</div>
+            <div class="n">${p.count} 首</div>
+          </div>`).join('')}
+      </div></div>
+      <div class="list-note">「最近播放」「最常播放」由服务器按播放统计给出,本地算不出来。
+原型库只带了 6 张专辑,三条货架各摆几张示意;真实客户端会各自铺满一屏。</div>
+      <div style="height:var(--s5)"></div>
+    </div>
+    ${bottom(s, pct, 'home')}`;
+}
+
+function screenLibrary(tab = 'songs') {
   const segs = [['albums', '专辑'], ['artists', '艺人'], ['songs', '歌曲'], ['playlists', '歌单']];
   const cur = currentSong();
-  const curA = albumOf(cur);
-  const pct = progressOf(cur, STATE.elapsed);
   let body = '';
 
+  /* 这一栏只管「库里有什么」:「继续收听」那张卡与「最近添加」货架
+     **2026-10-17 起归首页**(见 screenHome)—— 一屏是「最近动过的」,
+     一屏是全量,两处不再各铺一份。 */
   if (tab === 'albums') {
-    body = `<div class="hero-card" style="${accentVars(curA.accent)}">
-        ${cover(curA, '', 'width:92px;height:92px;border-radius:20px')}
-        <div class="grow" style="min-width:0">
-          <div class="label">${STATE.playing ? '继续收听' : '已暂停'}</div>
-          <div class="t">${curA.name}</div>
-          <div class="a">${curA.artist} · 播到 ${mmss(STATE.elapsed)} / ${mmss(cur.dur)}</div>
-        </div>
-        <button class="go" data-act="toggle-play">${ic(STATE.playing ? 'pause' : 'play', 20)}</button>
-      </div>
-      <div class="prog-line" style="margin:0 var(--s5) var(--s5)"><i style="width:${pct}%"></i></div>
-      <div class="section">
+    body = `<div class="section" style="padding-top:0">
         <h2>全部专辑</h2><span class="count">${ALBUMS.length} 张</span>
         <button class="sort-btn" data-sort-for="albums">${ic('sort', 13)} ${sortLabel(ALBUM_SORTS, STATE.albumSort)}</button>
       </div>
@@ -645,13 +779,7 @@ function screenLibrary(tab = 'albums') {
         <div class="album-tile" data-album="${a.id}" data-morph>
           ${cover(a, 'sq')}
           <div><div class="name">${a.name}</div><div class="meta">${a.artist} · ${a.year}</div></div>
-        </div>`).join('')}</div>
-      <div class="section"><h2>最近添加</h2><span class="trail">10 月 12 日扫描</span></div>
-      <div class="rail"><div class="rail-track">${ALBUMS.slice(2).map((a) => `
-        <div class="rail-item" data-album="${a.id}">
-          ${cover(a, 'sq')}
-          <div><div class="name">${a.name}</div><div class="meta">${a.artist}</div></div>
-        </div>`).join('')}</div></div>`;
+        </div>`).join('')}</div>`;
   } else if (tab === 'artists') {
     body = `<div class="section"><h2>常听艺人</h2><span class="count">${ARTISTS.length} 位</span></div>
       <div class="rail"><div class="rail-track">${ARTISTS.slice(0, 4).map((ar) => `
@@ -698,7 +826,7 @@ function screenLibrary(tab = 'albums') {
         `<button data-lib="${id}" aria-selected="${tab === id}">${label}</button>`).join('')}</div>
     </div>
     <div class="scroll">${body}<div style="height:var(--s5)"></div></div>
-    ${bottom(cur, pct, 'library')}`;
+    ${bottom(cur, null, 'library')}`;
 }
 
 /* 曲目行:专辑页与艺人页共用一份标记。
@@ -905,6 +1033,49 @@ function sheetQuality() {
               <div class="qdesc">${q.desc}</div>
             </div>
             <span class="tick${STATE.quality === q.id ? ' on' : ''}">${ic('check', 14)}</span>
+          </div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* 缓存上限面板 —— 与转码质量同一副骨架(选项行 + 勾)。
+   面板里连「已用多少」一起说:上限只有跟占用摆在一起才有意义,
+   否则用户改完数字不知道现在是松了还是紧了。 */
+function cacheLimitOf(id) {
+  return CACHE_LIMITS.find((c) => c.id === id) || CACHE_LIMITS[3];
+}
+
+/* 体积文案。不到 1 GB 就别硬撑「0.1 GB」—— 该显示 MB 的时候显示 MB。 */
+function mbLabel(mb) {
+  if (mb >= 1024) {
+    const gb = mb / 1024;
+    return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`;
+  }
+  return `${Math.round(mb)} MB`;
+}
+
+/* 上限那一栏右边的话。0 不是「0 MB」—— 那读起来像额度用完了,
+   而它说的是「压根不写盘」。 */
+function cacheLimitLabel(id) {
+  const mb = cacheLimitOf(id).mb;
+  return mb ? mbLabel(mb) : '不缓存';
+}
+
+function sheetCache() {
+  return `<div class="sheet-scrim">
+    <div class="sheet">
+      <div class="handle"></div>
+      <h2>歌曲缓存 <span>已用 ${mbLabel(STATE.cacheUsedMb)}</span></h2>
+      <div class="sheet-note">听过的歌会在本机留一份,再听直接从本机取,断网也能放。上限到了会先扔掉最久没听的;<b>下载</b>是用户点名要的,不在这里面,永远不会被扔掉。开着「仅 Wi-Fi 下载」时,流量下不留新的缓存(已经留着的照旧能听)。</div>
+      <div class="sheet-body">
+        ${CACHE_LIMITS.map((c) => `
+          <div class="qopt" data-cache="${c.id}" role="radio" aria-selected="${STATE.cacheLimit === c.id}">
+            <div style="flex:1 1 auto">
+              <div class="qname">${c.name}</div>
+              <div class="qdesc">${c.desc}</div>
+            </div>
+            <span class="tick${STATE.cacheLimit === c.id ? ' on' : ''}">${ic('check', 14)}</span>
           </div>`).join('')}
       </div>
     </div>
@@ -1154,6 +1325,10 @@ function screenLyrics() {
   /* 歌词随整首歌的进度同步推进:播到哪儿,高亮就挪到哪儿。
      activeIx 用秒的占比取整 —— 等价于切歌时高亮回到第一行,而不需要单独的状态。 */
   const activeIx = Math.min(LYRICS.length - 1, Math.floor((elapsed / s.dur) * LYRICS.length));
+  /* 每一句都是**跳转落点**:点某一句就跳到那一段(见 click 里那个 data-seek-line
+     分支)。原型这套歌词没有时间轴,落点只能按整首摊行反推 —— 取**那一行的
+     中段**而不是起点:高亮用的是 floor(比例 × 行数),起点在浮点误差下会退到
+     上一行(点第三句、高亮停第二句)。 */
   return `${ambient(a)}
     <div class="appbar nav">
       <button class="icon-btn" data-back>${ic('back', 22)}</button>
@@ -1162,10 +1337,12 @@ function screenLyrics() {
       <span class="spacer"></span>
       <button class="icon-btn quiet" data-menu-for="song">${ic('more', 20)}</button>
     </div>
-    <!-- 点歌词回封面 —— 与「点封面看歌词」互为来路,进出都不必去够返回键。
-         拖动滚动不会触发 click,所以翻歌词不会误退回。 -->
-    <div class="lyrics" data-go="player" role="button" title="点一下回到封面">
-      ${LYRICS.map((l, i) => `<div class="lyric-line ${i === activeIx ? 'on' : i < activeIx ? 'past' : ''}">${l}</div>`).join('')}
+    <!-- 点某一句 = 跳到那一段;点**行以外的空白**(上下各 30% 的内边距)回封面 ——
+         与「点封面看歌词」互为来路,进出都不必去够返回键。两条都留着:
+         只剩返回键的话,歌词页就成了唯一一屏进得去出不来靠顶栏的地方。
+         拖动滚动不会触发 click,所以翻歌词不会误退、也不会误跳。 -->
+    <div class="lyrics" data-go="player" role="button" title="点某一句跳到那一段,点空白回到封面">
+      ${LYRICS.map((l, i) => `<div class="lyric-line ${i === activeIx ? 'on' : i < activeIx ? 'past' : ''}" data-seek-line="${i}" role="button" title="跳到这一句">${l}</div>`).join('')}
     </div>
     ${scrubBar(s, elapsed)}
     ${mediaControls()}`;
@@ -1313,6 +1490,33 @@ function screenSettings() {
         </div>
       </div>
 
+      <div class="section"><h2>缓存</h2></div>
+      <div class="card" style="margin:0 var(--s5)">
+        <div class="row" data-sheet="cache">
+          <span class="set-icon">${ic('stack', 18)}</span>
+          <div class="grow">
+            <div class="line1">歌曲缓存</div>
+            <div class="line2">${STATE.cacheLimit === 'off'
+              ? '已关闭：听过的歌每次都从服务器拉'
+              : '听过的歌留在本机，再听不用重新拉'}</div>
+          </div>
+          <span class="trail" style="color:var(--fg-2)">${cacheLimitLabel(STATE.cacheLimit)}</span>
+          ${ic('chevron', 17)}
+        </div>
+        <div class="divider"></div>
+        <div class="row" style="cursor:default">
+          <span class="set-icon">${ic('disc', 18)}</span>
+          <div class="grow">
+            <div class="line1">已用空间</div>
+            <div class="line2">${STATE.cacheLimit === 'off' || !STATE.cacheUsedMb
+              ? '缓存里还没有东西'
+              : `占用 ${mbLabel(STATE.cacheUsedMb)} · 上限 ${cacheLimitLabel(STATE.cacheLimit)}`}</div>
+          </div>
+          ${STATE.cacheUsedMb ? `<button class="btn ghost" data-act="clear-cache"
+            style="width:auto;height:34px;padding:0 15px;font-size:var(--fs-sm)">清除</button>` : ''}
+        </div>
+      </div>
+
       <div class="section"><h2>下载</h2></div>
       <div class="card" style="margin:0 var(--s5)">
         <div class="row" data-go="downloads">
@@ -1359,9 +1563,65 @@ function sheetSort() {
   </div>`;
 }
 
+/* ---------------- 应用图标 ----------------
+
+   这一屏**不是应用里的页面**,是设计交付物:把 tool/app_icon.py 出好的候选与定稿
+   原样摆出来挑。所有图形都走 ICON_SVG() —— 和落到 Android 上的 PNG 同一份矢量,
+   所以这里看到的带厚、辉光、两端就是装机上那个东西,不是「照着画的示意图」。 */
+function screenIcon() {
+  const pick = (v) => `
+    <div class="icon-cell${v.id === ICON_FINAL ? ' picked' : ''}">
+      ${ICON_SVG(v.id, { px: 96 })}
+      <span class="icon-cap"><b>${v.id}${v.id === ICON_FINAL ? ' · 已定' : ''}</b>${v.name}<br>${v.note}</span>
+    </div>`;
+
+  /* 按**真实像素尺寸**渲染,不是缩放截图 —— 「48px 还清不清楚」只能这么判。 */
+  const sizes = [192, 96, 48].map((px) => `
+    <div class="icon-cell">
+      ${ICON_SVG(ICON_FINAL, { px })}
+      <span class="icon-cap">${px}px</span>
+    </div>`).join('');
+
+  /* 遮罩预览要复现启动器的**合成结果**:先铺地面、再叠前景,一起被裁。
+     所以这里显式 ground:true(前景层本身是透明底的,地面由系统铺)。 */
+  const masks = ICON_MASKS.map((m) => `
+    <div class="icon-cell">
+      ${ICON_SVG(ICON_FINAL, { mode: 'adaptive', mask: m.shape, ground: true, px: 96 })}
+      <span class="icon-cap">${m.name}</span>
+    </div>`).join('');
+
+  return `<div class="appbar">
+      <div><div class="h1">应用图标</div><div class="sub">音乐元素 · 候选与定稿</div></div>
+    </div>
+    <div class="scroll">
+      <div class="section"><h2>候选</h2><span class="count">${ICON_VARIANTS.length} 个</span></div>
+      <div class="icon-grid">${ICON_VARIANTS.map(pick).join('')}</div>
+      <div class="list-note" style="padding-top:var(--s3)">
+        八个候选,画的是**音乐本身的东西** —— 均衡器、唱片、声波、音符;极光那套渐变与
+        辉光只当材质留在图形上,所以它和应用里的玻璃与氛围还是一家的。描着强调色那颗是
+        当前定稿;要换,改 tool/app_icon.py 里的 FINAL 再跑一次生成 —— 生成器是唯一真相,
+        别手改 icon.js。
+      </div>
+
+      <div class="section"><h2>定稿的尺寸</h2><span class="count">48px 是判据</span></div>
+      <div class="icon-row">${sizes}</div>
+      <div class="list-note" style="padding-top:var(--s3)">
+        启动器里最小那一档就是 48px —— 它在,整套就在。
+      </div>
+
+      <div class="section"><h2>启动器的遮罩</h2><span class="count">定稿 · 自适应</span></div>
+      <div class="icon-grid">${masks}</div>
+      <div class="list-note" style="padding-top:var(--s3)">
+        各家启动器裁的形状不一样(也有不裁的)。这里的地面与前景是按真机的顺序合成后才裁的,
+        所以弧的两端在圆形下去留多少,和装机上一致。水滴那条是近似路径,真机再校。
+      </div>
+      <div style="height:var(--s5)"></div>
+    </div>`;
+}
+
 /* ---------------- 视图表 ---------------- */
 
-const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort };
+const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort, cache: sheetCache };
 
 /* 弹层是叠在当前屏上的，不是某一屏专属 —— 专辑页的「队列」、设置里的
    「默认转码质量」、音乐库的「排序」都要能把同一张面板揭起来。之前只有
@@ -1376,13 +1636,17 @@ const VIEWS = {
   'add-route':    () => shell(withOverlay(screenAddRoute())),
   downloads:      () => shell(withOverlay(screenDownloads())),
   'new-playlist': () => shell(withOverlay(screenNewPlaylist())),
-  library:        (p) => shell(withOverlay(screenLibrary((p && p.lib) || 'albums'))),
+  home:           () => shell(withOverlay(screenHome())),
+  /* 默认落在「歌曲」:打开音乐库多半是想找一首具体的歌(2026-10-17 用户要求)。 */
+  library:        (p) => shell(withOverlay(screenLibrary((p && p.lib) || 'songs'))),
   album:          (p) => { const a = ALBUM_BY_ID((p && p.album) || STATE.albumId); return shell(withOverlay(screenAlbum(a.id)), { home: true, accent: a.accent, c1: a.c1 }); },
   artist:         (p) => { const ar = ARTIST_BY_ID((p && p.artist) || STATE.artistId); return shell(withOverlay(screenArtist(ar.id)), { home: true, accent: ar.accent, c1: ar.c1 }); },
   player:         () => shell(withOverlay(screenPlayer()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
   lyrics:         () => shell(withOverlay(screenLyrics()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
   search:         () => shell(withOverlay(screenSearch())),
   settings:       () => shell(withOverlay(screenSettings())),
+  /* 设计交付物,不对应应用里的一屏 —— 见 BOARD 的最后一条 */
+  icon:           () => shell(withOverlay(screenIcon())),
 };
 
 /* ============================================================
@@ -1393,7 +1657,8 @@ const BOARD = [
   ['服务器与线路',    '线路状态 / 自动择优',  () => shell(screenServers())],
   ['服务器设置',      '一个账号，多个地址',    () => shell(screenServerConfig())],
   ['添加服务器',      '选择接入类型',         () => shell(screenAddServer())],
-  ['音乐库 · 专辑',   '继续收听 + 封面网格',  () => shell(screenLibrary('albums'))],
+  ['首页',           '正在播放 + 三条货架',  () => shell(screenHome())],
+  ['音乐库 · 专辑',   '封面网格 + 排序',      () => shell(screenLibrary('albums'))],
   ['音乐库 · 艺人',   '方块头像 + 常听',      () => shell(screenLibrary('artists'))],
   ['音乐库 · 歌曲',   '全部歌曲',             () => shell(screenLibrary('songs'))],
   ['音乐库 · 歌单',   '我的歌单',             () => shell(screenLibrary('playlists'))],
@@ -1414,6 +1679,10 @@ const BOARD = [
   ['新建歌单',        '命名 + 封面色',        () => shell(screenNewPlaylist())],
   ['添加线路',        '地址 + 标记',          () => shell(screenAddRoute())],
   ['上下文菜单',      '歌曲的「⋯」',          () => shell(screenPlayer() + sheetMenu(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
+  /* 最后一格不是应用里的页面,是**设计交付物**:图标的候选与定稿。
+     放最后是因为它不参与上面那条「服务器 → 首页 → 库 → 详情 → 播放」的链路
+     —— 它回答的是「这个应用在启动器里长什么样」,跟界面结构无关。 */
+  ['应用图标',        '音乐元素 · 候选与定稿', () => shell(screenIcon())],
 ];
 
 function boardFrames() {
@@ -1436,7 +1705,7 @@ function renderBoard(root) {
     <div class="board-wrap">
       <div class="board-head">
         <h1>Nordic — 音乐播放器原型</h1>
-        <p>手机竖屏，16 屏，<b>深色 / 浅色两套</b>。强调色<b>从当前封面里提取</b> —— 每张专辑驱动界面的光晕、进度条与选中态，
+        <p>手机竖屏，22 格（21 屏 + 应用图标），<b>深色 / 浅色两套</b>。强调色<b>从当前封面里提取</b> —— 每张专辑驱动界面的光晕、进度条与选中态，
           所以每张专辑有自己的气质。深色靠发光撑层次，浅色把发光几乎关掉、改用留白与描边；两套共用同一份结构，差异全部落在 token 上。
           这是并排铺开的设计板；<b>要点击走完整条链路，请开 <a href="player.html">player.html</a></b>，那边的搜索、开关、进度都能直接上手点。</p>
       </div>
@@ -1480,28 +1749,48 @@ function renderStage(root) {
     if (morphEl) { morphEl.style.viewTransitionName = ''; morphEl = null; }
   };
 
-  const render = (morph = false) => {
+  const render = (morph = false, nav = '') => {
     const view = VIEWS[STATE.view];
     if (!view) return;
     const paint = () => {
       slot().innerHTML = view(STATE.params) + toastMarkup();
+      /* 推入 / 返回时新页**不自己淡入** —— 那件事改由整页滑动承担。
+         写成行内样式而不是类:行内跟着这次 paint 的节点一起生灭,
+         撤标记时不会把淡入动画重新启动一遍。 */
+      if (nav) {
+        const screen = slot().querySelector('.screen');
+        if (screen) screen.style.animation = 'none';
+      }
     };
 
-    if (!morph || !supportsVT) { clearMorph(); return paint(); }
+    if ((!morph && !nav) || !supportsVT) { clearMorph(); return paint(); }
 
     /* 起名必须在快照之前，撤名必须在快照之后，否则两端拿不到同一对元素。 */
     const named = [];
-    if (morphEl) { morphEl.style.viewTransitionName = 'cover-art'; named.push(morphEl); }
+    if (morph && morphEl) { morphEl.style.viewTransitionName = 'cover-art'; named.push(morphEl); }
+    /* 滑的是**手机那一格**,不是整页 —— 舞台侧栏与说明文字不该跟着滑。
+       方向靠 <html data-nav>:View Transition 自己不知道这是「进」还是「退」。 */
+    if (nav) {
+      slot().style.viewTransitionName = 'phone';
+      document.documentElement.dataset.nav = nav;
+    }
 
     const t = document.startViewTransition(() => {
       paint();
+      if (!morph) return;
       /* 播放页与专辑页的大封面在这里点名 —— 名字只在过渡期间挂着。
          不能图省事写成标记里的静态样式：t.finished 撤名时会连静态值一起抹掉，
          第一次过渡之后那处封面就再也当不了起点或终点。 */
       const hero = slot().querySelector('.player-hero .cover, .album-hero .cover');
       if (hero) { hero.style.viewTransitionName = 'cover-art'; named.push(hero); }
     });
-    t.finished.finally(() => { named.forEach((el) => { el.style.viewTransitionName = ''; }); });
+    t.finished.finally(() => {
+      named.forEach((el) => { el.style.viewTransitionName = ''; });
+      if (nav) {
+        slot().style.viewTransitionName = '';
+        delete document.documentElement.dataset.nav;
+      }
+    });
     /* 起点是一次性的，用完就丢，免得下一次 back() 把它当成起点再点一次名。 */
     morphEl = null;
   };
@@ -1516,13 +1805,13 @@ function renderStage(root) {
     toastTimer = window.setTimeout(() => { STATE.toast = ''; render(); }, 1600);
   };
 
-  const go = (name, params) => {
+  const go = (name, params, nav = 'push') => {
     const morph = name === 'player' || name === 'album';
     if (name !== STATE.view) STATE.history.push({ view: STATE.view, params: STATE.params });
     STATE.view = name;
     STATE.params = params || {};
     STATE.overlay = '';
-    render(morph);
+    render(morph, nav);
   };
 
   const back = () => {
@@ -1532,10 +1821,10 @@ function renderStage(root) {
       STATE.params = prev.params || {};
     } else {
       STATE.view = 'library';
-      STATE.params = { lib: 'albums' };
+      STATE.params = { lib: 'songs' };
     }
     STATE.overlay = '';
-    render(true);
+    render(true, 'back');
   };
 
   root.innerHTML = `
@@ -1629,11 +1918,11 @@ function renderStage(root) {
        <body> 上，而 body 是所有点击的祖先。closest() 在没命中更近的 [data-*] 元素时
        会一路匹配到 body，于是「点遮罩关闭弹层」这条分支永远走不到（点遮罩会变成
        重新应用一次主题）。所以主题按钮改用独立属性 data-set-theme。 */
-    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-dl-del],[data-hue],[data-route-tag],[data-sort-for],[data-sort]');
+    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-seek-line],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-dl-del],[data-hue],[data-route-tag],[data-sort-for],[data-sort],[data-cache]');
     if (t) {
       const d = t.dataset;
       if (d.back !== undefined) return back();
-      if (d.tab) { STATE.history = []; return go(d.tab); }
+      if (d.tab) { STATE.history = []; return go(d.tab, null, ''); }
       if (d.lib) { STATE.params = { lib: d.lib }; return render(); }
       if (d.song) {
         /* 从顶部播放坞点进播放页时，坞里也有同一张封面 —— 但那块的尺寸太小，
@@ -1658,6 +1947,17 @@ function renderStage(root) {
       if (d.setTheme) { applyTheme(d.setTheme); return render(); }
       if (d.kindCfg) { STATE.serverKindCfg = d.kindCfg; STATE.serverDirty = true; return render(); }
       if (d.quality) { STATE.quality = d.quality; STATE.overlay = ''; return render(); }
+      /* 换上限只是改个数 —— 已经用掉的照旧留在那儿(等它自然被淘汰)。
+         顺手再夹一次:改成比现在占用还小的额度,占用立刻降到上限之下。 */
+      if (d.cache) {
+        STATE.cacheLimit = d.cache;
+        const mb = cacheLimitOf(d.cache).mb;
+        if (!mb) STATE.cacheUsedMb = 0;
+        else if (STATE.cacheUsedMb > mb) STATE.cacheUsedMb = mb;
+        STATE.overlay = '';
+        toast(STATE.cacheLimit === 'off' ? '已关闭缓存,本机不再留音频' : `缓存上限改为 ${mbLabel(mb)}`);
+        return render();
+      }
       if (d.sheet) { STATE.overlay = STATE.overlay === d.sheet ? '' : d.sheet; return render(); }
       if (d.sortFor) { STATE.sortFor = d.sortFor; STATE.overlay = 'sort'; return render(); }
       if (d.sort) {
@@ -1666,6 +1966,16 @@ function renderStage(root) {
         /* 重新选一次「随机」就换一副牌 —— 同一副牌点来点去都是一样的顺序。 */
         if (d.sort === 'random') STATE.randomSeed = (STATE.randomSeed * 7 + 13) % 9973;
         STATE.overlay = '';
+        return render();
+      }
+      /* 点某一句歌词 → 跳到那一段。落点与高亮同一套规则(见 screenLyrics):
+         没有时间轴,按整首摊行取那一行的**中段** —— 取起点会在浮点误差下
+         退到上一行。唱到一半点一句,应该落在这一句上,不该「点了没反应」。 */
+      if (d.seekLine !== undefined) {
+        const i = Number(d.seekLine);
+        const lines = LYRICS.length;
+        if (!lines || !currentSong().dur) return;
+        STATE.elapsed = Math.round(((i + 0.5) / lines) * currentSong().dur);
         return render();
       }
       if (d.go) return go(d.go);
@@ -1702,6 +2012,14 @@ function renderStage(root) {
         return render();
       }
       if (d.act === 'shuffle') { STATE.shuffle = !STATE.shuffle; return render(); }
+      /* 首页空态那颗「随机播放」:随便挑一首开播(原型没有真队列,示意即可)。 */
+      if (d.act === 'shuffle-all') {
+        const n = Math.floor(Math.random() * SONGS.length);
+        STATE.songId = SONGS[n].id;
+        STATE.elapsed = 0;
+        STATE.playing = true;
+        return render();
+      }
       if (d.act === 'repeat')  { STATE.repeat  = !STATE.repeat;  return render(); }
       if (d.act === 'ping-all') {
         STATE.pinging = true;
@@ -1778,6 +2096,13 @@ function renderStage(root) {
         toast('已从原型移除（刷新页面可以找回来）');
         /* 移除后退出到服务器列表 —— 停在已移除的设置页里没有意义 */
         return go('servers');
+      }
+      if (d.act === 'clear-cache') {
+        const freed = STATE.cacheUsedMb;
+        if (!freed) return;
+        STATE.cacheUsedMb = 0;
+        toast(`已清除缓存,释放 ${mbLabel(freed)}`);
+        return render();
       }
       if (d.act === 'dl-song') { dlEnqueue('song', currentSong()); toast('已加入下载队列'); return render(); }
       if (d.act === 'dl-album') {

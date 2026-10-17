@@ -1,10 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:path_provider/path_provider.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../data/download_manager.dart';
 import '../data/library_cache.dart';
+import '../data/media_cache.dart';
 import '../data/models.dart';
 import '../data/server_config.dart';
 import '../data/subsonic_client.dart';
@@ -28,11 +34,15 @@ class AppState extends ChangeNotifier {
     required this.quality,
     required this.downloadManager,
     required this.libraryCache,
+    required this.mediaCache,
     this._dio,
   }) {
     // 下载器的状态变化要能被界面看到,而界面只订阅 [AppState] 一个对象 ——
     // 这里把它接进来,省掉「下载页要多订阅一个 provider」这件事。
     downloadManager.addListener(notifyListeners);
+    // 缓存同理:占用与上限都在设置页显示,淘汰又是播放层在后台触发的
+    // (听一首歌就可能腾出几百 MB),所以界面得跟着动。
+    mediaCache.addListener(notifyListeners);
   }
 
   final ConfigStore configStore;
@@ -42,6 +52,12 @@ class AppState extends ChangeNotifier {
 
   /// 音乐库快照的本机缓存(见 `data/library_cache.dart`)。
   final LibraryCache libraryCache;
+
+  /// 「听过的歌留一份」的音频缓存(见 `data/media_cache.dart`)。
+  ///
+  /// 与 [downloadManager] 是两件事:**下载**是用户点名要的,不会被自动删;
+  /// **缓存**是播放时顺手留的,上限一到就按最久没听淘汰。
+  final MediaCache mediaCache;
 
   /// 建客户端时用的 HTTP 客户端。生产走默认(见 [clientFor]),
   /// 测试塞一个假 Dio 进来 —— 写歌单这类操作要验的是「发了什么、本地跟着变了吗」。
@@ -129,6 +145,8 @@ class AppState extends ChangeNotifier {
     await configStore.clearServer();
     // 缓存也清掉 —— 那台机器的库不再属于这里。
     await libraryCache.clear();
+    // 音频缓存同理:留着的是那台服务器上的曲子,换一台之后既听不到也用不上。
+    await mediaCache.clear();
     _server = null;
     _repository = null;
     _library = LibrarySnapshot.empty;
@@ -138,12 +156,27 @@ class AppState extends ChangeNotifier {
   }
 
   /// 更新线路(增删 / 改名 / 锁定)。
+  ///
+  /// 两处都要改:配置落盘,以及**正在用的那个客户端** —— 它手上那份线路是
+  /// 建库时拷贝的,不推过去的话界面上的勾会动、请求却照旧走旧线路
+  /// (真机报的「线路切换无效」)。测速结果同步清掉被删线路的条目,
+  /// 免得「N / M 条可用」算错。
   Future<void> updateRoutes(List<ServerRoute> routes) async {
     final current = _server;
     if (current == null) return;
+
+    final before = activeRoute;
     final updated = current.copyWith(routes: routes);
     await configStore.saveServer(updated);
     _server = updated;
+    _repository?.client.setRoutes(routes);
+
+    final ids = routes.map((r) => r.id).toSet();
+    _pings = {
+      for (final entry in _pings.entries)
+        if (ids.contains(entry.key)) entry.key: entry.value,
+    };
+    _routeMaybeChanged(before);
     notifyListeners();
   }
 
@@ -159,6 +192,7 @@ class AppState extends ChangeNotifier {
     final repo = _repository;
     if (repo == null) return const {};
 
+    final before = activeRoute;
     _pinging = true;
     notifyListeners();
     try {
@@ -169,9 +203,98 @@ class AppState extends ChangeNotifier {
       await Future<void>.delayed(const Duration(milliseconds: 600));
       _pinging = false;
       // 线路可用性变了,当前生效线路也可能变 —— 界面上的延迟数字要跟着更新。
+      _routeMaybeChanged(before);
       notifyListeners();
     }
     return _pings;
+  }
+
+  // ---------------- 歌曲翻页 ----------------
+
+  /// 一页多少首。
+  ///
+  /// 取 1000:实测这台 Navidrome 对 `songCount=1000/2000/20000` 都返回全量,
+  /// 500 并不是它的硬上限(旧注释的「卡在 500」是误判)。常见个人库(几百到
+  /// 一千首)**一个请求就完整**,于是「最近添加」当场就是对的。
+  /// 真有服务器卡在 500 时,首屏拿 500、`songsComplete=false`,
+  /// 由后台补齐继续取 —— 逻辑不变。
+  static const _songPageSize = 1000;
+
+  /// 后台补齐时最多再翻多少页(一页 1000,即一万首封顶)。
+  /// 防的是「极端大库把启动后的网络一路占着」。
+  static const _maxAutoPages = 10;
+
+  /// 已经在翻了吗 —— 界面据此禁用「继续加载」那颗按钮,别叠出两次请求。
+  bool _loadingMoreSongs = false;
+  bool get loadingMoreSongs => _loadingMoreSongs;
+
+  /// 已经从服务器**取回过的原始条数**(不是去重后的条数)。
+  ///
+  /// 翻页的 offset 必须按这个走:去重会丢掉重叠的条目,拿 `songs.length`
+  /// 当 offset 会让下一页与上一页重叠,一直取不到底。
+  int _songsFetched = 0;
+
+  /// 「全部歌曲」那一栏滚到底时调一次:再取一页并上去。
+  ///
+  /// 返回是否**真的**又取到了一页(界面据此决定要不要再滚一次继续触发)。
+  Future<bool> loadMoreSongs() async {
+    final repo = _repository;
+    if (repo == null || _loadingMoreSongs || _library.songsComplete) {
+      return false;
+    }
+
+    _loadingMoreSongs = true;
+    notifyListeners();
+    try {
+      final offset = _songsFetched;
+      final page = await repo.allSongs(size: _songPageSize, offset: offset);
+      _songsFetched += page.length;
+      _library = mergeSongPage(
+        _library,
+        page,
+        complete: page.length < _songPageSize,
+        sort: songSort,
+      );
+      // 缓存跟着更新:不然重启之后「全部歌曲」又只剩第一页,
+      // 而用户上一次明明已经翻到底了。
+      //
+      // **不 await**:每一次都 await 一遍全量编码 + fsync,在这一条后台补齐的
+      // 路上会连着压十来次(而且载荷越写越大),那是平方级的活。写这一头由
+      // `LibraryCache` 自己排队合并(见那儿的 `write`):写与写之间、写与清之间
+      // 都不会打架,腾出去的只是「翻页这一下要不要等它」。
+      unawaited(libraryCache.write(_serverKey(_server!), _library));
+      return page.isNotEmpty;
+    } on SubsonicException catch (e) {
+      // 翻页失败不该把已经拿到的那些弄没 —— 记一句,列表照旧。
+      _refreshError = e.message;
+      _fromCache = true;
+      return false;
+    } finally {
+      _loadingMoreSongs = false;
+      notifyListeners();
+    }
+  }
+
+  /// 生效线路换成别的了就把正在放的那一首挪过去。
+  ///
+  /// 择优选出来的那条与**这一首的流地址**是绑死的:地址在播放源装载时就拼好了
+  /// (见 `SubsonicRepository.streamUri`),不重新装载的话界面会说「正在走新线路」,
+  /// 而声音还是从旧那条流里出来的 —— 真机报的「线路切换无效」。
+  ///
+  /// 走的是**取值函数**而不是 import 播放层:播放层反过来要读这个对象的仓库,
+  /// 硬连起来就成环了(与下载器同一套做法,见 [downloadManager])。
+  /// 换线路之后要做的第二件事 —— 由 `main.dart` 填成播放层的 `retargetRoute`。
+  ///
+  /// 用可写字段而不是构造参数:应用状态先建(播放服务要读它的仓库),
+  /// 播放层要等平台把前台服务拉起来才存在,构造那一刻还没有它。
+  /// 没人填(测试 / 没有播放层)就是空操作。
+  Future<void> Function()? onRouteChanged;
+
+  void _routeMaybeChanged(ServerRoute? before) {
+    final after = activeRoute;
+    if (before?.id == after?.id) return;
+    final retarget = onRouteChanged;
+    if (retarget != null) unawaited(retarget());
   }
 
   Map<String, RoutePing> _pings = const {};
@@ -237,6 +360,10 @@ class AppState extends ChangeNotifier {
       '${config.kind.name}|${config.username}|'
       '${config.routes.isEmpty ? '' : config.routes.first.url}';
 
+  /// 静默刷新时,距上次同步还不到这个时长就直接跳过网络,减少无谓请求。
+  /// 手动刷新不受影响,依然会如实去问服务器。
+  static const _cacheFresh = Duration(minutes: 1);
+
   /// 拉取音乐库首页需要的全部数据。
   ///
   /// 并发拉而不是串行 —— 四个端点互不依赖,串起来会让进音乐库白等三倍时间。
@@ -244,6 +371,8 @@ class AppState extends ChangeNotifier {
   Future<void> loadLibrary({bool silent = false}) async {
     final repo = _repository;
     if (repo == null) return;
+
+    if (silent && _fromCache && _cachedAt != null && DateTime.now().difference(_cachedAt!) < _cacheFresh) return;
 
     if (!silent) {
       _phase = LoadPhase.loading;
@@ -263,17 +392,33 @@ class AppState extends ChangeNotifier {
         // 本地算不出来,只有服务器知道。
         repo.albums(sort: albumSort),
         repo.artists(),
-        repo.allSongs(),
+        // **只拉第一页**(一页 [_songPageSize] 首):常见个人库一次就完整,
+        // 更大的库余下的由后台补齐 + 滚动懒加载(见 [loadMoreSongs] 与
+        // `_completeSongs`)—— 全拉完在超大库上就是几十个往返压在启动路径上。
+        repo.allSongs(size: _songPageSize),
         repo.playlists(),
-        repo.recentlyAdded(),
+        // 首页那两条货架。与上面走**同一个端点**(不同 type),并行发出去,
+        // 失败也一起失败 —— 不会因为多这两条把这一轮变得更脆。
+        repo.albumList(AlbumSort.recent),
+        repo.albumList(AlbumSort.frequent),
       ]);
 
+      final songs = results[2] as List<Song>;
+      _songsFetched = songs.length;
       _library = LibrarySnapshot(
         albums: results[0] as List<Album>,
         artists: results[1] as List<Artist>,
-        songs: sortSongs(results[2] as List<Song>, songSort),
+        songs: sortSongs(songs, songSort),
         playlists: results[3] as List<Playlist>,
-        recentlyAdded: results[4] as List<Album>,
+        // 旧的专辑口径货架不再单独拉一次(`repo.recentlyAdded()` 是一次白花的
+        // 往返):「最近添加」现在铺歌曲,由下面这一行从已拉的 `songs` 本地排出来。
+        recentlyAdded: const [],
+        recentlyAddedSongs: recentlyAddedSongsOf(songs),
+        recentlyPlayed: results[4] as List<Album>,
+        mostPlayed: results[5] as List<Album>,
+        // 一页就装下了(不足一页)才叫全集 —— 「全部歌曲」那一栏据此决定
+        // 还要不要继续翻、以及页脚有没有一句「已到全部」。
+        songsComplete: songs.length < _songPageSize,
       );
       _phase = LoadPhase.ready;
       _error = null;
@@ -283,13 +428,22 @@ class AppState extends ChangeNotifier {
       _refreshError = null;
       _cachedAt = DateTime.now();
       // 缓存**在通知界面之前**写完:它是「顺手」的事,但不能飘在后台 ——
-      // 飘着的话,下一次冷启动可能正好撞上没写完的那一份,而这台机器上
-      // 一直开着的东西(测试、桌面端)还会因为文件句柄和清理动作打架。
+      // 飘着的话,用户切到别的屏、甚至下一次冷启动可能正好撞上没写完的那一份。
+      // 「写与写之间、写与清之间撞车」那一半现在由 `LibraryCache` 的合并写者
+      // 兜住(见那儿的 `write` / `settle`),这里 **await** 是为了这条硬约定:
+      // `await loadLibrary()` 之后,读同一份缓存一定读得到刚取回的库。
       // write 自己吞掉写失败,所以这里不必防。
       await libraryCache.write(_serverKey(_server!), _library);
       // 上面已经把收藏那一轮发出去了,这里只等它落地 —— 不等也行,
       // 但等一等「心形状态」与「库」就是同时到位的,不会先画一排空心的心。
       unawaited(starred);
+      // 首屏那一页之外还有曲子就在**后台**接着取:一是「全部歌曲」不该停在
+      // 500/1000,二是「最近添加」必须排全量才对得上服务器。取完落进缓存,
+      // 下次冷启动直接从缓存拿全,不必再翻。
+      if (!_library.songsComplete) {
+        _completing = _completeSongs().whenComplete(() => _completing = null);
+        unawaited(_completing);
+      }
     } on SubsonicException catch (e) {
       _failLoad(e.message, isAuth: e.isAuthFailure, isNetwork: e.isNetworkFailure);
     } catch (e) {
@@ -297,6 +451,27 @@ class AppState extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  /// 后台把剩下的曲目取全。
+  ///
+  /// 首屏只拉一页(`_songPageSize`);曲子更多的库在后台一页页补齐 ——
+  /// 不这么做的话,「全部歌曲」永远停在首屏那一页,而**「最近添加」会排错**:
+  /// `search3` 是 `created` 升序,最新的歌排在最后一页,没取到就排不出来。
+  ///
+  /// 失败就停(下一轮刷新会再来),不弹错 —— 这是后台动作,不该打断浏览。
+  Future<void> _completeSongs() async {
+    var pages = 0;
+    while (!_library.songsComplete && pages < _maxAutoPages) {
+      if (!await loadMoreSongs()) return;
+      pages++;
+    }
+  }
+
+  /// 后台补齐那一轮的 future。测试要等它落地才能断言「总共发了几个请求」,
+  /// 界面不关心(它是 fire-and-forget)。没有在补时给一个已完成的 future。
+  Future<void> get songsSettled => _completing ?? Future<void>.value();
+
+  Future<void>? _completing;
 
   /// 刷新失败时的处置。
   ///
@@ -352,13 +527,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       final albums = await repo.albums(sort: sort);
-      _library = LibrarySnapshot(
-        albums: albums,
-        artists: _library.artists,
-        songs: _library.songs,
-        playlists: _library.playlists,
-        recentlyAdded: _library.recentlyAdded,
-      );
+      _library = _library.copyWith(albums: albums);
     } finally {
       _sortingAlbums = false;
       notifyListeners();
@@ -371,13 +540,7 @@ class AppState extends ChangeNotifier {
     if (sort == songSort) return;
     await configStore.saveSongSort(sort.name);
 
-    _library = LibrarySnapshot(
-      albums: _library.albums,
-      artists: _library.artists,
-      songs: sortSongs(_library.songs, sort),
-      playlists: _library.playlists,
-      recentlyAdded: _library.recentlyAdded,
-    );
+    _library = _library.copyWith(songs: sortSongs(_library.songs, sort));
     notifyListeners();
   }
 
@@ -458,15 +621,90 @@ class AppState extends ChangeNotifier {
   /// 每次都打一次服务器没必要。
   final Map<String, Lyrics> _lyricsCache = {};
 
+  /// 磁盘歌词缓存,键是歌曲 id。与 LibraryCache 同目录,文件叫 lyrics.json。
+  Map<String, dynamic> _lyricsDisk = {};
+  bool _lyricsDiskLoaded = false;
+
+  Future<File> _lyricsCacheFile() async {
+    Directory base;
+    try {
+      base = await getApplicationSupportDirectory();
+    } on MissingPluginException {
+      base = Directory.systemTemp;
+    }
+    final dir = Directory('${base.path}${Platform.pathSeparator}cache');
+    if (!dir.existsSync()) await dir.create(recursive: true);
+    return File('${dir.path}${Platform.pathSeparator}lyrics.json');
+  }
+
+  /// 读一次磁盘歌词缓存。读不到就当空 —— 歌词拿不到不该阻断播放。
+  Future<void> _loadLyricsDisk() async {
+    if (_lyricsDiskLoaded) return;
+    _lyricsDiskLoaded = true;
+    try {
+      final file = await _lyricsCacheFile();
+      if (!file.existsSync()) return;
+      final json = jsonDecode(await file.readAsString());
+      if (json is Map) _lyricsDisk = json.cast<String, dynamic>();
+    } catch (_) {
+      // 坏文件 / 没权限:当作没有缓存。
+    }
+  }
+
+  /// 把内存里的一份歌词补写进磁盘。失败不影响这次显示。
+  Future<void> _saveLyricsDisk(String songId, Lyrics lyrics) async {
+    _lyricsDisk[songId] = {
+      'synced': lyrics.synced,
+      'lines': [
+        for (final line in lyrics.lines)
+          {'text': line.text, 'start': line.start?.inMilliseconds},
+      ],
+    };
+    try {
+      final file = await _lyricsCacheFile();
+      await file.writeAsString(jsonEncode(_lyricsDisk), flush: true);
+    } catch (_) {
+      // 写不进就算了 —— 下次还走网络。
+    }
+  }
+
+  static Lyrics? _lyricsFromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final lines = <LyricLine>[];
+    for (final item in (raw['lines'] as List? ?? const [])) {
+      if (item is! Map) continue;
+      final text = item['text'];
+      if (text is! String) continue;
+      final start = item['start'];
+      lines.add(LyricLine(
+        text: text,
+        start: start is num
+            ? Duration(milliseconds: start.toInt())
+            : null,
+      ));
+    }
+    return Lyrics(lines: lines, synced: raw['synced'] == true);
+  }
+
   Future<Lyrics> lyricsFor(String songId) async {
     final cached = _lyricsCache[songId];
     if (cached != null) return cached;
+
+    // 磁盘那份先看一眼:重启之后再来听同一首,不必再打一次服务器。
+    await _loadLyricsDisk();
+    final disk = _lyricsFromJson(_lyricsDisk[songId]);
+    if (disk != null) {
+      _lyricsCache[songId] = disk;
+      return disk;
+    }
 
     final repo = _repository;
     if (repo == null) return Lyrics.empty;
 
     final lyrics = await repo.lyrics(songId);
     _lyricsCache[songId] = lyrics;
+    // 空歌词不落盘 —— 下次服务器上有了要能重新取到。
+    if (!lyrics.isEmpty) unawaited(_saveLyricsDisk(songId, lyrics));
     return lyrics;
   }
 
@@ -485,7 +723,11 @@ class AppState extends ChangeNotifier {
     await configStore.saveAutoRoute(value);
     // 开关是给**当前**这条连接用的,要立刻生效 —— 只落盘的话得等到
     // 下次重启应用才作数,用户会以为开关没反应。
+    final before = activeRoute;
     _repository?.client.autoRoute = value;
+    // 关掉自动择优等于改点名:生效线路可能当场换成锁定 / 首条那条,
+    // 正在放的那一首也要跟着换。
+    _routeMaybeChanged(before);
     notifyListeners();
     // 刚打开自动择优时手上可能还没有测速结果,顺手量一次,
     // 否则它会一直停在列表首条直到下一次请求。
@@ -508,6 +750,36 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------------- 歌曲缓存 ----------------
+
+  /// 缓存上限 —— 用户在设置里选的那一档。
+  CacheLimit get cacheLimit => CacheLimit.byId(configStore.loadCacheLimit());
+
+  /// 缓存眼下占了多少字节(不含半截文件)。
+  int get cacheUsedBytes => mediaCache.usedBytes;
+
+  /// 缓存里有几个文件。
+  int get cachedTrackCount => mediaCache.fileCount;
+
+  /// 换上限。**两处都要落**:设置里存档位名(以后增删档位不会把用户卡在一个
+  /// 再也选不中的值上),存储层要的是字节(它按字节淘汰)。
+  ///
+  /// 调小到低于当前占用时会当场淘汰 —— 用户改完数字就该看见占用跟着降。
+  Future<void> setCacheLimit(CacheLimit limit) async {
+    await configStore.saveCacheLimit(limit.id);
+    await mediaCache.setLimitBytes(limit.bytes);
+    notifyListeners();
+  }
+
+  /// 清空缓存,返回释放的字节数(界面拿它说一句「释放了 138 MB」)。
+  ///
+  /// 删掉的只是**缓存** —— 用户点名下载的那些在另一个目录里,一行都不动。
+  Future<int> clearCache() async {
+    final freed = await mediaCache.clear();
+    notifyListeners();
+    return freed;
+  }
+
   /// 建一个歌单。成功后就地把它插进本地快照 —— 不必整库重拉。
   ///
   /// 失败时抛 [SubsonicException] 而不是吞掉:这是用户主动发起的写操作,
@@ -515,13 +787,7 @@ class AppState extends ChangeNotifier {
   Future<Playlist> createPlaylist(String name) async {
     final repo = _requireRepository();
     final created = await repo.createPlaylist(name);
-    _library = LibrarySnapshot(
-      albums: _library.albums,
-      artists: _library.artists,
-      songs: _library.songs,
-      playlists: [created, ..._library.playlists],
-      recentlyAdded: _library.recentlyAdded,
-    );
+    _library = _library.copyWith(playlists: [created, ..._library.playlists]);
     notifyListeners();
     return created;
   }
@@ -558,15 +824,11 @@ class AppState extends ChangeNotifier {
   Future<void> deletePlaylist(String playlistId) async {
     final repo = _requireRepository();
     await repo.deletePlaylist(playlistId);
-    _library = LibrarySnapshot(
-      albums: _library.albums,
-      artists: _library.artists,
-      songs: _library.songs,
+    _library = _library.copyWith(
       playlists: [
         for (final p in _library.playlists)
           if (p.id != playlistId) p,
       ],
-      recentlyAdded: _library.recentlyAdded,
     );
     notifyListeners();
   }
@@ -593,13 +855,7 @@ class AppState extends ChangeNotifier {
     }
     if (!changed) return;
 
-    _library = LibrarySnapshot(
-      albums: _library.albums,
-      artists: _library.artists,
-      songs: _library.songs,
-      playlists: next,
-      recentlyAdded: _library.recentlyAdded,
-    );
+    _library = _library.copyWith(playlists: next);
     notifyListeners();
   }
 
@@ -683,6 +939,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     downloadManager.removeListener(notifyListeners);
+    mediaCache.removeListener(notifyListeners);
     super.dispose();
   }
 }

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nordic/data/download_manager.dart';
 import 'package:nordic/data/download_store.dart';
 import 'package:nordic/data/library_cache.dart';
+import 'package:nordic/data/media_cache.dart';
 import 'package:nordic/data/server_config.dart';
 import 'package:nordic/data/subsonic_client.dart';
 import 'package:nordic/data/sorting.dart';
@@ -30,13 +31,24 @@ void main() {
   );
 
   /// 按端点回不同载荷的假 Dio,顺带记下每个请求的完整 Uri。
-  Dio payloadDio(List<Uri> seen, Map<String, Map<String, dynamic>> byEndpoint) {
+  ///
+  /// [byQueryType] 给**同一个端点不同参数**用:`getAlbumList2` 是被首页那几条
+  /// 货架复用的(靠 `type` 区分),不给它按 type 分派的话,「最近播放」与
+  /// 「最常播放」会拿到同一份假数据,测出来像是接对了其实没有。
+  Dio payloadDio(
+    List<Uri> seen,
+    Map<String, Map<String, dynamic>> byEndpoint, {
+    Map<String, Map<String, dynamic>> byQueryType = const {},
+  }) {
     final dio = Dio(BaseOptions(validateStatus: (_) => true));
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, interceptor) {
         seen.add(options.uri);
         final endpoint = options.uri.pathSegments.last.replaceAll('.view', '');
-        final payload = byEndpoint[endpoint] ?? _ok(const {});
+        final type = options.uri.queryParameters['type'];
+        final payload = (type == null ? null : byQueryType[type]) ??
+            byEndpoint[endpoint] ??
+            _ok(const {});
         interceptor.resolve(Response<String>(
           requestOptions: options,
           statusCode: 200,
@@ -78,6 +90,13 @@ void main() {
         'getStarred2': _ok({'starred2': {}}),
       };
 
+  /// 音频缓存。**单独一个目录** —— 与下载、与库快照都不共用:
+  /// 它按自己的上限淘汰,混在一起会把别人的文件数进占用里。
+  Future<MediaCache> openAudioCache(Directory root) => MediaCache.open(
+        limitBytes: CacheLimit.gb1.bytes,
+        root: Directory('${root.path}${Platform.pathSeparator}audio'),
+      );
+
   Future<AppState> buildState(
     Dio dio,
     Directory root, {
@@ -99,6 +118,7 @@ void main() {
         wifiOnly: () => false,
       ),
       libraryCache: cache ?? await LibraryCache.open(root: root),
+      mediaCache: await openAudioCache(root),
       dio: dio,
     );
 
@@ -182,6 +202,7 @@ void main() {
         quality: state.quality,
         downloadManager: state.downloadManager,
         libraryCache: state.libraryCache,
+        mediaCache: state.mediaCache,
       );
 
       await expectLater(
@@ -344,6 +365,314 @@ void main() {
 
       await pending;
       expect(state.pinging, isFalse);
+    });
+  });
+
+  group('换线路', () {
+    late Directory root;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      root = await Directory.systemTemp.createTemp('nordic-routes');
+    });
+
+    tearDown(() async {
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+
+    test('改路线路当场落到正在用的客户端上', () async {
+      // 真机报的「线路切换无效」:配置改了,而客户端手上还是建库时那份拷贝。
+      final state = await buildState(payloadDio([], libraryFixtures()), root);
+      final client = state.repository!.client;
+
+      await state.updateRoutes(const [
+        ServerRoute(id: 'lan', name: '局域网', url: 'http://nas.example.com'),
+        ServerRoute(
+          id: 'wan',
+          name: '外网',
+          url: 'http://wan.example.com',
+          selected: true,
+        ),
+      ]);
+
+      expect(state.activeRoute?.id, 'wan', reason: '界面上的勾先动');
+      expect(
+        client.activeRoute?.id,
+        'wan',
+        reason: '客户端也得跟着换,不然请求照旧走旧线路 —— 那个勾就是假的',
+      );
+    });
+
+    test('生效线路真变了就通知播放层重载当前曲目', () async {
+      final state = await buildState(payloadDio([], libraryFixtures()), root);
+      var retargets = 0;
+      state.onRouteChanged = () async => retargets++;
+
+      // 没变(还是那条局域网)—— 不该惊动播放层。
+      await state.updateRoutes(const [
+        ServerRoute(id: 'lan', name: '局域网', url: 'http://nas.example.com'),
+      ]);
+      expect(retargets, 0, reason: '线路没换就重新装载,只是白等一次缓冲');
+
+      await state.updateRoutes(const [
+        ServerRoute(
+          id: 'wan',
+          name: '外网',
+          url: 'http://wan.example.com',
+          selected: true,
+        ),
+      ]);
+      expect(retargets, 1);
+    });
+  });
+
+  group('首页那几条货架', () {
+    // 首页的「最近添加 / 最近播放 / 最常播放」都是服务器口径(本地算不出来),
+    // 三个货架走的是**同一个端点**(`getAlbumList2`)的不同 `type`。
+    late Directory root;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      root = await Directory.systemTemp.createTemp('nordic-home');
+    });
+
+    tearDown(() async {
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+
+    /// 三条货架各给一份**认得出是谁**的数据 —— 接错了顺序当场就能看出来。
+    Map<String, Map<String, dynamic>> homeTypes() => {
+          'newest': _albumsPayload('刚加进来的'),
+          'recent': _albumsPayload('刚听过的'),
+          'frequent': _albumsPayload('听得最多的'),
+        };
+
+    test('三条货架各按自己的口径取,整合进同一份快照', () async {
+      final state = await buildState(
+        payloadDio([], libraryFixtures(), byQueryType: homeTypes()),
+        root,
+      );
+      await state.loadLibrary();
+
+      // 「最近添加」不再单独拉专辑货架 —— 它铺的是歌曲,由本地从 songs 排出来
+      // (见下面那一条)。所以这里只验另外两条服务器口径的货架。
+      expect(state.library.recentlyPlayed.map((a) => a.name), ['刚听过的']);
+      expect(state.library.mostPlayed.map((a) => a.name), ['听得最多的']);
+      // 整库那一栏仍是用户选的口径,没被这几条顶掉。
+      expect(state.library.albums.map((a) => a.name), ['可能', 'Ultraviolet']);
+    });
+
+    test('「最近添加」按入库时间降序铺歌曲', () async {
+      final state = await buildState(
+        payloadDio([], libraryFixtures(), byQueryType: homeTypes()),
+        root,
+      );
+      await state.loadLibrary();
+
+      // 夹具里三首的 created 是 2026-01-05 / 2025-01-02 / 2024-06-01,
+      // 所以「最近添加」应当是 s2 → s1 → s3。
+      expect(
+        state.library.recentlyAddedSongs.map((s) => s.id),
+        ['s2', 's1', 's3'],
+        reason: '「最近添加」是歌曲,按 Song.created 倒序,而不是专辑',
+      );
+    });
+
+    test('换歌曲排序后货架还在 —— 只改一份列表不能把别的弄丢', () async {
+      final state = await buildState(
+        payloadDio([], libraryFixtures(), byQueryType: homeTypes()),
+        root,
+      );
+      await state.loadLibrary();
+      await state.setSongSort(SongSort.artist);
+
+      expect(
+        state.library.mostPlayed.map((a) => a.name),
+        ['听得最多的'],
+        reason: '「改一份列表」的写法漏带上这几位,首页那一栏就会悄悄空掉',
+      );
+      expect(state.library.recentlyPlayed, isNotEmpty);
+      expect(state.library.recentlyAddedSongs, isNotEmpty);
+    });
+
+    test('缓存往返:重启之后首页照样有东西', () async {
+      final cache = await LibraryCache.open(root: root);
+      final first = await buildState(
+        payloadDio([], libraryFixtures(), byQueryType: homeTypes()),
+        root,
+        cache: cache,
+      );
+      await first.loadLibrary();
+
+      // 新实例、同一份缓存 —— 相当于冷启动。
+      final restored = await buildState(
+        payloadDio([], libraryFixtures(), byQueryType: homeTypes()),
+        root,
+        cache: cache,
+      );
+      await restored.loadCachedLibrary();
+
+      expect(restored.library.mostPlayed.map((a) => a.name), ['听得最多的']);
+      expect(restored.library.recentlyPlayed.map((a) => a.name), ['刚听过的']);
+    });
+  });
+
+  group('歌曲翻页', () {
+    // 一页 1000(见 `AppState._songPageSize`):常见个人库一个请求就完整,
+    // 更大的库由**后台**一页页补齐(滚动到底也会接着取)。这一组钉住:
+    // 翻页 offset、去重、后台补齐、「最近添加」随补齐重算。
+    late Directory root;
+    late List<Uri> seen;
+
+    /// 这一组会**连着翻页**,而翻页那一头现在不 `await` 写盘了
+    /// (见 `AppState.loadMoreSongs`)—— 写由 `LibraryCache` 排队合并。
+    /// 收尾删目录之前必须等它落定,否则 Windows 上就是
+    /// 「另一个程序正在使用此文件」。
+    late LibraryCache cache;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      root = await Directory.systemTemp.createTemp('nordic-paging');
+      cache = await LibraryCache.open(root: root);
+      seen = [];
+    });
+
+    tearDown(() async {
+      await cache.settle();
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+
+    /// 一台「有 1200 首」的假服务器:按 `songOffset` 切页,一页最多 `songCount`。
+    /// 三个数字都是**服务器口径**里的真值,不另存一份 —— 这样「取了几页」
+    /// 只能从发出去的请求看出来。
+    Dio pagingDio(int librarySize) {
+      Dio dio = Dio(BaseOptions(validateStatus: (_) => true));
+      dio.interceptors.add(InterceptorsWrapper(
+        onRequest: (options, interceptor) {
+          seen.add(options.uri);
+          final q = options.uri.queryParameters;
+          final count = int.tryParse(q['songCount'] ?? '500') ?? 500;
+          final offset = int.tryParse(q['songOffset'] ?? '0') ?? 0;
+          // 每首的入库时间按序号递增 —— 与真机 Navidrome 的 `search3` 一致:
+          // 序号越大越新,也就越靠后(升序)。这样「只排第一页」与「排全量」
+          // 的结果会明显不同,测试才验得出「补齐后重算」。
+          final songs = [
+            for (var i = offset; i < offset + count && i < librarySize; i++)
+              _song(
+                's$i',
+                '第 $i 首',
+                '艺人',
+                DateTime.utc(2026, 1, 1).add(Duration(hours: i)).toIso8601String(),
+              ),
+          ];
+          /* 专辑那一栏是 `totalSongs` 的依据(伺服器标称的总数取自 songCount 之和,
+             不是本地取到的条数)—— 不摆一张「有 1200 首」的专辑,
+             「还差多少」就永远算成 0。 */
+          final body = q.containsKey('songCount') && options.uri.path.contains('search3')
+              ? _ok({'searchResult3': {'song': songs, 'album': [], 'artist': []}})
+              : _ok({
+                  'albumList2': {
+                    'album': [
+                      {
+                        'id': 'al-all',
+                        'name': '整库',
+                        'artist': '艺人',
+                        'artistId': 'ar-1',
+                        'songCount': librarySize,
+                      }
+                    ]
+                  }
+                });
+          interceptor.resolve(Response<String>(
+            requestOptions: options,
+            statusCode: 200,
+            data: jsonEncode(body),
+          ));
+        },
+      ));
+      return dio;
+    }
+
+    Future<AppState> stateWith(int librarySize) async {
+      final state = await buildState(pagingDio(librarySize), root, cache: cache);
+      await state.loadLibrary();
+      return state;
+    }
+
+    test('首屏一页 1000 —— 常见库一个请求就完整', () async {
+      final state = await stateWith(900);
+
+      expect(state.library.songs.length, 900);
+      expect(state.library.songsComplete, isTrue);
+      final searches = seen.where((u) => u.path.contains('search3')).toList();
+      expect(searches.length, 1, reason: '一页装下了,不该再发第二页');
+      expect(searches.single.queryParameters['songCount'], '1000');
+    });
+
+    test('首屏之后后台接着补全 —— 不把几十个往返压在启动路径上', () async {
+      final state = await stateWith(1200);
+      // 首屏那一页已经回来了;后台补齐还没落地时,列表先给一页。
+      expect(state.library.songs.length, 1000);
+      expect(state.library.songsComplete, isFalse);
+
+      await state.songsSettled;
+
+      expect(state.library.songs.length, 1200);
+      expect(state.library.songsComplete, isTrue);
+      expect(state.library.songsMissing, 0);
+      final searches = seen.where((u) => u.path.contains('search3')).toList();
+      expect(searches.map((u) => u.queryParameters['songOffset']).toList(),
+          [null, '1000'], reason: 'offset 必须按「取回过的原始条数」走');
+    });
+
+    test('取到不足一页就到底了 —— 页脚那句「已取到全部」的依据', () async {
+      final state = await stateWith(1201);
+      await state.songsSettled;
+
+      expect(state.library.songs.length, 1201);
+      expect(state.library.songsComplete, isTrue);
+      expect(state.library.songsMissing, 0);
+      // 取全之后总数以实际条数为准,不再拿专辑 songCount 的估计值。
+      expect(state.library.totalSongs, 1201);
+    });
+
+    test('到底之后再喊一次不会白发请求', () async {
+      final state = await stateWith(1201);
+      await state.songsSettled;
+      seen.clear();
+
+      final again = await state.loadMoreSongs();
+
+      expect(again, isFalse);
+      expect(seen, isEmpty, reason: '已经取全了,不该再打服务器');
+    });
+
+    test('翻页按 id 去重 + 按当前口径重排', () async {
+      final state = await stateWith(2500);
+      await state.songsSettled;
+      // 换一个「新取的会插到中间」的口径,重排有没有做才看得出来。
+      await state.setSongSort(SongSort.title);
+
+      final ids = state.library.songs.map((s) => s.id).toList();
+      expect(ids.length, ids.toSet().length, reason: '按 id 去重,不该出重复行');
+      // 标题序:后一页不该整块挂在「第 100 首」后面。
+      final titles = state.library.songs.map((s) => s.title).toList();
+      expect(titles, orderedEquals([...titles]..sort()));
+    });
+
+    test('「最近添加」随补齐重算 —— 最新的歌在最后一页也能排到最前', () async {
+      // `search3` 是 created **升序**:最后那几页才是最新的。只排第一页时
+      // 货架会错(真机报的就是这条),补齐之后必须排对。
+      final state = await stateWith(1500);
+      await state.songsSettled;
+
+      final newest = state.library.recentlyAddedSongs;
+      // 夹具里 created 随序号递增,所以全量排出来应当是最后 20 首,倒序。
+      expect(
+        newest.map((s) => s.id).take(3).toList(),
+        ['s1499', 's1498', 's1497'],
+        reason: '补齐之后「最近添加」必须从全量里排,而不是只看第一页',
+      );
     });
   });
 
@@ -520,6 +849,21 @@ Map<String, dynamic> _album(String id, String name, String artist, int year) => 
       'year': year,
       'songCount': 1,
     };
+
+/// `getAlbumList2` 的一份载荷 —— 只有一张专辑,名字就是它的身份标签。
+Map<String, dynamic> _albumsPayload(String label) => _ok({
+      'albumList2': {
+        'album': [
+          {
+            'id': 'al-$label',
+            'name': label,
+            'artist': '艺人',
+            'artistId': 'ar-1',
+            'songCount': 1,
+          }
+        ]
+      }
+    });
 
 Map<String, dynamic> _song(String id, String title, String artist, String created) => {
       'id': id,

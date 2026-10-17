@@ -5,7 +5,6 @@ import 'playback/playback_controller.dart';
 import 'state/app_state.dart';
 import 'theme/nordic_theme.dart';
 import 'theme/theme_mode.dart';
-import 'theme/tokens.dart';
 import 'ui/routes.dart';
 import 'ui/shell/shell.dart';
 
@@ -21,14 +20,22 @@ class NordicApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final mode = NordicThemeMode.byName(state.themeModeName);
+    // **只 select 主题档位这一件事。**
+    //
+    // 根这里每重建一次都要重挂 `MaterialApp`(整棵路由树)并取两套主题,
+    // 而 `AppState` 的通知里混着下载进度(最多每秒四次)与缓存淘汰 ——
+    // `watch` 整个 `AppState` 就是把它们统统算成了「根要重建」。
+    // 根真正关心的只有主题档位(它自己会落盘,重启后仍是那个)。
+    final state = context.select<AppState, String?>((s) => s.themeModeName);
+    final mode = NordicThemeMode.byName(state);
 
     return MaterialApp(
       title: 'Nordic',
       debugShowCheckedModeBanner: false,
-      theme: NordicTheme.build(NordicTokens.light),
-      darkTheme: NordicTheme.build(NordicTokens.dark),
+      // 两套主题取的是 [NordicTheme] 里缓存好的那一份:`ColorScheme.fromSeed`
+      // 那趟调色计算不必每次重建都重来(见那里的说明)。
+      theme: NordicTheme.light,
+      darkTheme: NordicTheme.dark,
       // 设计的主场是深色(近黑底靠光晕撑层次),系统没表态时按深色走。
       themeMode: mode.material,
       navigatorKey: navigatorKey,

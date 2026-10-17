@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -13,12 +14,15 @@ import '../widgets/playback_controls.dart';
 import '../widgets/states.dart';
 import 'song_menu_sheet.dart';
 
-/// 歌词页 —— 逐句高亮,带时间轴时跟真实进度走。
+/// 歌词页 —— 逐句高亮,带时间轴时跟真实进度走;点某一句跳到那一段。
 ///
 /// 关键区别:服务器给的若是**带时间轴**的结构化歌词(Navidrome 的
 /// `getLyricsBySongId` 会给),高亮就落在当前时间该唱的那一句上;
 /// 只有纯文本时退回「按行数平均分布」,并在页面上**说明这一点** ——
 /// 假装时间已知会让高亮乱跳,用户会以为是坏了。
+///
+/// 点了某一句就跳到那一段([seekTargetForLine])—— 两句之间的空白仍是「回封面」:
+/// 与「点封面看歌词」互为来路的那一条不能丢,否则这一屏进出就只剩顶栏了。
 class LyricsScreen extends StatefulWidget {
   const LyricsScreen({super.key});
 
@@ -33,8 +37,17 @@ class _LyricsScreenState extends State<LyricsScreen> {
   Lyrics _lyrics = Lyrics.empty;
   bool _loading = false;
 
-  /// 已经滚到过的行号。只在换行那一刻滚 —— 每秒滚一次会互相打断。
-  int _lastScrolledIndex = -1;
+  /// 当前高亮的行 —— **不进 state**。
+  ///
+  /// 位置每秒跳好几次,而整屏真正变的只有**换行**那几下:走进 `setState` 就是
+  /// 把整屏(顶栏 + 一整列歌词 + 满屏氛围)重建一次,而且正好落在自动滚动那
+  /// 260ms 的动画里 —— 真机上「跳转动画一顿一顿」多半就是这几帧。
+  /// 每行自己订它、自己决定要不要重建(见 [_LyricLine]):换一行只有两行会动。
+  final _activeLine = ValueNotifier<int>(-1);
+
+  /// 已经排进帧后回调的那一行。同一行只排一次 —— 排重了就是好几个
+  /// `ensureVisible` 同时开跑、互相打断,那也读作「卡」。
+  int _scheduledFor = -1;
 
   /// 上一次滚动时的屏高。屏幕变了(横竖屏 / 分屏 / 系统栏)要重新居中一次,
   /// 否则那一句会停在偏移过的位置。
@@ -47,6 +60,10 @@ class _LyricsScreenState extends State<LyricsScreen> {
   /// (0.28 × 屏高),两处误差在第 10 行前后抵消、之后线性发散 —— 于是副歌一到
   /// 高亮句就钻进顶部渐隐带,最后四分之一干脆不滚了。几十把 key 的布局开销
   /// 远比这个偏差便宜。
+  ///
+  /// **每行都得有 key 且都要真的建出来**(见 [_LyricsList]:那一列不是 `ListView`):
+  /// 没建出来的行拿不到 context,`ensureVisible` 无从下手 —— 「刚点进歌词页不
+  /// 跳到当前句」正是这么来的(只有已经滚到眼前的那几行才有 context)。
   List<GlobalKey> _lineKeys = const [];
 
   /// 用户手动翻歌词的时刻。刚翻过就先别自动拉回 —— 读着读着被拽走很烦。
@@ -59,11 +76,17 @@ class _LyricsScreenState extends State<LyricsScreen> {
   PlaybackController? _playback;
 
   @override
+  void initState() {
+    super.initState();
+    _activeLine.addListener(_onActiveLineChanged);
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // 位置不进 state 的通知(见 PlaybackController.position),这一屏自己订。
-    // 逐句高亮要跟着走,所以这里按位置重建整屏是对的 —— 歌词就是几行文字,
-    // 而音乐库那边的货架绝不该被同一件事牵着重建。
+    // 订的是**换行**那一件事,不是每一次位置变化 —— 见 [_onPosition]。
+    // 音乐库那边的货架绝不该被同一件事牵着重建。
     final playback = context.read<PlaybackController>();
     if (identical(playback, _playback)) return;
     _playback?.position.removeListener(_onPosition);
@@ -71,12 +94,47 @@ class _LyricsScreenState extends State<LyricsScreen> {
   }
 
   void _onPosition() {
-    if (mounted) setState(() {});
+    final playback = _playback;
+    if (!mounted || playback == null) return;
+    // 位置每秒跳好几次,但整屏真正需要重画的只有**换行**那几下 ——
+    // 底部那条进度条自己订了位置通道(见 [PlaybackScrubber]),
+    // 不必把一个整屏(含满屏氛围模糊)拉进「每秒重建几次」的名单里。
+    final next = activeLyricIndex(
+      _lyrics,
+      playback.position.value,
+      duration: _duration,
+    );
+    if (next == _activeLine.value) return;
+    _activeLine.value = next; // 监听者负责滚动;每行自己负责重画
+  }
+
+  /// 换行了 / 换屏高了 —— 把这一句带到框中央。
+  ///
+  /// 只在换行那一刻滚,否则每秒滚一次会互相打断(见 [_scheduledFor])。
+  void _onActiveLineChanged() {
+    if (!mounted) return;
+    _scheduleScroll(_activeLine.value);
+  }
+
+  /// 排一次「滚到这一句」。放到帧后:那时 key 才量得出真实尺寸。
+  ///
+  /// **同一行只排一次**:位置每秒跳好几次,每次都排一个帧后回调的话,
+  /// 好几个 `ensureVisible` 会同时开跑、互相打断 —— 那也读作「卡」。
+  /// 「已经滚过了」用 [_scheduledFor] 记,拿不到 context 时把它清回 -1
+  /// 让下一跳再试(见 [_scrollToLine])。
+  void _scheduleScroll(int index) {
+    if (index < 0 || index == _scheduledFor) return;
+    _scheduledFor = index;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToLine(index));
+    // 帧后回调要有帧才跑 —— 换行那一下未必伴随一次重建(位置是不进 state 的),
+    // 这里主动催一帧,免得滚动一直等到下一次别的什么重建才发生。
+    WidgetsBinding.instance.scheduleFrame();
   }
 
   @override
   void dispose() {
     _playback?.position.removeListener(_onPosition);
+    _activeLine.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -87,7 +145,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
       _loading = true;
       _loadedForSongId = songId;
       _lyrics = Lyrics.empty;
-      _lastScrolledIndex = -1;
+      _activeLine.value = -1;
     });
 
     final lyrics = await context.read<AppState>().lyricsFor(songId);
@@ -97,33 +155,20 @@ class _LyricsScreenState extends State<LyricsScreen> {
       _loading = false;
       // 行数变了就得换一批 key —— key 与行一一对应,错位会让滚动落到别处。
       _lineKeys = List.generate(lyrics.lines.length, (_) => GlobalKey());
-      _lastScrolledIndex = -1;
     });
+    // 歌词到手就立刻把高亮与滚动定到当前那一句 —— 进来时歌已经放了一半是常态,
+    // 「刚点进歌词页停在第一句」就是这么来的。这里的 key 是一批新的,
+    // 所以把「已经滚过哪一行」的记账清掉,逼一次重新落点。
+    _scheduledFor = -1;
+    _onPosition();
+    _scheduleScroll(_activeLine.value);
   }
 
-  /// 当前该高亮的行号。
-  ///
-  /// 有时间轴时按 [LyricLine.start] 找 —— **取最后一个 start ≤ 当前位置**,
-  /// 而不是找最近的那一句。这样唱到句间间隙时高亮仍停在前一句上,
-  /// 不会提前跳到下一句。
-  int _activeIndex(Lyrics lyrics, Duration position) {
-    if (lyrics.lines.isEmpty) return -1;
-    if (!lyrics.synced) {
-      return averageIndexFor(
-        position: position,
-        duration: _duration,
-        lineCount: lyrics.lines.length,
-      );
-    }
-
-    var active = 0;
-    for (var i = 0; i < lyrics.lines.length; i++) {
-      final start = lyrics.lines[i].start;
-      if (start == null) continue;
-      if (start > position) break;
-      active = i;
-    }
-    return active;
+  /// 点某一句 → 跳到那一段。
+  void _seekToLine(int index) {
+    final target = seekTargetForLine(_lyrics, index, duration: _duration);
+    if (target == null) return;
+    _playback?.seek(target);
   }
 
   @override
@@ -156,21 +201,18 @@ class _LyricsScreenState extends State<LyricsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _ensureLyrics(song.id));
 
     final accent = NordicAccent.derived(song.albumId);
-    // 位置不进 state 的通知(见 PlaybackController.position),这一屏自己订:
-    // 逐句高亮与底部进度条都跟着它走。
-    final position = playable.position.value;
+    // 时长是无时间轴歌词摊行的依据,也是「点一句跳哪儿」的依据。
     _duration = playable.state.duration;
-    final activeIndex = _activeIndex(_lyrics, position);
+    // 高亮**不在这里算**:算它要读位置(每秒跳好几次),而每次重算都会把整屏
+    // 拖进重建。位置那条通道自己会算([_onPosition])。
+    // 歌词刚到手 / 换了歌时,_ensureLyrics 补算一次。
 
-    // 换行才滚(每帧滚会互相打断);屏幕尺寸变了也补滚一次。
-    // 放到帧后:那时 key 才量得出真实尺寸。
+    // 屏高变了就重新居中一次 —— 旋转 / 分屏 / 系统栏变化后那句会停在偏移处。
     final screenHeight = MediaQuery.sizeOf(context).height;
-    if (activeIndex >= 0 &&
-        (activeIndex != _lastScrolledIndex ||
-            screenHeight != _lastViewportHeight)) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _scrollToLine(activeIndex),
-      );
+    if (screenHeight != _lastViewportHeight) {
+      _lastViewportHeight = screenHeight;
+      _scheduledFor = -1;
+      _scheduleScroll(_activeLine.value);
     }
 
     return ImmersiveScaffold(
@@ -206,13 +248,13 @@ class _LyricsScreenState extends State<LyricsScreen> {
               ),
             ],
           ),
-          Expanded(child: _lyricsBody(song, activeIndex)),
+          Expanded(child: _lyricsBody()),
         ],
       ),
     );
   }
 
-  Widget _lyricsBody(Song song, int activeIndex) {
+  Widget _lyricsBody() {
     if (_loading) return const LoadingState(message: '正在读取歌词');
 
     if (_lyrics.isEmpty) {
@@ -222,8 +264,9 @@ class _LyricsScreenState extends State<LyricsScreen> {
       );
     }
 
-    // 点歌词回封面 —— 与播放页「点封面看歌词」互为来路。拖动滚动不会触发
-    // 点击手势,所以翻歌词不会误退。
+    // 点**某一句**跳到那一段,点**行以外的空白**(上下那一大截内边距)回封面 ——
+    // 与播放页「点封面看歌词」互为来路,两条都留着。拖动滚动不会触发点击手势,
+    // 所以翻歌词不会误退、也不会误跳。
     return Column(
       children: [
         // 没有时间轴的歌词只能按整首的进度平均走 —— 那不是「跟着唱」,
@@ -244,9 +287,10 @@ class _LyricsScreenState extends State<LyricsScreen> {
               },
               child: _LyricsList(
                 lyrics: _lyrics,
-                activeIndex: activeIndex,
+                activeLine: _activeLine,
                 controller: _scrollController,
                 lineKeys: _lineKeys,
+                onLineTap: _seekToLine,
               ),
             ),
           ),
@@ -273,10 +317,10 @@ class _LyricsScreenState extends State<LyricsScreen> {
     final lineContext = _lineKeys[index].currentContext;
     // 拿不到就说下次再说 —— 别把没滚成的那一行记成「已经滚过了」,
     // 否则它会一直停在原处直到下一句。
-    if (lineContext == null) return;
-
-    _lastScrolledIndex = index;
-    _lastViewportHeight = MediaQuery.sizeOf(context).height;
+    if (lineContext == null) {
+      _scheduledFor = -1;
+      return;
+    }
 
     Scrollable.ensureVisible(
       lineContext,
@@ -291,17 +335,25 @@ class _LyricsScreenState extends State<LyricsScreen> {
 class _LyricsList extends StatelessWidget {
   const _LyricsList({
     required this.lyrics,
-    required this.activeIndex,
+    required this.activeLine,
     required this.controller,
     required this.lineKeys,
+    required this.onLineTap,
   });
 
   final Lyrics lyrics;
-  final int activeIndex;
+
+  /// 当前高亮行。**传的是通道不是值**:换一行只有那两行自己重建,
+  /// 这一整列(含上百行)不跟着重来。
+  final ValueListenable<int> activeLine;
+
   final ScrollController controller;
 
   /// 与 [lyrics] 逐行对应 —— 外层靠它把高亮句滚到中间。
   final List<GlobalKey> lineKeys;
+
+  /// 点某一句 → 跳到那一段。
+  final ValueChanged<int> onLineTap;
 
   @override
   Widget build(BuildContext context) {
@@ -318,29 +370,37 @@ class _LyricsList extends StatelessWidget {
         stops: [0.0, 0.20, 0.80, 1.0],
       ).createShader(rect),
       blendMode: BlendMode.dstIn,
-      // **全量铺**,不是 `.builder`:滚动落点要量「任意一句」的真实位置,
-      // 而懒加载只把视线附近那几行建出来 —— 跳向远处的句子时它压根不存在,
-      // `ensureVisible` 也就无从下手。歌词通常几十到一百多行,
-      // 全建出来的代价远小于「跳不中」。
-      child: ListView(
+      // **每一行都要真的建出来**,不用 `ListView`:它按视口懒建 Element,
+      // 屏幕外的行拿不到 context,`ensureVisible` 也就无从下手 —— 于是
+      // 「刚点进歌词页停在第一句」(当前句离屏幕远时永远跳不过去)。
+      // 歌词通常几十到一百多行,全建出来的代价远小于「跳不中」。
+      //
+      // 试过 `ListView(children:)` + 无限缓存区:那一支同样给每行白送一层
+      // RepaintBoundary,但 `scrollCacheExtent` 取无限会让视口的语义矩形变成
+      // 非有限值(框架断言)。这里是明确的一列,也别丢了那层边界(见下)。
+      child: SingleChildScrollView(
         controller: controller,
         // 上下各留出半屏,让第一句与最后一句也能滚到中央。
         padding: EdgeInsets.symmetric(
           vertical: MediaQuery.sizeOf(context).height * 0.28,
           horizontal: NordicSpace.s6,
         ),
-        children: [
-          for (var i = 0; i < lyrics.lines.length; i++)
-            _LyricLine(
-              key: i < lineKeys.length ? lineKeys[i] : null,
-              line: lyrics.lines[i],
-              state: i == activeIndex
-                  ? _LineState.active
-                  : i < activeIndex
-                      ? _LineState.past
-                      : _LineState.upcoming,
-            ),
-        ],
+        child: Column(
+          children: [
+            for (var i = 0; i < lyrics.lines.length; i++)
+              // 每行一层重绘边界 —— `ListView` 默认就带(`addRepaintBoundaries`),
+              // 自己铺列就得自己加:滚动时整列每帧重画,有这层才只动位置不动字。
+              RepaintBoundary(
+                child: _LyricLine(
+                  key: i < lineKeys.length ? lineKeys[i] : null,
+                  line: lyrics.lines[i],
+                  index: i,
+                  activeLine: activeLine,
+                  onTap: () => onLineTap(i),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -362,20 +422,142 @@ int averageIndexFor({
   return (ratio * lineCount).floor().clamp(0, lineCount - 1);
 }
 
+/// 当前位置该高亮的行号。
+///
+/// 有时间轴时按 `LyricLine.start` 找 —— **取最后一个 `start ≤ 当前位置`**,
+/// 而不是找最近的那一句。这样唱到句间间隙时高亮仍停在前一句上,
+/// 不会提前跳到下一句。
+///
+/// 提成顶层函数是为了让「这一屏要不要重建」也能问它:位置每秒跳好几次,
+/// 但真正变的只有**换行**那几下(见 `_LyricsScreenState._onPosition`)。
+int activeLyricIndex(
+  Lyrics lyrics,
+  Duration position, {
+  required Duration duration,
+}) {
+  if (lyrics.lines.isEmpty) return -1;
+  if (!lyrics.synced) {
+    return averageIndexFor(
+      position: position,
+      duration: duration,
+      lineCount: lyrics.lines.length,
+    );
+  }
+
+  var active = 0;
+  for (var i = 0; i < lyrics.lines.length; i++) {
+    final start = lyrics.lines[i].start;
+    if (start == null) continue;
+    if (start > position) break;
+    active = i;
+  }
+  return active;
+}
+
+/// 点某一句歌词要跳到哪儿。**没有把握就返回 null** —— 界面据此不接这一下点击:
+/// 跳不到的地方不该装成跳了。
+///
+/// 有时间轴就是那一句的起点(高亮取的是「最后一个 `start ≤ 位置`」,
+/// 所以跳到起点稳稳落回本行)。
+///
+/// 没有时间轴时只能按整首摊行**反推**,这里取**那一行的中段**而不是起点:
+/// 高亮走的是 [averageIndexFor] 的 `floor(比例 × 行数)`,起点在浮点误差下会被
+/// 算成上一行(2.9999999 就是第二句);中段落回本行是稳的。
+///
+/// 抽成顶层纯函数是为了能直接测:「点第三句、高亮停在第二句」这类错只能在
+/// 算里出现,肉眼很难在真机上分辨。它与 [activeLyricIndex] 互为逆运算 ——
+/// 那个来回(点一句 → 高亮必须落在同一行)是这一条真正的判据。
+Duration? seekTargetForLine(
+  Lyrics lyrics,
+  int index, {
+  required Duration duration,
+}) {
+  if (index < 0 || index >= lyrics.lines.length) return null;
+  final start = lyrics.lines[index].start;
+  if (start != null) return start;
+  if (duration.inMilliseconds <= 0) return null;
+
+  final count = lyrics.lines.length;
+  return Duration(
+    milliseconds: ((index + 0.5) / count * duration.inMilliseconds).round(),
+  );
+}
+
 enum _LineState { past, active, upcoming }
 
 /// 一句歌词。三档亮度区分「过去 / 现在 / 未来」—— 不是只有 on/off,
 /// 方向感才读得出来。
-class _LyricLine extends StatelessWidget {
-  const _LyricLine({super.key, required this.line, required this.state});
+///
+/// 自己订 [activeLine] 而不是由父级把状态传进来:换一行只有**新亮的那一行**与
+/// **暗下去的那一行**要重画,整列歌词与整屏都不该跟着重建(见
+/// [_LyricsScreenState._activeLine])。
+class _LyricLine extends StatefulWidget {
+  const _LyricLine({
+    super.key,
+    required this.line,
+    required this.index,
+    required this.activeLine,
+    required this.onTap,
+  });
 
   final LyricLine line;
-  final _LineState state;
+  final int index;
+  final ValueListenable<int> activeLine;
+
+  /// 点这一句 → 跳到那一段。
+  final VoidCallback onTap;
+
+  @override
+  State<_LyricLine> createState() => _LyricLineState();
+}
+
+class _LyricLineState extends State<_LyricLine> {
+  late _LineState _state;
+  bool _pressed = false;
+
+  _LineState _stateFor(int active) => widget.index == active
+      ? _LineState.active
+      : widget.index < active
+          ? _LineState.past
+          : _LineState.upcoming;
+
+  @override
+  void initState() {
+    super.initState();
+    _state = _stateFor(widget.activeLine.value);
+    widget.activeLine.addListener(_onActiveChanged);
+  }
+
+  @override
+  void didUpdateWidget(_LyricLine old) {
+    super.didUpdateWidget(old);
+    if (identical(old.activeLine, widget.activeLine) &&
+        old.index == widget.index) {
+      return;
+    }
+    old.activeLine.removeListener(_onActiveChanged);
+    widget.activeLine.addListener(_onActiveChanged);
+    _state = _stateFor(widget.activeLine.value);
+  }
+
+  @override
+  void dispose() {
+    widget.activeLine.removeListener(_onActiveChanged);
+    super.dispose();
+  }
+
+  void _onActiveChanged() {
+    final next = _stateFor(widget.activeLine.value);
+    // 状态没变就**不重建** —— 一百多行里,真正变色的只有两行。
+    if (next == _state || !mounted) return;
+    setState(() => _state = next);
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
     final accent = context.accent.accent;
+    final state = _state;
 
     final color = switch (state) {
       _LineState.active => t.fg,
@@ -383,43 +565,58 @@ class _LyricLine extends StatelessWidget {
       _LineState.upcoming => t.fg4,
     };
 
-    return AnimatedDefaultTextStyle(
-      duration: const Duration(milliseconds: 350),
-      curve: NordicMotion.ease,
-      style: TextStyle(
-        fontSize: 22,
-        fontWeight: FontWeight.w700,
-        height: 1.4,
-        letterSpacing: -0.025,
-        color: color,
-        shadows: state == _LineState.active
-            ? [Shadow(color: accent.withValues(alpha: 0.6 * t.glow), blurRadius: 30)]
-            : null,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(child: Text(line.text)),
-            // 高亮句右缘那一撮辉光 —— 给当前行一个「正在被读到」的方向感。
-            AnimatedOpacity(
-              duration: const Duration(milliseconds: 350),
-              opacity: state == _LineState.active ? 1 : 0,
-              child: Container(
-                width: 3,
-                height: 22,
-                margin: const EdgeInsets.only(left: NordicSpace.s2),
-                decoration: BoxDecoration(
-                  color: accent,
-                  borderRadius: BorderRadius.circular(NordicRadius.full),
-                  boxShadow: [
-                    BoxShadow(color: accent, blurRadius: 12),
-                  ],
+    return GestureDetector(
+      onTap: widget.onTap,
+      // 按下压一档 —— 原型的 `.lyric-line:active { opacity: .6 }`。
+      // 没有这一下,「点了半句没反应」时用户分不出是没点中还是播放器没动。
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      child: Opacity(
+        opacity: _pressed ? 0.6 : 1,
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 350),
+          curve: NordicMotion.ease,
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            height: 1.4,
+            letterSpacing: -0.025,
+            color: color,
+            shadows: state == _LineState.active
+                ? [
+                    Shadow(
+                        color: accent.withValues(alpha: 0.6 * t.glow),
+                        blurRadius: 30)
+                  ]
+                : null,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: Text(widget.line.text)),
+                // 高亮句右缘那一撮辉光 —— 给当前行一个「正在被读到」的方向感。
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 350),
+                  opacity: state == _LineState.active ? 1 : 0,
+                  child: Container(
+                    width: 3,
+                    height: 22,
+                    margin: const EdgeInsets.only(left: NordicSpace.s2),
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(NordicRadius.full),
+                      boxShadow: [
+                        BoxShadow(color: accent, blurRadius: 12),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

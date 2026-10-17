@@ -56,5 +56,9 @@ keystore.properties
 prototype/.shots/
 .tmp-shots/
 
+# Tooling scratch
+tool/__pycache__/
+__pycache__/
+
 # Throwaway probes (one-off build/toolchain experiments)
 .tmp-probe/

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -272,7 +273,7 @@ class DownloadManager extends ChangeNotifier {
   String? _runningId;
   Timer? _retryTimer;
 
-  List<DownloadJob> get jobs => List.unmodifiable(_jobs);
+  List<DownloadJob> get jobs => UnmodifiableListView(_jobs);
 
   int get activeCount => _jobs.where((j) => j.isActive).length;
 

@@ -17,10 +17,8 @@ const _shrinkWrapLimit = 40;
 
 /// 揭开播放队列面板。
 void showQueueSheet(BuildContext context) {
-  showModalBottomSheet<void>(
+  showNordicSheet<void>(
     context: context,
-    backgroundColor: Colors.transparent,
-    isScrollControlled: true,
     builder: (sheetContext) => const _QueueSheet(),
   );
 }
@@ -148,13 +146,14 @@ class _QueueRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          height: 64,
-          child: Row(
+    // 原先这里是 `Material(color: transparent) + InkWell` —— 为了让涟漪在玻璃
+    // 上看得见专门垫了一层。走 [Pressable] 就不必了(与全应用同一套反馈)。
+    return Pressable(
+      onTap: onTap,
+      pressedDecoration: BoxDecoration(color: t.fill1),
+      child: SizedBox(
+        height: 64,
+        child: Row(
             children: [
               // 拖动把手。原型的队列也支持长按拖动,这里用显式把手 ——
               // 列表本身还要点选,长按与点击的手势会打架。
@@ -238,7 +237,6 @@ class _QueueRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }

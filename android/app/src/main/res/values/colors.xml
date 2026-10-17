@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 图标自己的地面。**只此一处** —— 自适应图标的背景层与启动背景都引用它,
+     两处各写一个十六进制迟早会不一致。值 = NordicTokens.dark.bg 那一项。 -->
+<resources>
+    <color name="nordic_bg">#07070C</color>
+</resources>

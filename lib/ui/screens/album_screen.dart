@@ -224,9 +224,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 
   void _showMenu() {
-    showModalBottomSheet<void>(
+    showNordicSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => NordicScrim(
         onTap: () => Navigator.of(context).pop(),
         child: NordicSheet(

@@ -27,9 +27,8 @@ Future<void> showSortSheet(BuildContext context, {required bool albums}) {
                 selected: sort == state.songSort),
         ];
 
-  return showModalBottomSheet<void>(
+  return showNordicSheet<void>(
     context: context,
-    backgroundColor: Colors.transparent,
     builder: (sheetContext) => NordicScrim(
       onTap: () => Navigator.of(sheetContext).pop(),
       child: NordicSheet(
@@ -103,8 +102,12 @@ class _SortOptionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final t = context.nordic;
+    // 玻璃里的行不能用 InkWell —— 涟漪会被玻璃盖住(理由见 quality_sheet.dart),
+    // 这里按原型的 `.row:hover` 换一层底色。
+    return Pressable(
       onTap: onTap,
+      pressedDecoration: BoxDecoration(color: t.fill1),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: NordicSpace.s5, vertical: NordicSpace.s4),

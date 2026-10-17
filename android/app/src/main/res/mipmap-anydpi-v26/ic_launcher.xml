@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标(API 26+)。前景是那个图形(含辉光),背景是一块**纯色** ——
+     辉光要一块干净的底才读得出来,任何渐变背景都会跟它打架。
+     几何全部来自 tool/app_icon.py,这里只是引用产物;改图标别改这个文件。 -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/nordic_bg"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
+</adaptive-icon>

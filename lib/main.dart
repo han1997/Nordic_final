@@ -7,8 +7,8 @@ import 'app.dart';
 import 'data/download_manager.dart';
 import 'data/download_store.dart';
 import 'data/library_cache.dart';
+import 'data/media_cache.dart';
 import 'data/server_config.dart';
-import 'data/subsonic_repository.dart';
 import 'playback/audio_handler.dart';
 import 'playback/playback_controller.dart';
 import 'playback/quality.dart';
@@ -35,6 +35,17 @@ Future<void> main() async {
     LibraryCache.open(),
     credentialStore.readPassword().catchError((Object _) => null),
   ).wait;
+
+  // 歌曲缓存要等偏好读出来才知道上限(「不缓存」时它连目录都不必扫)。
+  //
+  // **scan: false** —— 数一遍缓存目录(整个目录的 stat 遍历)挪到首帧之后,
+  // 见下面的 `prime()`。它要产出的三件东西(设置页的占用数字、清掉没主的
+  // 半截文件、按上限淘汰)没有一件急着在首帧之前知道,而它是冷启动路径上
+  // 唯一一件「跟服务器、跟播放服务都无关却要串着等」的盘操作。
+  final mediaCache = await MediaCache.open(
+    limitBytes: CacheLimit.byId(configStore.loadCacheLimit()).bytes,
+    scan: false,
+  );
 
   final savedConfig = configStore.loadServer();
 
@@ -63,6 +74,7 @@ Future<void> main() async {
     quality: quality,
     downloadManager: downloadManager,
     libraryCache: libraryCache,
+    mediaCache: mediaCache,
   );
 
   // 已存过配置就把仓库接上(密码可能为空 —— 那种情况视为「未配置」)。
@@ -74,7 +86,7 @@ Future<void> main() async {
 
   // 播放服务与「铺缓存」**并行**:前者要等平台把前台服务与媒体会话拉起来
   // (这一步通常是启动里的大头),后者只是一次文件读 —— 串起来等于白等。
-  final service = _startPlayback(appState, quality, downloads);
+  final service = _startPlayback(appState, quality, downloads, mediaCache, configStore);
 
   if (configured) {
     // 先把上次的库铺出来:冷启动不必空等一次全量拉取,随后主壳会静默刷新
@@ -84,6 +96,10 @@ Future<void> main() async {
 
   final audioHandler = await service;
   final playback = PlaybackController(audioHandler);
+
+  // 换线路之后把正在放的那一首也挪过去 —— 流地址是装载时拼好的,不重新装载的话
+  // 界面会说「正在走新线路」,声音却还在旧那条流里(真机报的「线路切换无效」)。
+  appState.onRouteChanged = playback.retargetRoute;
 
   runApp(
     MultiProvider(
@@ -103,6 +119,12 @@ Future<void> main() async {
       child: const NordicApp(),
     ),
   );
+
+  // 首帧出来之后再把缓存目录数一遍:占用数字、清掉没主的半截文件、
+  // 按上限淘汰都发生在这一步(理由见上面 `MediaCache.open` 的 scan)。
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(mediaCache.prime());
+  });
 }
 
 /// 起播放层。**返回的处理器一定有** —— 界面处处按「它在场」取用
@@ -117,6 +139,8 @@ Future<NordicAudioHandler> _startPlayback(
   AppState appState,
   QualityController quality,
   DownloadStore downloads,
+  MediaCache mediaCache,
+  ConfigStore configStore,
 ) async {
   try {
     final handler = await startAudioService(
@@ -124,6 +148,10 @@ Future<NordicAudioHandler> _startPlayback(
       quality: quality,
       // 播放时先查这份索引:下过的曲子直接播本机文件,不再走网络。
       downloads: downloads,
+      // 缓存:走网络的那一首边听边留一份,下次读本机。
+      cache: mediaCache,
+      // 「仅 Wi-Fi 下载」同时管着新缓存 —— 开关右边那句就是「流量下不缓存」。
+      wifiOnly: configStore.loadWifiOnlyDownload,
     ).timeout(const Duration(seconds: 8));
     await handler.configureSession();
     return handler;
@@ -137,5 +165,7 @@ Future<NordicAudioHandler> _startPlayback(
     () => appState.repository,
     quality,
     downloads: downloads,
+    cache: mediaCache,
+    wifiOnly: configStore.loadWifiOnlyDownload,
   );
 }

@@ -15,10 +15,21 @@ import '../widgets/states.dart';
 /// 服务器与线路管理。
 ///
 /// 未配置时这是一张**录入表单**(填地址 / 账号 / 密码 → 测速 → 进库);
-/// 已配置时是**管理页**(看线路状态、切换、增删、移除服务器)。
+/// 已配置时是**管理页**(看线路状态、切换、增删、重配、移除服务器)。
 /// 两种状态同一个页面,因为对用户来说是同一件事:「我的服务器」。
+///
+/// **改配置的入口**(2026-10-17 修):表单原先只在「还没配过」时出现,于是连上
+/// 之后再想改账号 / 密码 / 地址就无处可去 —— 这一屏只剩线路能改。而 `connect()`
+/// 一直是按「首次配置 / 修改配置」写的,`initState` 也早就把现有值填回表单了,
+/// 差的只是那个入口。
 class ServersScreen extends StatefulWidget {
-  const ServersScreen({super.key});
+  const ServersScreen({super.key, this.startInForm = false});
+
+  /// 一进来就停在**表单**(而不是管理页)。
+  ///
+  /// 设置页那颗「添加服务器」走的是这条:用户已经说了要填新服务器,
+  /// 再让他自己找一下「服务器设置」是多余的一步。
+  final bool startInForm;
 
   @override
   State<ServersScreen> createState() => _ServersScreenState();
@@ -36,6 +47,10 @@ class _ServersScreenState extends State<ServersScreen> {
   String? _formError;
   String? _formSuccess;
 
+  /// 停在表单上(而不是管理页)。已配置过时才需要这个开关 ——
+  /// 没配置过的话表单本来就是这一屏的正文。
+  late bool _editing = widget.startInForm;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +63,22 @@ class _ServersScreenState extends State<ServersScreen> {
       if (server.routes.isNotEmpty) {
         _urlController.text = server.routes.first.url;
       }
+      // 密码在系统密钥库里,表单自己拿不到 —— 但也得填上:
+      // 只想改个地址却要重打一遍密码,那种「改一处」没人愿意做。
+      _prefillPassword();
+    }
+  }
+
+  /// 把已存的密码读进表单。失败(密钥库读不出来 / 本机没存)就留空,
+  /// 用户重填一遍即可 —— 这里不该报错打断整个页面。
+  Future<void> _prefillPassword() async {
+    try {
+      final saved = await context.read<AppState>().credentialStore.readPassword();
+      if (!mounted || saved == null || saved.isEmpty) return;
+      if (_passwordController.text.isNotEmpty) return;
+      setState(() => _passwordController.text = saved);
+    } catch (_) {
+      // 读不出来就当没存过。
     }
   }
 
@@ -104,14 +135,31 @@ class _ServersScreenState extends State<ServersScreen> {
     await appState.loadLibrary();
     if (!mounted) return;
 
+    final saved = appState.phase != LoadPhase.failed;
+    // 从管理页进来改配置的,存完回到管理页 —— 那一页上的名字、线路、
+    // 曲库数字都已经是新的了,再把用户留在表单里等于让他自己猜「成没成」。
+    final backToManage = saved && _editing && appState.server != null;
+
     setState(() {
       _busy = false;
-      if (appState.phase == LoadPhase.failed) {
+      if (!saved) {
         _formError = appState.error;
       } else {
         _formSuccess = '连接成功,已读取 ${appState.library.totalSongs} 首曲目。';
+        if (backToManage) _editing = false;
       }
     });
+
+    if (backToManage) {
+      // 表单那句「连接成功」随表单一起收掉了,这里补一句 ——
+      // 保存是个主动动作,做完总得有个回执。
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content: Text('已保存,正在用新配置读取曲库'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   /// 补全协议头。用户常只填 `192.168.10.4:4533`,直接拼 URL 会解析失败。
@@ -155,37 +203,47 @@ class _ServersScreenState extends State<ServersScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    // 表单什么时候露:还没配过服务器(它就是正文),或者用户点了「服务器设置」。
+    final showForm = !state.hasServer || _editing;
 
     return Scaffold(
       backgroundColor: context.nordic.bg,
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              NordicAppBar(
-                title: state.hasServer ? '服务器与线路' : '连接服务器',
-                subtitle: state.hasServer
-                    ? '一个账号,多个地址'
-                    : '填上你自己的音乐服务器',
-                big: false,
-                leading: IconButtonRound(
-                  icon: Icons.arrow_back,
-                  onPressed: () => Navigator.of(context).maybePop(),
+      body: DismissKeyboardOnTap(
+        // 这一屏用生 Scaffold 而不是 ImmersiveScaffold(它要自己排底部的胶囊),
+        // 收键盘那一层就得自己包 —— 表单里有地址 / 账号 / 密码三个输入框。
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                NordicAppBar(
+                  title: showForm && state.hasServer
+                      ? '服务器设置'
+                      : (state.hasServer ? '服务器与线路' : '连接服务器'),
+                  subtitle: showForm
+                      ? (state.hasServer ? '改地址、账号或密码,保存后重连' : '填上你自己的音乐服务器')
+                      : '一个账号,多个地址',
+                  big: false,
+                  leading: IconButtonRound(
+                    icon: Icons.arrow_back,
+                    // 箭头就是「退出这一屏」,不兼职「退回管理页」——
+                    // 表单里的取消有自己那颗按钮(按箭头会让人以为改了就算数)。
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: state.hasServer ? _manageBody(state) : _formBody(state),
-              ),
-            ],
-          ),
-          // 线路列表这一屏原型也浮着胶囊;**还没配服务器时的录入表单不给**
-          // ——那是「添加服务器」那张表单,原型上同样没有。
-          if (state.hasServer)
-            BottomStack(
-              activeTab: null,
-              onTabSelected: (tab) => openTab(context, tab),
+                Expanded(
+                  child: showForm ? _formBody(state) : _manageBody(state),
+                ),
+              ],
             ),
-        ],
+            // 线路列表这一屏原型也浮着胶囊;**还没配服务器时的录入表单不给**
+            // ——那是「添加服务器」那张表单,原型上同样没有。
+            if (state.hasServer && !showForm)
+              BottomStack(
+                activeTab: null,
+                onTabSelected: (tab) => openTab(context, tab),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -289,16 +347,41 @@ class _ServersScreenState extends State<ServersScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(
             NordicSpace.s5, NordicSpace.s6, NordicSpace.s5, NordicSpace.s4),
-          child: PrimaryButton(
-            label: _busy ? '正在连接' : '连接',
-            icon: _busy ? null : Icons.link,
-            onPressed: _canSubmit ? _connect : null,
+          child: Column(
+            children: [
+              PrimaryButton(
+                // 从管理页进来的是**改**不是**连** —— 按钮上得说对这件事。
+                label: _busy
+                    ? (_editing && state.hasServer ? '正在保存' : '正在连接')
+                    : (_editing && state.hasServer ? '保存并重新连接' : '连接'),
+                icon: _busy
+                    ? null
+                    : (_editing && state.hasServer ? Icons.check : Icons.link),
+                onPressed: _canSubmit ? _connect : null,
+              ),
+              if (_editing && state.hasServer) ...[
+                const SizedBox(height: NordicSpace.s3),
+                GhostButton(
+                  label: '取消',
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                            _formError = null;
+                            _formSuccess = null;
+                            _editing = false;
+                          }),
+                ),
+              ],
+            ],
           ),
         ),
         if (_busy)
-          const Padding(
-            padding: EdgeInsets.only(top: NordicSpace.s2),
-            child: LoadingState(message: '正在验证凭据并读取曲库', topPadding: 0),
+          Padding(
+            padding: const EdgeInsets.only(top: NordicSpace.s2),
+            child: LoadingState(
+              message: _editing && state.hasServer ? '正在保存并重连' : '正在验证凭据并读取曲库',
+              topPadding: 0,
+            ),
           ),
       ],
     );
@@ -490,12 +573,28 @@ class _ServersScreenState extends State<ServersScreen> {
             onPressed: () => AppRoutes.openAddRoute(context),
           ),
         ),
+        // 账号 / 密码 / 地址的入口。原先这一屏只有线路能改 ——
+        // 「服务器设置」这张表单写完就没再露过面(`_formBody` 只在没配过服务器时出现),
+        // 于是改个地址得把服务器移除重加一遍。
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            NordicSpace.s5, NordicSpace.s3, NordicSpace.s5, 0),
+          child: GhostButton(
+            label: '服务器设置',
+            icon: Icons.tune,
+            onPressed: () => setState(() {
+              _formError = null;
+              _formSuccess = null;
+              _editing = true;
+            }),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
             NordicSpace.s5, NordicSpace.s6, NordicSpace.s5, 0),
           child: Text(
             '一个账号可以配多条线路,客户端按延迟自动择优。内外网各留一条,'
-            '出门也能听。',
+            '出门也能听。点一条线路就锁定它,再点一下解除、回到自动择优。',
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
@@ -547,10 +646,13 @@ class _ServersScreenState extends State<ServersScreen> {
     return ping != null && ping.isOk ? 'ms' : null;
   }
 
-  /// 锁定某条线路。锁定是单选 —— 同时取消其它线路的选中。
+  /// 锁定某条线路。锁定是单选 —— 同时取消其它线路的选中;
+  /// **再点锁定中的那条就是解锁**(回到自动择优)。只有「锁」没有「解」的话,
+  /// 点错了就再也回不去自动择优。
   Future<void> _selectRoute(AppState state, ServerRoute route) async {
+    final unlocking = route.selected;
     final routes = (state.server?.routes ?? const <ServerRoute>[])
-        .map((r) => r.copyWith(selected: r.id == route.id))
+        .map((r) => r.copyWith(selected: unlocking ? false : r.id == route.id))
         .toList();
     await state.updateRoutes(routes);
   }
@@ -604,8 +706,9 @@ class _KindCard extends StatelessWidget {
     final t = context.nordic;
     final accent = context.accent.accent;
 
-    return GestureDetector(
+    return Pressable(
       onTap: onTap,
+      scale: 0.98,
       child: Container(
         margin: const EdgeInsets.only(bottom: NordicSpace.s3),
         padding: const EdgeInsets.all(NordicSpace.s4),
@@ -702,8 +805,9 @@ class _RouteManageRow extends StatelessWidget {
     final t = context.nordic;
     final failed = ping != null && !ping!.isOk;
 
-    return InkWell(
+    return Pressable(
       onTap: onSelect,
+      pressedDecoration: BoxDecoration(color: t.fill1),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
@@ -737,7 +841,12 @@ class _RouteManageRow extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       _Tag(label: route.tag.label),
-                      if (selected) ...[
+                      // 锁定的那条标「已锁定」而不是「使用中」:它俩说的是两件事,
+                      // 而点一下的结果不同(锁着的点了解锁,没锁的点上锁)。
+                      if (route.selected) ...[
+                        const SizedBox(width: 6),
+                        _Tag(label: '已锁定', highlight: true),
+                      ] else if (selected) ...[
                         const SizedBox(width: 6),
                         _Tag(label: '使用中', highlight: true),
                       ],

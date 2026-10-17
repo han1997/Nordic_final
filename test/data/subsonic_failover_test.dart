@@ -204,4 +204,76 @@ void main() {
       expect(hits, ['http://lan.invalid']);
     });
   });
+
+  group('换线路表', () {
+    // 真机报的「线路切换无效」:界面改了配置,而这个类手上那份线路是**建库时
+    // 拷贝的一份**,不同步的话勾会动、请求照旧走旧线路。这一组钉住同步。
+    const lan = ServerRoute(id: 'lan', name: '局域网', url: 'http://lan.example.com');
+    const wan = ServerRoute(id: 'wan', name: '外网', url: 'http://wan.example.com');
+
+    SubsonicClient clientWith(List<ServerRoute> routes, List<String> hits,
+            {bool autoRoute = true}) =>
+        SubsonicClient(
+          auth: SubsonicAuth(username: 'u', password: 'p'),
+          autoRoute: autoRoute,
+          routes: routes,
+          dio: recordingDio(
+            hits,
+            handler: (_) => {
+              'subsonic-response': {'status': 'ok', 'version': '1.16.1'}
+            },
+          ),
+        );
+
+    test('锁定的线路当场生效 —— 不用重建客户端', () async {
+      final hits = <String>[];
+      final client = clientWith(const [lan, wan], hits);
+
+      client.setRoutes(const [
+        ServerRoute(id: 'lan', name: '局域网', url: 'http://lan.example.com'),
+        ServerRoute(
+          id: 'wan',
+          name: '外网',
+          url: 'http://wan.example.com',
+          selected: true,
+        ),
+      ]);
+
+      expect(client.activeRoute?.id, 'wan');
+      await client.call('ping');
+      expect(hits, ['http://wan.example.com']);
+    });
+
+    test('生效线路被删掉就作废 —— 不留在一条已经不存在的线路上', () async {
+      final hits = <String>[];
+      final client = clientWith(const [lan, wan], hits);
+
+      // 先让 wan 成为生效线路。
+      await client.pingAll();
+      client.setRoutes(const [
+        ServerRoute(id: 'lan', name: '局域网', url: 'http://lan.example.com'),
+      ]);
+
+      expect(client.routes.length, 1);
+      expect(client.activeRoute?.id, 'lan');
+      expect(
+        client.pings.containsKey('wan'),
+        isFalse,
+        reason: '删掉的线路不该留着上一次的测速结果,否则「N / M 条可用」会算错',
+      );
+    });
+
+    test('加一条线路也是当场进候选', () async {
+      final hits = <String>[];
+      final client = clientWith(const [lan], hits);
+
+      client.setRoutes(const [
+        lan,
+        ServerRoute(id: 'relay', name: '中继', url: 'http://relay.example.com'),
+      ]);
+
+      expect(client.routes.map((r) => r.id), ['lan', 'relay']);
+      expect(client.activeRoute?.id, 'lan');
+    });
+  });
 }

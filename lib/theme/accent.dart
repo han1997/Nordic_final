@@ -80,14 +80,29 @@ class NordicAccent {
   /// 按标识派生一套配色。用 FNV-1a 而不是 `hashCode`——
   /// Dart 的 String.hashCode 在不同运行间**不保证稳定**,那样同一张专辑
   /// 每次冷启动颜色都会变,「每张专辑有自己的气质」就散了。
+  ///
+  /// 派生结果是**记下来的**:同一个标识每次算出来的必须是同一套颜色(纯函数),
+  /// 而每张封面、每个艺人牌在每次重建时都会来问一遍 —— 网格滚动时一帧里就是
+  /// 几十个格子,每格都要算一次 FNV 哈希加三次 HSL 转色。
+  static const _derivedLimit = 512;
+  static final Map<String, NordicAccent> _derivedCache = {};
+
   static NordicAccent derived(String seed) {
+    final hit = _derivedCache[seed];
+    if (hit != null) return hit;
+
     final hue = (_fnv1a(seed) % 360).toDouble();
     // 与原型「新建歌单」的色板同构:hsl(h 42% 30%) → hsl(h 48% 12%)。
     final c1 = HSLColor.fromAHSL(1, hue, 0.42, 0.30).toColor();
     final c2 = HSLColor.fromAHSL(1, hue, 0.48, 0.12).toColor();
     // 强调色取同一个色相但更亮更饱和,才能在近黑底上跳出来。
     final accent = HSLColor.fromAHSL(1, hue, 0.68, 0.66).toColor();
-    return NordicAccent(accent: accent, c1: c1, c2: c2);
+    final value = NordicAccent(accent: accent, c1: c1, c2: c2);
+
+    // 满了整体清掉:重算一遍只是慢一点,记错才是问题。
+    if (_derivedCache.length >= _derivedLimit) _derivedCache.clear();
+    _derivedCache[seed] = value;
+    return value;
   }
 
   /// 无封面时的中性兜底 —— 对应原型的 `--c1` / `--c2` 默认值。

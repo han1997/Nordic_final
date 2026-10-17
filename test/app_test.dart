@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nordic/data/models.dart';
+import 'package:nordic/playback/playback_controller.dart';
 import 'package:nordic/theme/accent.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/theme_mode.dart';
@@ -9,8 +11,10 @@ import 'package:nordic/ui/routes.dart';
 import 'package:nordic/ui/screens/lyrics_screen.dart';
 import 'package:nordic/ui/shell/bottom_stack.dart';
 import 'package:nordic/ui/widgets/components.dart';
+import 'package:nordic/ui/widgets/playback_controls.dart';
 import 'package:nordic/ui/shell/shell.dart';
 import 'package:nordic/ui/widgets/cover.dart';
+import 'package:nordic/ui/widgets/rows.dart';
 
 /// 主题层的用例。
 ///
@@ -147,21 +151,35 @@ void main() {
     testWidgets('三颗 tab 都在;不属于任何 tab 的页面谁都不高亮', (tester) async {
       // 专辑 / 艺人 / 服务器 / 歌单这几屏浮的就是这一颗(见 ImmersiveScaffold
       // 的 showNav),它们不属于任何一个 tab。
+      //
+      // 首页取代了原先的搜索 tab(2026-10-17):搜索是「知道要找什么」时的动作,
+      // 用完就退,常驻位置留给「不知道听什么」时的落点。
       await tester.pumpWidget(harness(active: null, showDock: false));
 
-      for (final label in ['音乐库', '搜索', '设置']) {
+      for (final label in ['首页', '音乐库', '设置']) {
         expect(find.text(label), findsOneWidget);
       }
+      expect(find.text('搜索'), findsNothing, reason: '搜索不再是常驻 tab');
       expect(pendingTab.value, isNull);
     });
 
     testWidgets('点胶囊上的 tab 会请主壳切过去', (tester) async {
       await tester.pumpWidget(harness(active: AppTab.library, showDock: false));
 
-      await tester.tap(find.text('搜索'));
+      await tester.tap(find.text('首页'));
       await tester.pump();
 
-      expect(pendingTab.value, AppTab.search);
+      expect(pendingTab.value, AppTab.home);
+    });
+
+    testWidgets('搜索不再是 tab —— 它靠 push 进来,不依赖主壳在场', (tester) async {
+      // 原先这条路是一个全局 ValueNotifier 通知主壳换 tab,而那条线**断过一次**
+      // (有人发没人听,顶栏放大镜成了死按钮)。搜索能独立成页之后,
+      // 「点它会不会有反应」不再取决于主壳在不在。
+      expect(AppTab.values.map((t) => t.route), isNot(contains(AppRoutes.search)));
+      expect(AppRoutes.generate(
+        const RouteSettings(name: AppRoutes.search),
+      ), isNotNull);
     });
   });
 
@@ -204,6 +222,135 @@ void main() {
           lineCount: 0,
         ),
         -1,
+      );
+    });
+  });
+
+  group('当前该高亮哪一句', () {
+    // 这一条同时管着两件事:高亮落在哪一行,以及**歌词页要不要重建整屏**
+    // (位置每秒跳好几次,只有换行那几跳值得重画 —— 见 lyrics_screen 的
+    // `_onPosition`)。所以它自己的边界要钉住。
+    Lyrics synced(List<int?> starts) => Lyrics(
+          lines: [
+            for (var i = 0; i < starts.length; i++)
+              LyricLine(
+                text: '第 $i 句',
+                start: starts[i] == null ? null : Duration(seconds: starts[i]!),
+              ),
+          ],
+          synced: true,
+        );
+
+    int at(Lyrics lyrics, int seconds) => activeLyricIndex(
+          lyrics,
+          Duration(seconds: seconds),
+          duration: const Duration(seconds: 100),
+        );
+
+    test('取最后一个已开始的句子,不是最近的那一句', () {
+      final lyrics = synced([0, 10, 20, 30]);
+      expect(at(lyrics, 0), 0);
+      expect(at(lyrics, 9), 0);
+      expect(at(lyrics, 10), 1);
+      // 句间间隙停在前一句上 —— 提前跳到下一句会读成「抢拍」。
+      expect(at(lyrics, 29), 2);
+      expect(at(lyrics, 99), 3);
+    });
+
+    test('同一句里位置怎么变,行号都不动 —— 这正是「不必重建」的判据', () {
+      final lyrics = synced([0, 10, 20]);
+      final a = at(lyrics, 12);
+      final b = at(lyrics, 13);
+      final c = at(lyrics, 19);
+      expect([a, b, c], [1, 1, 1]);
+    });
+
+    test('没有时间轴时退回按行平均 —— 与 averageIndexFor 同一套', () {
+      final lyrics = Lyrics(
+        lines: [for (var i = 0; i < 10; i++) LyricLine(text: '第 $i 句')],
+      );
+      expect(at(lyrics, 50), 5);
+    });
+
+    test('一行都没有时给 -1(界面据此不高亮)', () {
+      expect(at(const Lyrics(lines: []), 5), -1);
+    });
+  });
+
+  group('点某一句跳到哪儿', () {
+    Lyrics synced(List<int?> starts) => Lyrics(
+          lines: [
+            for (var i = 0; i < starts.length; i++)
+              LyricLine(
+                text: '第 $i 句',
+                start: starts[i] == null ? null : Duration(seconds: starts[i]!),
+              ),
+          ],
+          synced: true,
+        );
+
+    const duration = Duration(seconds: 100);
+
+    Duration? target(Lyrics lyrics, int index) =>
+        seekTargetForLine(lyrics, index, duration: duration);
+
+    test('有时间轴就跳到那一句的起点', () {
+      final lyrics = synced([0, 10, 20, 30]);
+      expect(target(lyrics, 0), Duration.zero);
+      expect(target(lyrics, 2), const Duration(seconds: 20));
+    });
+
+    test('没有时间轴就取那一行的中段 —— 起点会因浮点误差退到上一行', () {
+      final lyrics = Lyrics(
+        lines: [for (var i = 0; i < 10; i++) LyricLine(text: '第 $i 句')],
+      );
+      // 10 行、100 秒:第 3 行的中段是 35 秒。
+      expect(target(lyrics, 3), const Duration(seconds: 35));
+      // 起点 30 秒在浮点下会算成 2.9999999 —— 那正是「点第三句、高亮停第二句」。
+      expect(target(lyrics, 3), isNot(const Duration(seconds: 30)));
+    });
+
+    test('点一句 → 高亮必须落回同一行(与 activeLyricIndex 互为逆运算)', () {
+      // 这一条是这段逻辑真正的判据:两边都用「行数 / 时长」这一套比例,
+      // 只要有一边改了取整方式,这里立刻翻面。
+      final unsynced = Lyrics(
+        lines: [for (var i = 0; i < 7; i++) LyricLine(text: '第 $i 句')],
+      );
+      for (var i = 0; i < unsynced.lines.length; i++) {
+        final at = activeLyricIndex(
+          unsynced,
+          target(unsynced, i)!,
+          duration: duration,
+        );
+        expect(at, i, reason: '点第 $i 句,高亮却落在第 $at 句');
+      }
+
+      final withAxis = synced([0, 10, 20, 30, 40]);
+      for (var i = 0; i < withAxis.lines.length; i++) {
+        final at = activeLyricIndex(
+          withAxis,
+          target(withAxis, i)!,
+          duration: duration,
+        );
+        expect(at, i, reason: '点第 $i 句,高亮却落在第 $at 句');
+      }
+    });
+
+    test('跳不到的地方给 null —— 界面据此不接这一下点击', () {
+      final unsynced = Lyrics(
+        lines: [for (var i = 0; i < 3; i++) LyricLine(text: '第 $i 句')],
+      );
+      // 没有时间轴又不知道时长:整首摊不开,点了也没处去。
+      expect(
+        seekTargetForLine(unsynced, 1, duration: Duration.zero),
+        isNull,
+      );
+      expect(target(unsynced, -1), isNull);
+      expect(target(unsynced, 3), isNull);
+      // 有时间轴时与时长无关 —— 时长未知也跳得动。
+      expect(
+        seekTargetForLine(synced([0, 10]), 1, duration: Duration.zero),
+        const Duration(seconds: 10),
       );
     });
   });
@@ -265,6 +412,34 @@ void main() {
             reason: '$name 该滑入');
       }
     });
+
+    /// 滑入**只有位移,没有整页淡入**。
+    ///
+    /// 整屏不透明度会把子树关进一个离屏合成层,而沉浸页里有 62px 的氛围模糊
+    /// 和播放坞玻璃的 `BackdropFilter` —— 那样每帧都要在新缓冲里重做这两样,
+    /// 就是真机反馈的「切页面 / 返回卡顿」。这一条把「别再顺手加回来」钉死。
+    testWidgets('滑入只有位移,没有整页淡入', (tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(builder: (c) {
+          ctx = c;
+          return const SizedBox();
+        }),
+      ));
+
+      final route = AppRoutes.generate(
+        const RouteSettings(name: AppRoutes.album, arguments: 'a1'),
+      )! as PageRouteBuilder<dynamic>;
+
+      // 过渡中间那一帧:这里刻意取 0.5,免得 0 / 1 两端把这个区别盖掉。
+      const halfway = AlwaysStoppedAnimation<double>(0.5);
+      final widget =
+          route.transitionsBuilder(ctx, halfway, halfway, const SizedBox());
+
+      expect(widget, isA<SlideTransition>());
+      expect(widget, isNot(isA<FadeTransition>()),
+          reason: '淡入是那层离屏合成的来源,位置只能靠位移给');
+    });
   });
 
   group('线路信号条', () {
@@ -279,6 +454,246 @@ void main() {
 
     test('没测出延迟时一根不亮 —— 不亮比亮错一根强', () {
       expect(SignalBars.forLatency(null), 0);
+    });
+  });
+
+  group('弹层蒙板', () {
+    // 真机上报的是「弹窗背后还有一层黑蒙板,丑」。原因是两层黑叠着:
+    // 框架默认的 `Colors.black54`(一整块纯黑、不模糊)+ NordicScrim
+    // (原型那层 66% 压暗 + 6px 模糊)。这一组钉住「只剩原型那一层」。
+
+    Future<void> openSheet(WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: NordicTheme.build(NordicTokens.dark),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => showNordicSheet<void>(
+                  context: context,
+                  builder: (_) => const NordicScrim(
+                    child: NordicSheet(child: Text('内容')),
+                  ),
+                ),
+                child: const Text('开'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('开'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('框架那层默认黑被关掉 —— 没有哪道 barrier 还在画颜色', (tester) async {
+      await openSheet(tester);
+
+      // `barrierColor` 是透明时,框架走的是不带颜色的那条分支(`color` 为 null)。
+      // 谁把 barrierColor 去掉了,这里立刻会看到 Colors.black54。
+      final barriers = tester
+          .widgetList<ModalBarrier>(find.byType(ModalBarrier))
+          .map((b) => b.color)
+          .whereType<Color>()
+          .toList();
+      // barrier 本身还在(它负责拦住点击、点外面就关),只是不再画黑。
+      expect(find.byType(ModalBarrier), findsWidgets);
+      expect(barriers, isEmpty, reason: '框架那层黑与蒙板叠起来是 84% 黑');
+    });
+
+    testWidgets('蒙板铺满整屏,而不是只盖下半屏', (tester) async {
+      await openSheet(tester);
+
+      // 不写 `isScrollControlled: true` 时框架只给内容盒子屏幕高度的 9/16,
+      // 蒙板就只盖住下半屏 —— 上半屏剩下一块没有模糊的纯黑。
+      final screen = tester.getSize(find.byType(MaterialApp));
+      expect(tester.getSize(find.byType(NordicScrim)).height, screen.height);
+    });
+  });
+
+  group('进度条的一帧', () {
+    // 真机:歌在放,进度条却是 0(左端 0:00、右端 --:--、滑块还拖不动)。
+    // 根因是时长没送到(`state.duration`),这里钉住界面在那种情况下该怎么画。
+
+    test('时长未知时滑块停最左,但左端写真实位置', () {
+      final frame = scrubberFrame(
+        position: const Duration(seconds: 35),
+        duration: Duration.zero,
+      );
+      expect(frame.hasDuration, isFalse);
+      expect(frame.value, 0, reason: '没有量程就不该假装有个比例');
+      expect(frame.max, 1, reason: 'Slider 的 max 不能是 0');
+      expect(frame.shownPosition, const Duration(seconds: 35),
+          reason: '这里跟着写 0 就成了「歌在放、进度条说还在开头」');
+      expect(frame.remaining, Duration.zero);
+    });
+
+    test('时长已知时按位置算,越界夹回', () {
+      final frame = scrubberFrame(
+        position: const Duration(seconds: 30),
+        duration: const Duration(seconds: 60),
+      );
+      expect(frame.hasDuration, isTrue);
+      expect(frame.value, 30000);
+      expect(frame.shownPosition, const Duration(seconds: 30));
+      expect(frame.remaining, const Duration(seconds: 30));
+
+      final over = scrubberFrame(
+        position: const Duration(seconds: 90),
+        duration: const Duration(seconds: 60),
+      );
+      expect(over.value, 60000);
+      expect(over.remaining, Duration.zero);
+    });
+
+    test('拖着的期间以手指为准', () {
+      final frame = scrubberFrame(
+        position: const Duration(seconds: 10),
+        duration: const Duration(seconds: 60),
+        dragValue: 45000,
+      );
+      expect(frame.value, 45000);
+      expect(frame.shownPosition, const Duration(seconds: 45));
+    });
+  });
+
+  group('松手之后的落点', () {
+    // 远端那一首的 seek 要等本机缓存下完才落地(见 audio_handler 的 seek),
+    // 这期间位置还是旧的 —— 拇指一松就弹回去,看着像白拖了。
+    final dropped = DateTime(2026, 10, 17, 12);
+    const target = Duration(seconds: 45);
+
+    Duration? hold(
+      Duration position, {
+      Duration? held = target,
+      DateTime? at,
+      Duration since = Duration.zero,
+    }) =>
+        scrubberHold(
+          held: held,
+          heldAt: held == null ? null : (at ?? dropped),
+          position: position,
+          now: dropped.add(since),
+        );
+
+    test('位置还没跟上来时停在落点上', () {
+      expect(hold(const Duration(seconds: 12)), target);
+    });
+
+    test('位置追上了就交回真实进度', () {
+      // 落在 45 秒,位置报到 45.4 —— 差在 settle 以内算落地。
+      expect(hold(const Duration(milliseconds: 45400)), isNull);
+    });
+
+    test('等够久了要认命 —— 否则一次没生效的 seek 会把拇指永久钉在那儿', () {
+      expect(
+        hold(const Duration(seconds: 12), since: const Duration(seconds: 8)),
+        isNull,
+      );
+    });
+
+    test('没松过手时没有落点', () {
+      expect(hold(const Duration(seconds: 12), held: null), isNull);
+    });
+  });
+
+  group('循环键的选中态', () {
+    // 上一轮这个键点下去会弹一句「顺序播放 / 列表循环 / 单曲循环」,
+    // 连点三下就是三条横幅 —— 已按用户要求移除。状态从那以后只剩图标与底色,
+    // 这一组钉住「两态分得开」:列表循环与顺序播放**共用一个图标**,
+    // 少了那层底色这两个状态在屏幕上就是同一张脸。
+    test('顺序播放不亮;列表循环图标不变但必须亮;单曲循环换成带 1 的圈', () {
+      expect(
+        repeatKeyAppearance(PlaybackRepeat.off),
+        (icon: Icons.repeat, on: false),
+      );
+      expect(
+        repeatKeyAppearance(PlaybackRepeat.all),
+        (icon: Icons.repeat, on: true),
+        reason: '与顺序播放同图标,不亮就等于这两个状态看一样',
+      );
+      expect(
+        repeatKeyAppearance(PlaybackRepeat.one),
+        (icon: Icons.repeat_one, on: true),
+      );
+    });
+
+    testWidgets('按下就有回执,抬手回弹 —— 别等到状态变了才让人知道点着了', (tester) async {
+      var taps = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: Pressable(
+              onTap: () => taps++,
+              scale: 0.92,
+              child: const SizedBox(width: 48, height: 48),
+            ),
+          ),
+        ),
+      );
+
+      double scale() =>
+          tester.widget<AnimatedScale>(find.byType(AnimatedScale)).scale;
+
+      expect(scale(), 1);
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(SizedBox)),
+      );
+      await tester.pump();
+      expect(scale(), 0.92, reason: '按下去屏幕上什么都不动 = 手感上「这机器慢」');
+
+      await gesture.up();
+      await tester.pump();
+      expect(scale(), 1);
+      expect(taps, 1);
+    });
+  });
+
+  group('大字号下不挤爆', () {
+    // 系统字号拉大是无障碍里最常见的设置,而这一屏到处是**写死高度的行**。
+    // 这里把字号拉到 2 倍:pump 之后 takeException 必须为空(溢出会走那儿)。
+    Future<void> pumpAt(WidgetTester tester, Widget child) async {
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+          child: MaterialApp(
+            theme: NordicTheme.build(NordicTokens.dark),
+            home: Scaffold(body: child),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('歌曲行:长标题 + 长艺人专辑,行要跟着长高而不是裁掉文字', (tester) async {
+      await pumpAt(
+        tester,
+        const NordicRow(
+          leading: SizedBox(width: 52, height: 52),
+          title: '一首名字特别长的歌 —— 长到在手机屏上必须截断才放得下',
+          subtitle: '一位名字同样很长的艺人 · 专辑名也不短',
+          height: 64,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      // 行高确实跟着长大 —— 写死 64 的话上面那条就会报溢出。
+      expect(tester.getSize(find.byType(NordicRow)).height, greaterThan(64));
+    });
+
+    testWidgets('胶囊 / 按钮:文字放大后不溢出', (tester) async {
+      await pumpAt(
+        tester,
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              NordicChip(label: '重新测速', icon: Icons.refresh, onTap: () {}),
+              const SizedBox(height: 12),
+              PrimaryButton(label: '播放这张专辑', onPressed: () {}),
+            ],
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 }

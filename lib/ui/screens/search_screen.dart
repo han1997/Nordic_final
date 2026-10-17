@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/subsonic_payload.dart';
+import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
@@ -126,13 +127,22 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     final query = _controller.text.trim();
 
-    return Scaffold(
-      backgroundColor: context.nordic.bg,
-      body: Column(
+    // 搜索是**推入的页面**(2026-10-17 起不再是常驻 tab),所以自带头返回;
+    // 底部那颗胶囊照旧浮着 —— 从搜索结果里想直接切去音乐库 / 设置,不必先退出去。
+    return ImmersiveScaffold(
+      accent: context.accent,
+      showAmbient: false,
+      showNav: true,
+      child: Column(
         children: [
           NordicAppBar(
             title: '搜索',
             subtitle: _subtitle(query),
+            big: false,
+            leading: IconButtonRound(
+              icon: Icons.arrow_back,
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -201,12 +211,14 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
 
-    final show = (SearchScope scope) =>
+    bool show(SearchScope scope) =>
         _scope == SearchScope.all || _scope == scope;
 
     final playable = context.watch<PlaybackController>();
     final currentId = playable.state.song?.id;
-    final repo = context.watch<AppState>().repository;
+    final repo = context.select<AppState, SubsonicRepository?>(
+      (s) => s.repository,
+    );
 
     // 结果整栏走 sliver:搜索可能命中几百条,列表与网格都要**真的懒**
     // (嵌在 ListView 里的 `GridView(shrinkWrap: true)` 会把每一格都建出来)。

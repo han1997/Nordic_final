@@ -1,9 +1,11 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'media_files.dart';
 import 'models.dart';
 
 /// 一次下载(一张专辑 / 一位艺人的歌 / 单曲)在磁盘上的记录。
@@ -130,6 +132,9 @@ class DownloadStore {
   /// 曲目 id → 绝对路径。播放层每次构建播放源都查它,预先摊平。
   final Map<String, String> _bySongId = {};
 
+  /// 封面 id → 绝对路径。同样预先摊平,理由见 [coverPathForArt]。
+  final Map<String, String> _coverByArt = {};
+
   static const _indexName = 'index.json';
   static const _version = 1;
 
@@ -142,7 +147,11 @@ class DownloadStore {
   String get rootPath => _root?.path ?? '';
 
   /// 已完成的下载记录,新的在前。
-  List<DownloadRecord> get records => List.unmodifiable(_records);
+  ///
+  /// 给的是**视图**而不是拷贝:`List.unmodifiable` 每次访问都要把整份列表复制
+  /// 一遍,而界面在每一次重建里都会读它(设置页一行里就读两次)。
+  /// 内容仍然是只读的,改动只能走 [add] / [remove]。
+  List<DownloadRecord> get records => UnmodifiableListView(_records);
 
   /// 打开存储。[root] 只给测试用 —— 生产路径一律由平台目录决定。
   static Future<DownloadStore> open({Directory? root}) async {
@@ -198,9 +207,14 @@ class DownloadStore {
 
   void _reindex() {
     _bySongId.clear();
+    _coverByArt.clear();
     for (final record in _records) {
       for (final entry in record.files.entries) {
         _bySongId[entry.key] = _absolute(entry.value);
+      }
+      final cover = record.cover;
+      if (record.coverArtId != null && cover != null) {
+        _coverByArt[record.coverArtId!] = _absolute(cover);
       }
     }
   }
@@ -217,13 +231,10 @@ class DownloadStore {
   /// 所以这里也按 artId 找 —— 下过哪张就认哪张,不会把艺人的图当专辑的图。
   String? coverPathForArt(String? coverArtId) {
     if (coverArtId == null || coverArtId.isEmpty) return null;
-    for (final record in _records) {
-      if (record.coverArtId == coverArtId) {
-        final cover = record.cover;
-        return cover == null ? null : _absolute(cover);
-      }
-    }
-    return null;
+    // 与 `_bySongId` 一样**预先摊平**:这个方法在**每个可见封面每次重建**时
+    // 都会被叫一遍(界面拼封面地址、通知栏也拼),原先那趟遍历所有下载记录
+    // 的线性扫描于是乘上了「屏幕上有几张封面」。
+    return _coverByArt[coverArtId];
   }
 
   // ---- 任务 id 的命名 ----
@@ -284,31 +295,12 @@ class DownloadStore {
   ///
   /// 带序号是因为同专辑重名曲目真存在(不同版本的同一首),
   /// 也为了让文件管理器里的顺序就是专辑里的顺序。
-  /// 标题里的分隔符必须清掉 —— 一个 `/` 就能把路径指到别的目录去。
   static String trackFileName(int index, Song song) {
     final number = (index + 1).toString().padLeft(2, '0');
-    final title = _sanitize(song.title);
-    final ext = _extensionOf(song.suffix);
+    final title = sanitizeFileName(song.title);
+    final ext = audioExtensionOf(song.suffix);
     // 不知道格式就**不要扩展名** —— 安一个错的(比如把 aac 写成 mp3)
     // 会让解码器按错的格式去解,交给它自己嗅探反而稳。
     return ext.isEmpty ? '$number - $title' : '$number - $title.$ext';
-  }
-
-  /// 后缀只留字母数字。取值来自服务器,但它通向文件名 ——
-  /// 一个斜杠或者一个点就能把文件指到别的地方去。
-  static String _extensionOf(String? raw) {
-    if (raw == null) return '';
-    final cleaned = raw.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toLowerCase();
-    return cleaned.length <= 8 ? cleaned : '';
-  }
-
-  static String _sanitize(String raw) {
-    // Windows 上非法的那几个字符一并挡掉 —— 同一份代码要能在桌面上跑。
-    final cleaned = raw
-        .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    if (cleaned.isEmpty) return '未命名';
-    return cleaned.length <= 60 ? cleaned : cleaned.substring(0, 60);
   }
 }

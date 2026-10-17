@@ -26,6 +26,15 @@ abstract final class NordicTheme {
               systemNavigationBarIconBrightness: Brightness.dark,
             );
 
+  /// 两套 `ThemeData` 各只建一次。
+  ///
+  /// [build] 对同一份 token 是纯函数,而它的开销主要来自 `ColorScheme.fromSeed`
+  /// 那趟调色计算 —— 根节点(`app.dart`)每次重建都要拿到这两份,
+  /// 放在静态 final 里(Dart 的静态 final 是首次访问才求值,就是懒的)
+  /// 就从「每次通知算两遍」变成「每进程算一遍」。
+  static final light = build(NordicTokens.light);
+  static final dark = build(NordicTokens.dark);
+
   static ThemeData build(NordicTokens tokens) {
     final scheme = ColorScheme.fromSeed(
       seedColor: const Color(0xFF7C8CFF),

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/subsonic_payload.dart';
+import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
@@ -158,8 +159,13 @@ class _HeroStack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final repo = state.repository;
+    // 只订**仓库这一件事**。整份 `AppState` 会因为下载进度(最多每秒四次,
+    // 见 download_manager 的时间闸)与缓存淘汰而通知 —— 那些与这张封面无关,
+    // 却会让这里重跑一遍 `repo.coverUri()`(里头要线性翻一遍下载记录)。
+    // 坞早就这么做了(见 bottom_stack 里 `_PlayerDock` 那段)。
+    final repo = context.select<AppState, SubsonicRepository?>(
+      (s) => s.repository,
+    );
 
     Uri? coverUri;
     if (repo != null && song.hasCover) {
@@ -187,15 +193,28 @@ class _HeroStack extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               _CoverGlow(size: size, playing: playing),
-              Hero(
-                tag: 'cover-${song.albumId}',
-                child: Cover(
-                  coverArtId: song.coverArtId,
-                  seed: song.albumId,
-                  uri: coverUri,
-                  size: size,
-                  radius: 28,
-                ),
+              // **不套 `Hero`** —— 播放页不是共享元素过渡的终点。
+              //
+              // 原型的起点是**从被点的那个元素**上取的(app.js 里的
+              // `t.closest('[data-morph]')`),而坞与歌曲行都不带 `data-morph`:
+              // 点坞进播放页那一程原型**故意不飞**(「那块的尺寸太小,
+              // 飞过去的观感不如不加」)。留一个谁都能来匹配的 tag 则会出事 ——
+              // 框架按 tag 在**整个来源路由**里找起点、**不看它在不在屏幕上**
+              // (heroes.dart 的 `_allHeroesFor` 只认 `HeroMode`),于是音乐库那张
+              // 被 IndexedStack 保活、却根本看不见的专辑网格会被抓来当起点:
+              // 每帧都在一个**变化的矩形**里重画这张封面(含 38px 的投影)
+              // 并按新约束重算一次解码桶,还压在满屏氛围模糊之上 ——
+              // 进 320ms、出 260ms 各来一次。
+              Cover(
+                coverArtId: song.coverArtId,
+                seed: song.albumId,
+                uri: coverUri,
+                size: size,
+                radius: 28,
+                // 换歌就是换一张图,而新图解码要几十毫秒 —— 不留旧帧的话
+                // 每次切歌这张大封面都先闪一下渐变兜底。原型是浏览器画的,
+                // 本来就把上一张一直画到新图解码完,所以这是向原型对齐。
+                gaplessPlayback: true,
               ),
             ],
           ),
@@ -294,8 +313,11 @@ class _SongInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    final appState = context.watch<AppState>();
-    final starred = appState.isSongStarred(song.id);
+    // 与封面同一回事:整份 `AppState` 的通知里,只有**收藏**真会改变这一屏
+    // 画出来的东西(下载进度、缓存淘汰都不会),所以只订这一件。
+    final starred = context.select<AppState, bool>(
+      (s) => s.isSongStarred(song.id),
+    );
     final artistId = song.artistId;
 
     return Padding(
@@ -377,7 +399,7 @@ class _SongInfo extends StatelessWidget {
             icon: starred ? Icons.favorite : Icons.favorite_border,
             iconSize: 26,
             color: starred ? context.accentSafe : t.fg2,
-            onPressed: () => appState.toggleSongStar(song.id),
+            onPressed: () => context.read<AppState>().toggleSongStar(song.id),
           ),
         ],
       ),

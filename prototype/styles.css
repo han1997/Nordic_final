@@ -323,6 +323,14 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* 切页/切 tab 的淡入 —— 与底部悬浮 tab 的胶囊同一套缓动(220ms / --ease)。
+     真机上由 Flutter 侧的 FadeTransition 实现,这里只是原型对齐。 */
+  animation: screen-in 0.22s var(--ease) both;
+}
+
+@keyframes screen-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .scroll {
@@ -704,6 +712,37 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   margin-top: 4px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* 卡片右边那三颗键**竖着排**:横着塞在 92 的封面右边,歌名会被挤没。
+   中间那颗是实心的播放键,上下是安静的切歌键 —— 一眼看出主次。 */
+.hero-card .stack {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px; flex: 0 0 auto;
+}
+.hero-card .stack .icon-btn { width: 36px; height: 36px; color: var(--fg-2); }
+.hero-card .stack .icon-btn:hover { color: var(--fg); }
+.hero-card .stack .go { width: 44px; height: 44px; }
+.hero-card .time {
+  font-size: var(--fs-xs); color: var(--fg-3);
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 歌单横排:封面 + 名字 + 首数,一颗一颗(首页那一条用) */
+.pl-chip {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: var(--s3);
+  padding: 8px 16px 8px 8px;
+  border-radius: var(--r-full);
+  background: var(--fill-1);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.16s var(--ease);
+}
+.pl-chip:hover { background: var(--fill-2); }
+.pl-chip .cover { border-radius: 9px; }
+.pl-chip .name { font-size: var(--fs-md); font-weight: 640; letter-spacing: -0.01em; white-space: nowrap; }
+.pl-chip .n { font-size: var(--fs-xs); color: var(--fg-3); }
+
 .hero-card .go {
   width: 46px; height: 46px;
   border-radius: var(--r-full);
@@ -969,6 +1008,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   padding: 0 8px;
   cursor: pointer;
 }
+/* 整条坞按下去亮一层。原先漏了这条,于是按下去屏幕上什么都不动 ——
+   README 里已经记过:可点元素没有按下反馈时,手感上就是「这机器慢」,
+   而坞正好是一整条大块面。token 与 .row:hover 同一套;圆角由 .tray 的
+   overflow: hidden 裁,这里不必再写。 */
+.dock:hover, .dock:active { background: var(--fill-1); }
 .dock .cover { width: 46px; height: 46px; border-radius: 13px; }
 .dock .grow { flex: 1 1 auto; min-width: 0; }
 .dock .line1 {
@@ -1407,7 +1451,12 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   line-height: 1.4;
   color: var(--fg-4);
   transition: color 0.35s var(--ease);
+  /* 每一句都是跳转落点(见 screenLyrics)。按下时压一下 —— 没有这一下,
+     「点了半句没反应」时用户分不出是没点中还是播放器没动。 */
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
+.lyric-line:active { opacity: 0.6; }
 .lyric-line.on {
   color: var(--fg);
   text-shadow: 0 0 30px color-mix(in srgb, var(--accent) 60%, transparent);
@@ -1738,6 +1787,47 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 ::view-transition-old(root) { animation-duration: 0.34s; animation-timing-function: var(--ease); }
 ::view-transition-new(root) { animation-duration: 0.34s; animation-timing-function: var(--ease); }
 
+/* ============================================================
+   推入 / 返回:整屏**滑动**
+   ============================================================
+
+   app 里所有详情页都走 AppRoutes.slide —— **只有位移,没有淡入**。原型这边
+   对齐同一件事:新页从右边推进来、旧页原地不动(被盖上);返回时反过来。
+
+   两处与「整页交叉淡出」的分工:
+   - 滑的是 #phone-slot **那一格**,不是 root —— 舞台侧栏与说明文字不该跟着滑。
+   - 方向 View Transition 自己不知道,靠 <html data-nav> 分辨(见 app.js 的 render)。
+
+   root 那对伪元素在滑动期间要停掉,否则整页还会顺带淡一下,和位移叠成两层动效。 */
+@keyframes vt-slide-in-right {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes vt-slide-out-right {
+  from { transform: translateX(0); }
+  to   { transform: translateX(100%); }
+}
+
+html[data-nav]::view-transition-old(root),
+html[data-nav]::view-transition-new(root) { animation: none !important; }
+
+html[data-nav="push"]::view-transition-old(phone) { animation: none; }
+html[data-nav="push"]::view-transition-new(phone) {
+  animation: vt-slide-in-right 0.32s var(--ease) both;
+}
+/* 分组自己那条默认 0.25s 也要跟上,否则它会比滑动的孩子先结束。 */
+html[data-nav="push"]::view-transition-group(phone) { animation-duration: 0.32s; }
+
+/* 返回:顶部那页滑回右边,下面那页原地不动。
+   新快照默认压在旧快照之上,所以要把它按下去 —— 不然「滑走」的那页被盖住,
+   看起来像是新页从左往右飞进来。 */
+html[data-nav="back"]::view-transition-old(phone) {
+  animation: vt-slide-out-right 0.26s var(--ease) both;
+  z-index: 1;
+}
+html[data-nav="back"]::view-transition-new(phone) { animation: none; z-index: 0; }
+html[data-nav="back"]::view-transition-group(phone) { animation-duration: 0.26s; }
+
 /* 封面本身不做淡入淡出,只做位移与缩放 —— 两个快照叠加会在半途发灰。
    overflow:clip 让缩放的快照被裁在圆角框内(封面现在是纯渐变,没有子元素,
    但快照本身是整块矩形,不裁的话放大途中四角会溢出圆角)。 */
@@ -1751,3 +1841,42 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   animation: none;
   mix-blend-mode: normal;
 }
+
+/* ============================================================
+   应用图标(设计交付物 —— 不对应应用里的任何一屏)
+   ============================================================
+   这一格是拿来挑图标的,不是给用户看的界面。所以它**刻意不走主题 token**:
+   手机上那块近黑地面是固定的(启动器不会因为手机切了浅色就把图标刷成浅灰),
+   走 token 的话浅色主题下这里会变成一块浅灰瓦片,那就不是装机上那个东西了 ——
+   挑图标的板子必须和真机长得一样,否则挑出来的结论没有意义。
+
+   格子底比图标地面**亮一档**(#101018 / #07070C),这样 48px 那颗的方框边界
+   看得见 —— 判断「小尺寸下还成不成」要看的正是它自己那一格的边界。 */
+
+.icon-grid {
+  display: flex; flex-wrap: wrap;
+  gap: var(--s4);
+  padding: 0 var(--s5);
+}
+.icon-cell {
+  display: grid; justify-items: center; gap: 10px;
+  padding: var(--s3);
+  border-radius: var(--r-lg);
+  background: #101018;                      /* 写死:见上 */
+  border: 1px solid rgba(251, 251, 253, 0.07);
+}
+/* 定稿那颗描一圈强调色 —— 「已定」这件事一眼看得见,不用去读文字。 */
+.icon-cell.picked {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent),
+              0 16px 32px -20px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+.icon-cell .icon-svg { display: block; }
+/* 尺寸那一排按底边对齐:三颗从大到小排开,比较的是同一件事。 */
+.icon-row { display: flex; align-items: flex-end; gap: var(--s4); padding: 0 var(--s5); }
+.icon-cap {
+  font-size: var(--fs-xs); line-height: 1.5;
+  color: rgba(251, 251, 253, 0.55);         /* 板子是固定深底,文字也就固定浅色 */
+  text-align: center; max-width: 104px;
+}
+.icon-cap b { display: block; color: #FBFBFD; font-weight: 700; margin-bottom: 2px; }

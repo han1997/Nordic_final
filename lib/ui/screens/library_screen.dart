@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
+import '../../data/server_config.dart';
+import '../../data/sorting.dart';
 import '../../data/subsonic_payload.dart';
 import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
@@ -36,14 +40,68 @@ class LibraryScreen extends StatefulWidget {
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
+/// 音乐库这一屏真正订阅的那几件 `AppState` 数据。
+///
+/// **别换回 `watch<AppState>()`。** 下载进度最多每秒播报四次、缓存淘汰也会播报,
+/// 而它们一件都不在这张表里;记录是按**值**比较的,于是那些通知到不了这一屏 ——
+/// 四百多张专辑的网格不会跟着下载进度重建(它原先就因为这一条被注释点名过)。
+/// 分栏各自要的那几件(排序口径、仓库、翻页状态)由分栏自己 select,不进这张表:
+/// 换歌曲排序不该把专辑网格也重建一遍。
+typedef _LibraryView = ({
+  bool hasServer,
+  ServerConfig? server,
+  LibrarySnapshot library,
+  LoadPhase phase,
+  String? error,
+  bool errorIsAuth,
+  bool errorIsNetwork,
+  String? refreshError,
+  DateTime? cachedAt,
+  /// 同首页:断网失败时那句「本机已下载的还在」要不要给。
+  bool offlineReady,
+});
+
 class _LibraryScreenState extends State<LibraryScreen> {
-  LibraryTab _tab = LibraryTab.albums;
+  /// 默认落在**歌曲**:打开音乐库多半是想找一首具体的歌,
+  /// 而专辑网格要先认封面、再点进去才看到曲目(真机反馈过这一步多余)。
+  LibraryTab _tab = LibraryTab.songs;
+
+  /// 派生值按**快照**缓存。
+  ///
+  /// 「总首数」未取全时要 fold 四百多张专辑,「常听艺人」每次要排三百多位艺人 ——
+  /// 而这一屏会因为切歌、下载进度(最多每秒四次)这些事反复重建。
+  /// 它们只跟库本身有关,快照没换就不必重算。快照是 `const` 的
+  /// (见 models.dart 的 LibrarySnapshot),所以在它身上挂不了缓存,只能挂这儿。
+  LibrarySnapshot? _derivedFor;
+  int _totalSongs = 0;
+  List<Artist> _topArtists = const [];
+
+  void _deriveIfNeeded(LibrarySnapshot library) {
+    if (identical(library, _derivedFor)) return;
+    _derivedFor = library;
+    _totalSongs = library.totalSongs;
+    _topArtists = library.topArtists;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final view = context.select<AppState, _LibraryView>((s) => (
+          hasServer: s.hasServer,
+          server: s.server,
+          library: s.library,
+          phase: s.phase,
+          error: s.error,
+          errorIsAuth: s.errorIsAuth,
+          errorIsNetwork: s.errorIsNetwork,
+          refreshError: s.refreshError,
+          cachedAt: s.libraryCachedAt,
+          offlineReady: s.downloads.any((j) => j.isDone),
+        ));
+    // 方法用这一份:取值函数不参与重建判定。
+    final state = context.read<AppState>();
     final playable = context.watch<PlaybackController>();
     final currentSongId = playable.state.song?.id;
+    _deriveIfNeeded(view.library);
 
     return Scaffold(
       backgroundColor: context.nordic.bg,
@@ -53,9 +111,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
             children: [
               NordicAppBar(
                 title: '音乐库',
-                subtitle: state.server == null
+                subtitle: view.server == null
                     ? '还没有连接服务器'
-                    : '${state.server!.name} · ${state.library.totalSongs} 首',
+                    : '${view.server!.name} · $_totalSongs 首',
                 actions: [
                   IconButtonRound(
                     icon: Icons.shuffle,
@@ -68,7 +126,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   IconButtonRound(
                     icon: Icons.search,
                     quiet: true,
-                    onPressed: () => AppRoutes.openSearchTab(context),
+                    onPressed: () => AppRoutes.openSearch(context),
                   ),
                 ],
               ),
@@ -82,7 +140,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   onChanged: (t) => setState(() => _tab = t),
                 ),
               ),
-              Expanded(child: _body(state, currentSongId, playable)),
+              Expanded(child: _body(state, view, currentSongId, playable)),
             ],
           ),
           // 底部留白:内容要能滚到坞的上方,而不是被压在玻璃下面。
@@ -97,27 +155,40 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Widget _body(AppState state, String? currentSongId, PlaybackController playable) {
-    if (!state.hasServer) {
+  Widget _body(
+    AppState state,
+    _LibraryView view,
+    String? currentSongId,
+    PlaybackController playable,
+  ) {
+    if (!view.hasServer) {
       return EmptyState(
         title: '还没有连接服务器',
-        detail: '到设置里填上你的音乐服务器地址,曲库会显示在这里。',
+        detail: '填上服务器地址与账号,曲库会显示在这里。',
         topPadding: 80,
+        // 与首页同一颗入口(见那儿为什么加)。
+        action: SizedBox(
+          width: 200,
+          child: PrimaryButton(
+            label: '连接服务器',
+            icon: Icons.dns_outlined,
+            onPressed: () => AppRoutes.openServers(context, form: true),
+          ),
+        ),
       );
     }
 
     // 加载 / 出错时**不显示空态** —— 那是两件不同的事。
-    switch (state.phase) {
+    switch (view.phase) {
       case LoadPhase.loading:
         return const LoadingState();
       case LoadPhase.failed:
         // 断网时**已经下到本机的那批还在**:指一句去哪找,不然用户会以为
         // 离线就什么都用不了。(库里没有下过东西时不提这一句 —— 空跑一趟更烦。)
-        final offlineReady =
-            state.errorIsNetwork && state.downloads.any((j) => j.isDone);
+        final offlineReady = view.errorIsNetwork && view.offlineReady;
         return ErrorState(
-          message: state.error ?? '读取失败',
-          isAuthFailure: state.errorIsAuth,
+          message: view.error ?? '读取失败',
+          isAuthFailure: view.errorIsAuth,
           onRetry: () => state.loadLibrary(),
           onOpenSettings: () => AppRoutes.openServers(context),
           hint: offlineReady ? '本机已下载的音乐还在,去「下载管理」就能离线听。' : null,
@@ -129,7 +200,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         break;
     }
 
-    final library = state.library;
+    final library = view.library;
     if (library.isEmpty) {
       return EmptyState(
         title: '这个库里还没有内容',
@@ -139,14 +210,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
 
     // 刷新失败但手上有缓存时:留一条话在顶上,内容照旧。
-    final stale = state.refreshError != null;
+    final stale = view.refreshError != null;
 
     return Column(
       children: [
         if (stale)
-          _StaleBanner(
-            message: state.refreshError!,
-            savedAt: state.libraryCachedAt,
+          StaleBanner(
+            message: view.refreshError!,
+            savedAt: view.cachedAt,
             onRetry: () => state.loadLibrary(silent: true),
           ),
         Expanded(
@@ -155,17 +226,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
             backgroundColor: context.nordic.glass3,
             onRefresh: () => state.loadLibrary(silent: true),
             child: switch (_tab) {
-        LibraryTab.albums => _AlbumsTab(
-            library: library,
-            currentSongId: currentSongId,
-            state: state,
-            playable: playable,
-          ),
-        LibraryTab.artists => _ArtistsTab(library: library),
+        LibraryTab.albums => _AlbumsTab(library: library),
+        LibraryTab.artists => _ArtistsTab(library: library, top: _topArtists),
         LibraryTab.songs => _SongsTab(
             library: library,
             currentSongId: currentSongId,
-            state: state,
             playable: playable,
           ),
               LibraryTab.playlists => _PlaylistsTab(library: library),
@@ -176,323 +241,72 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  /// 随机播放整个库。
-  ///
-  /// 与专辑页 / 艺人页 / 歌单页那颗随机键同一套做法:打乱后**整队装载**,
-  /// 于是队列本身就是随机的,面板照原样列也不会说谎。
-  /// (播放页那颗随机键走的是另一条路 —— just_audio 的随机模式,那是「播着播着
-  /// 随机接下去」,两者不冲突。)
-  void _shuffleAll(PlaybackController playable) {
-    final songs = context.read<AppState>().library.songs;
-    if (songs.isEmpty) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(
-          content: Text('曲库还没有加载出歌曲'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-    playable.playAll([...songs]..shuffle(), index: 0);
-  }
+  /// 随机播放整个库。逻辑收在 [shuffleLibrary] —— 首页空态那颗也走它。
+  void _shuffleAll(PlaybackController playable) =>
+      shuffleLibrary(context, playable);
 }
 
-/// 「显示的是本机缓存」那条 —— 刷新失败但手上有内容时出现。
+/// 随机播放整个库。
 ///
-/// 有东西看总比一片空白强,所以这时**不切成错误态**;但也不能装作是最新的,
-/// 于是留这一条,并带一个「重试」。
-class _StaleBanner extends StatelessWidget {
-  const _StaleBanner({
-    required this.message,
-    required this.savedAt,
-    required this.onRetry,
-  });
-
-  final String message;
-  final DateTime? savedAt;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    final when = savedAt == null ? null : '上次同步 ${_clock(savedAt!)}';
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, 0),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
-        decoration: BoxDecoration(
-          color: t.fill1,
-          borderRadius: BorderRadius.circular(NordicRadius.md),
-          border: Border.all(color: t.line),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.cloud_off_outlined, size: 16, color: t.warn),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                [?when, message].join(' · '),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(color: t.fg3, height: 1.5),
-              ),
-            ),
-            const SizedBox(width: 8),
-            NordicChip(
-              label: '重试',
-              icon: Icons.refresh,
-              height: 30,
-              onTap: onRetry,
-            ),
-          ],
-        ),
+/// 与专辑页 / 艺人页 / 歌单页那颗随机键同一套做法:打乱后**整队装载**,
+/// 于是队列本身就是随机的,面板照原样列也不会说谎。
+/// (播放页那颗随机键走的是另一条路 —— just_audio 的随机模式,那是「播着播着
+/// 随机接下去」,两者不冲突。)
+///
+/// 抽成顶层函数是因为**音乐库与首页空态**都要用它:两处各写一遍
+/// 「取歌、空则提示、打乱、装载」,迟早会有一处漏掉空判断。
+void shuffleLibrary(BuildContext context, PlaybackController playable) {
+  final songs = context.read<AppState>().library.songs;
+  if (songs.isEmpty) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(
+        content: Text('曲库还没有加载出歌曲'),
+        duration: Duration(seconds: 2),
       ),
     );
+    return;
   }
-
-  /// `10 月 16 日 17:20` —— 只到分钟:再细没有意义,这里只想说「是哪时候的」。
-  static String _clock(DateTime at) {
-    final local = at.toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${local.month} 月 ${local.day} 日 ${two(local.hour)}:${two(local.minute)}';
-  }
+  playable.playAll([...songs]..shuffle(), index: 0);
 }
 
-/// 专辑分栏:「继续收听」英雄卡 + 全部专辑网格 + 最近添加货架。
+/// 专辑分栏:「全部专辑」封面网格 + 排序。
+///
+/// 「继续收听」那张卡与「最近添加」货架**2026-10-17 起归首页**(原型同步改了,
+/// 见 `prototype/app.js` 的 screenHome):音乐库回答「库里有什么」,首页回答
+/// 「最近动过什么」—— 两屏各铺一份等于同一件事说两遍。
 class _AlbumsTab extends StatelessWidget {
-  const _AlbumsTab({
-    required this.library,
-    required this.currentSongId,
-    required this.state,
-    required this.playable,
-  });
+  const _AlbumsTab({required this.library});
 
   final LibrarySnapshot library;
-  final String? currentSongId;
-  final AppState state;
-  final PlaybackController playable;
 
   @override
   Widget build(BuildContext context) {
-    final song = playable.state.song;
-    final albumOfSong = song == null
-        ? null
-        : library.albums.where((a) => a.id == song.albumId).firstOrNull;
+    // 这一栏只用这三件 —— 排序口径、转圈状态、仓库(拼封面地址)。
+    final (sort, busy, repo) = context.select<
+        AppState, (AlbumSort, bool, SubsonicRepository?)>(
+      (s) => (s.albumSort, s.sortingAlbums, s.repository),
+    );
 
     // 整栏走 sliver:网格必须**真的懒**(见 [_AlbumGridSliver])。
     return CustomScrollView(
       slivers: [
-        if (song != null)
-          SliverToBoxAdapter(
-            child: _ContinueCard(
-              song: song,
-              album: albumOfSong,
-              playable: playable,
-            ),
-          ),
         SliverToBoxAdapter(
           child: SectionHeader(
             title: '全部专辑',
             count: '${library.albums.length} 张',
             trailing: SortButton(
-              label: '按${state.albumSort.label}',
-              busy: state.sortingAlbums,
+              label: '按${sort.label}',
+              busy: busy,
               onTap: () => showSortSheet(context, albums: true),
             ),
           ),
         ),
-        _AlbumGridSliver(albums: library.albums, state: state),
-        if (library.recentlyAdded.isNotEmpty) ...[
-          const SliverToBoxAdapter(
-            child: SectionHeader(title: '最近添加', count: null),
-          ),
-          SliverToBoxAdapter(
-            child: _AlbumRail(albums: library.recentlyAdded, state: state),
-          ),
-        ],
+        _AlbumGridSliver(albums: library.albums, repo: repo),
         SliverToBoxAdapter(
           child: SizedBox(height: BottomStack.listInset(context)),
         ),
       ],
     );
-  }
-}
-
-/// 「继续收听」英雄卡 —— `.hero-card`。整宽的当前播放卡。
-class _ContinueCard extends StatelessWidget {
-  const _ContinueCard({required this.song, required this.album, required this.playable});
-
-  final Song song;
-  final Album? album;
-  final PlaybackController playable;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    final playing = playable.state.playing;
-    final accent = context.accent;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s2),
-      child: Column(
-        children: [
-          GestureDetector(
-            onTap: () => AppRoutes.openPlayer(context),
-            child: Container(
-              padding: const EdgeInsets.all(NordicSpace.s4),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(NordicRadius.xl),
-                border: Border.all(color: t.line),
-                boxShadow: [
-                  BoxShadow(
-                    color: t.depth,
-                    blurRadius: 44,
-                    offset: const Offset(0, 22),
-                    spreadRadius: -24,
-                  ),
-                ],
-                gradient: LinearGradient(
-                  begin: const Alignment(-1, -1.2),
-                  end: const Alignment(0.6, 1),
-                  colors: [t.bg3, t.bg1],
-                ),
-              ),
-              child: Stack(
-                children: [
-                  // 左上角一团强调色 —— 整张卡的气质来自这里。
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(NordicRadius.xl),
-                          gradient: RadialGradient(
-                            center: const Alignment(-1, -1),
-                            radius: 1.3,
-                            colors: [
-                              accent.accent.withValues(alpha: 0.34 * t.glow),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Cover(
-                        coverArtId: album?.coverArtId ?? song.coverArtId,
-                        seed: song.albumId,
-                        uri: _cover(context, album?.coverArtId ?? song.coverArtId),
-                        size: 92,
-                        radius: 20,
-                      ),
-                      const SizedBox(width: NordicSpace.s4),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              playing ? '继续收听' : '已暂停',
-                              style: TextStyle(
-                                fontSize: NordicType.xs,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.1,
-                                color: Color.lerp(
-                                  accent.accent,
-                                  t.fg,
-                                  0.18,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 7),
-                            Text(
-                              album?.name ?? song.album,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineSmall
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: 4),
-                            // 位置单独订阅:英雄卡是音乐库首页的一部分,
-                            // 不该因为播放位置而把整页货架拉进重建。
-                            ValueListenableBuilder<Duration>(
-                              valueListenable: playable.position,
-                              builder: (context, position, _) => Text(
-                                '${song.artist} · 播到 '
-                                '${formatDuration(position)} / '
-                                '${formatDuration(playable.state.duration)}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: t.fg2),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: playable.toggle,
-                        child: Container(
-                          width: 46,
-                          height: 46,
-                          decoration: BoxDecoration(
-                            color: accent.accent,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: accent.accent.withValues(alpha: 0.8),
-                                blurRadius: 22,
-                                offset: const Offset(0, 10),
-                                spreadRadius: -8,
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            playing ? Icons.pause : Icons.play_arrow,
-                            size: 24,
-                            color: t.bg,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: NordicSpace.s3),
-          ValueListenableBuilder<Duration>(
-            valueListenable: playable.position,
-            builder: (context, position, _) => ProgressLine(
-              progress:
-                  playbackProgress(position, playable.state.duration) / 100,
-            ),
-          ),
-          const SizedBox(height: NordicSpace.s2),
-        ],
-      ),
-    );
-  }
-
-  Uri? _cover(BuildContext context, String? artId) {
-    final repo = context.read<AppState>().repository;
-    if (repo == null || artId == null) return null;
-    try {
-      return repo.coverUri(artId, size: 256);
-    } on SubsonicException {
-      return null;
-    }
   }
 }
 
@@ -502,10 +316,10 @@ class _ContinueCard extends StatelessWidget {
 /// 后者为了量自己的高度会把**每一张专辑**都建出来 —— 库里 400 多张就是 400 多个
 /// 卡片、400 多次封面解码,全压在进音乐库的那一帧上。sliver 只建视口附近那几格。
 class _AlbumGridSliver extends StatelessWidget {
-  const _AlbumGridSliver({required this.albums, required this.state});
+  const _AlbumGridSliver({required this.albums, required this.repo});
 
   final List<Album> albums;
-  final AppState state;
+  final SubsonicRepository? repo;
 
   @override
   Widget build(BuildContext context) {
@@ -522,7 +336,7 @@ class _AlbumGridSliver extends StatelessWidget {
         delegate: SliverChildBuilderDelegate(
           (context, index) => AlbumTile(
             album: albums[index],
-            repo: state.repository,
+            repo: repo,
           ),
           childCount: albums.length,
         ),
@@ -595,84 +409,19 @@ class AlbumTile extends StatelessWidget {
   }
 }
 
-/// 横滑货架 —— `.rail`。
-class _AlbumRail extends StatelessWidget {
-  const _AlbumRail({required this.albums, required this.state});
-
-  final List<Album> albums;
-  final AppState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return SizedBox(
-      // 142 的封面 + 两行文字,按内容算高 —— 写死会在字体放大时溢出。
-      height: shelfHeight(context, artwork: 142),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(
-          NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s4),
-        itemCount: albums.length,
-        separatorBuilder: (_, _) => const SizedBox(width: NordicSpace.s4),
-        itemBuilder: (context, index) {
-          final album = albums[index];
-          return GestureDetector(
-            onTap: () => AppRoutes.openAlbum(context, album.id),
-            child: SizedBox(
-              width: 142,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Hero(
-                    tag: 'cover-rail-${album.id}',
-                    child: Cover(
-                      coverArtId: album.coverArtId,
-                      seed: album.id,
-                      uri: AlbumTile._uri(state.repository, album.coverArtId),
-                      size: 142,
-                      radius: 22,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    album.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    album.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: t.fg3),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
 /// 艺人分栏:常听横滑 + 全部艺人列表。
 class _ArtistsTab extends StatelessWidget {
-  const _ArtistsTab({required this.library});
+  const _ArtistsTab({required this.library, required this.top});
 
   final LibrarySnapshot library;
 
+  /// 「常听艺人」—— 由 `_LibraryScreenState` 按快照算好传进来,
+  /// 不在这儿现排(见那边的 [_LibraryScreenState._deriveIfNeeded])。
+  final List<Artist> top;
+
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    final top = library.topArtists;
 
     return CustomScrollView(
       slivers: [
@@ -752,48 +501,147 @@ class _ArtistsTab extends StatelessWidget {
 }
 
 /// 歌曲分栏:全部歌曲。
+/// 歌曲分栏:全部歌曲 + 排序。
+///
+/// **一次翻一页,滚到底自动接着取**(伺服器一次最多给 500 首,见
+/// `AppState.loadMoreSongs`)。原先这里只铺启动时取回的那 500 首 ——
+/// 对 531 首的库就是**默默少 31 首**,页脚那句「N 首」也只敢报本地条数。
+/// 现在页脚照实说「已取到 N 首 / 库里 M 首」,并给一颗「继续加载」
+/// 兜住「滚到底没触发」的情况(比如列表不够长、或者用户是一路拖到顶的)。
 class _SongsTab extends StatelessWidget {
   const _SongsTab({
     required this.library,
     required this.currentSongId,
-    required this.state,
     required this.playable,
   });
 
   final LibrarySnapshot library;
   final String? currentSongId;
-  final AppState state;
   final PlaybackController playable;
 
   @override
   Widget build(BuildContext context) {
-    final repo = state.repository;
-    return ListView.builder(
-      padding: EdgeInsets.only(
-        bottom: BottomStack.listInset(context),
-      ),
-      itemCount: library.songs.length + 1,
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return SectionHeader(
-            title: '全部歌曲',
-            count: '${library.songs.length} 首',
-            trailing: SortButton(
-              label: '按${state.songSort.label}',
-              onTap: () => showSortSheet(context, albums: false),
-            ),
-            padding: const EdgeInsets.fromLTRB(
-              NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s3),
-          );
+    // 这一栏要的三件:仓库(拼封面地址)、歌曲排序口径、还在翻页吗。
+    // 单独 select 而不是从上面那张表里拿 —— 换歌曲排序不该连专辑网格一起重建。
+    final (repo, sort, loadingMore) = context.select<
+        AppState, (SubsonicRepository?, SongSort, bool)>(
+      (s) => (s.repository, s.songSort, s.loadingMoreSongs),
+    );
+    // 「接着取下一页」是动作,用取值函数即可。
+    final state = context.read<AppState>();
+    // 头一行 + 每首歌一行 + 页脚一行(页脚照实说取到多少 / 库里多少)。
+    return NotificationListener<ScrollNotification>(
+      // 快到底了就取下一页。留 600 的余量,滚到底时正好接上 ——
+      // 等真的滑到头再发请求会看见一段空白。
+      onNotification: (n) {
+        if (n.metrics.pixels >= n.metrics.maxScrollExtent - 600) {
+          unawaited(state.loadMoreSongs());
         }
-        final song = library.songs[index - 1];
-        return SongRow(
-          song: song,
-          coverUri: (id) => repo!.coverUri(id, size: 128),
-          playing: song.id == currentSongId && playable.state.playing,
-          onTap: () => playable.playAll(library.songs, index: index - 1),
-        );
+        return false;
       },
+      child: ListView.builder(
+        padding: EdgeInsets.only(
+          bottom: BottomStack.listInset(context),
+        ),
+        itemCount: library.songs.length + 2,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return SectionHeader(
+              title: '全部歌曲',
+              // 标题上写**本地已有的条数**:这一栏铺的就是这些,
+              // 库里还有多少写在页脚(那儿才说得清「还差着没取」)。
+              count: '${library.songs.length} 首',
+              trailing: SortButton(
+                label: '按${sort.label}',
+                onTap: () => showSortSheet(context, albums: false),
+              ),
+              padding: const EdgeInsets.fromLTRB(
+                NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s3),
+            );
+          }
+          if (index == library.songs.length + 1) {
+            return _SongsFooter(
+              library: library,
+              loadingMore: loadingMore,
+              onLoadMore: state.loadMoreSongs,
+            );
+          }
+          final song = library.songs[index - 1];
+          return SongRow(
+            song: song,
+            coverUri: (id) => repo!.coverUri(id, size: 128),
+            playing: song.id == currentSongId && playable.state.playing,
+            onTap: () => playable.playAll(library.songs, index: index - 1),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 歌曲栏的页脚 —— 「取到多少 / 库里多少」,没取完就给一颗「继续加载」。
+///
+/// 只报本地条数会让人以为库里就这么多(531 首的库上显示 500 就是这么露的);
+/// 只报库里总数又对不上眼前这份列表。两句话一起说才没有歧义。
+class _SongsFooter extends StatelessWidget {
+  const _SongsFooter({
+    required this.library,
+    required this.loadingMore,
+    required this.onLoadMore,
+  });
+
+  final LibrarySnapshot library;
+
+  /// 还在取下一页吗(界面据此把页脚换成一句「正在取剩下的曲目」)。
+  final bool loadingMore;
+
+  /// 那颗兜底按钮走它 —— 滚到底会自动接口,这颗是给「列表不够长 / 一路拖到顶」用的。
+  final Future<bool> Function() onLoadMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    final total = library.totalSongs;
+    final loaded = library.songs.length;
+    final missing = library.songsComplete ? 0 : (total - loaded).clamp(0, 1 << 30);
+
+    // 取全了、条数也对得上 —— 那就不必多说什么(库里没问题时报一句总数是噪音)。
+    if (!loadingMore && missing <= 0 && loaded == total) {
+      return const SizedBox(height: NordicSpace.s5);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        NordicSpace.s5, NordicSpace.s4, NordicSpace.s5, NordicSpace.s5),
+      child: Column(
+        children: [
+          Text(
+            library.songsComplete
+                ? '已取到全部 $loaded 首'
+                : '已取到 $loaded 首 · 库里 $total 首,还有 $missing 首没取',
+            textAlign: TextAlign.center,
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: t.fg3, height: 1.5),
+          ),
+          if (loadingMore) ...[
+            const SizedBox(height: NordicSpace.s4),
+            const LoadingState(message: '正在取剩下的曲目', topPadding: 0),
+          ] else if (!library.songsComplete) ...[
+            // 滚到底会自动接着取;这颗是兜底(列表不够长、或者一路拖到顶)。
+            const SizedBox(height: NordicSpace.s4),
+            SizedBox(
+              width: 200,
+              child: GhostButton(
+                label: '继续加载',
+                icon: Icons.expand_more,
+                onPressed: onLoadMore,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -807,7 +655,10 @@ class _PlaylistsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    final state = context.watch<AppState>();
+    // 这一栏只用「仓库」这一件(拼封面地址)—— 别 watch 整个 `AppState`。
+    final repo = context.select<AppState, SubsonicRepository?>(
+      (s) => s.repository,
+    );
 
     // 歌单一般不多,但口径与其它两栏统一:一屏一屏地建。
     return ListView.builder(
@@ -842,7 +693,7 @@ class _PlaylistsTab extends StatelessWidget {
             leading: Cover(
               coverArtId: playlist.coverArtId,
               seed: playlist.id,
-              uri: _uri(state, playlist.coverArtId),
+              uri: _uri(repo, playlist.coverArtId),
               size: 56,
               radius: 16,
               showShadow: false,
@@ -859,20 +710,12 @@ class _PlaylistsTab extends StatelessWidget {
     );
   }
 
-  Uri? _uri(AppState state, String? coverArtId) {
-    final repo = state.repository;
+  Uri? _uri(SubsonicRepository? repo, String? coverArtId) {
     if (repo == null || coverArtId == null) return null;
     try {
       return repo.coverUri(coverArtId, size: 256);
     } on SubsonicException {
       return null;
     }
-  }
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
   }
 }

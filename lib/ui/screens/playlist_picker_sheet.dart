@@ -18,9 +18,8 @@ import '../widgets/rows.dart';
 Future<void> showPlaylistPicker(BuildContext context, {required Song song}) {
   final state = context.read<AppState>();
 
-  return showModalBottomSheet<void>(
+  return showNordicSheet<void>(
     context: context,
-    backgroundColor: Colors.transparent,
     builder: (sheetContext) => NordicScrim(
       onTap: () => Navigator.of(sheetContext).pop(),
       child: NordicSheet(

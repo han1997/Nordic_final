@@ -126,6 +126,27 @@ class SubsonicClient {
 
   List<ServerRoute> get routes => List.unmodifiable(_routes);
 
+  /// 换一份线路表(增删 / 改名 / 锁定)。
+  ///
+  /// **必须走这里,不能只改 `ServerConfig`**:这个类手上那份线路是**建库时
+  /// 拷贝的一份**([SubsonicClient] 的构造参数),配置改了而这里不同步,
+  /// 界面上的勾会动、请求却照旧走旧线路 —— 真机报的「线路切换无效」就是它。
+  ///
+  /// 顺手把不存在的线路留下的痕迹清掉:生效线路若已被删,择优结果跟着作废
+  /// (否则 [activeRoute] 会退到「列表首条」这种没根据的答案上);测速结果同理,
+  /// 留着的话「N / M 条可用」会跟着算错。
+  void setRoutes(List<ServerRoute> routes) {
+    _routes
+      ..clear()
+      ..addAll(routes);
+
+    final ids = routes.map((r) => r.id).toSet();
+    if (_activeRouteId != null && !ids.contains(_activeRouteId)) {
+      _activeRouteId = null;
+    }
+    _pings.removeWhere((id, _) => !ids.contains(id));
+  }
+
   Map<String, RoutePing> get pings => Map.unmodifiable(_pings);
 
   ServerRoute? get activeRoute {

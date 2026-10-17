@@ -155,6 +155,7 @@ class ConfigStore {
   static const _wifiOnlyKey = 'nordic.pref.wifiOnlyDownload';
   static const _albumSortKey = 'nordic.pref.albumSort';
   static const _songSortKey = 'nordic.pref.songSort';
+  static const _cacheLimitKey = 'nordic.pref.cacheLimit';
 
   String? loadThemeMode() => _prefs.getString(_themeKey);
 
@@ -190,6 +191,13 @@ class ConfigStore {
 
   Future<void> saveWifiOnlyDownload(bool value) =>
       _prefs.setBool(_wifiOnlyKey, value);
+
+  /// 歌曲缓存的上限档位。存的是档位的**名字**(与转码质量同一套做法)——
+  /// 存字节数的话,以后增删档位就有一批用户卡在一个再也选不中的值上。
+  /// 没存过 = 用默认档([CacheLimit.fallback])。
+  String? loadCacheLimit() => _prefs.getString(_cacheLimitKey);
+
+  Future<void> saveCacheLimit(String id) => _prefs.setString(_cacheLimitKey, id);
 }
 
 /// 用已有配置拼一个可直接开工的客户端。
@@ -205,24 +213,16 @@ SubsonicClient clientFor({
   bool autoRoute = true,
   Dio? dio,
 }) {
-  final auto = config.routes.where((r) => r.selected).firstOrNull;
   return SubsonicClient(
     auth: SubsonicAuth(username: config.username, password: password),
     autoRoute: autoRoute,
     dio: dio,
+    // 顺序照配置来 —— **不要在这里按 selected 重排**:锁定那条本来就由
+    // `activeRoute` 优先取(见那儿的三级优先),而运行中 `setRoutes` 换进来
+    // 的是配置的原order,两头不一致等于同一个列表有两个顺序。
     routes: config.routes.isEmpty
         // 没线路时给一条占位,让界面能显示「未配置」而不是抛异常。
         ? const [ServerRoute(id: 'unset', name: '未配置', url: '')]
-        : [
-            ...(auto == null ? [] : [auto]),
-            ...config.routes.where((r) => r.id != auto?.id),
-          ],
+        : config.routes,
   );
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
-  }
 }

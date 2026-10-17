@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../../data/models.dart';
+import '../../data/subsonic_payload.dart';
+import '../../data/subsonic_repository.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/grain.dart';
@@ -23,7 +25,7 @@ void configureCoverCache() {
   CachedNetworkImageProvider.defaultCacheManager = CacheManager(
     Config(
       'nordic-covers',
-      maxNrOfCacheObjects: 1200,
+      maxNrOfCacheObjects: 2000,
       stalePeriod: const Duration(days: 30),
     ),
   );
@@ -48,6 +50,7 @@ class Cover extends StatelessWidget {
     this.height,
     this.radius = NordicRadius.md,
     this.showShadow = true,
+    this.gaplessPlayback = false,
   });
 
   /// 真实封面标识。为空即走渐变兜底。
@@ -67,6 +70,14 @@ class Cover extends StatelessWidget {
   final double? height;
   final double radius;
   final bool showShadow;
+
+  /// 换图时**留住上一帧**,别先退回渐变占位。
+  ///
+  /// 默认关着:绝大多数地方的封面从生到死都是同一张,没得可留。开着是给
+  /// **播放页**那种「同一个位置、换一首歌就换一张图」的地方 —— 新图解码要几十
+  /// 毫秒,不留旧帧的话每次换歌都先闪一下渐变。原型是浏览器画的,本来就不会
+  /// 把上一张抹掉(旧图一直画到新图解码完),所以这是**向原型对齐**,不是改设计。
+  final bool gaplessPlayback;
 
   bool get _hasArt => coverArtId != null && coverArtId!.isNotEmpty && uri != null;
 
@@ -126,6 +137,7 @@ class Cover extends StatelessWidget {
                     coverArtId: coverArtId,
                     displaySize: measured ?? _displayEdge(w, h),
                     fallback: _Fallback(accent: accent),
+                    gaplessPlayback: gaplessPlayback,
                   );
                 },
               )
@@ -162,10 +174,14 @@ class _CoverArt extends StatelessWidget {
     required this.fallback,
     this.coverArtId,
     this.displaySize,
+    this.gaplessPlayback = false,
   });
 
   final Uri uri;
   final Widget fallback;
+
+  /// 换图时留住上一帧(见 [Cover.gaplessPlayback])。
+  final bool gaplessPlayback;
 
   /// 封面标识 —— 磁盘缓存的键要它(见 [_cacheKey])。
   final String? coverArtId;
@@ -217,6 +233,7 @@ class _CoverArt extends StatelessWidget {
         fit: BoxFit.cover,
         cacheWidth: decode,
         cacheHeight: decode,
+        gaplessPlayback: gaplessPlayback,
         errorBuilder: (_, _, _) => fallback,
         frameBuilder: placeholder,
       );
@@ -234,6 +251,7 @@ class _CoverArt extends StatelessWidget {
         maxHeight: decode,
       ),
       fit: BoxFit.cover,
+      gaplessPlayback: gaplessPlayback,
       errorBuilder: (_, _, _) => fallback,
       frameBuilder: placeholder,
     );
@@ -487,5 +505,22 @@ class _PlayingBarsState extends State<PlayingBars>
   double _wave(double t) {
     final phase = t % 1.0;
     return (math.sin(phase * 2 * math.pi - math.pi / 2) + 1) / 2;
+  }
+}
+/// 封面地址 —— **本机优先**,取不到就 null(界面退回渐变兜底)。
+///
+/// 十几处各写一遍 try/catch 是同一份逻辑:没服务器(`repo == null`)、
+/// 没有封面 id、或者服务器配置还没接上(拼地址会抛)。收成一处,
+/// 免得某处漏了一种情况而整屏报错。
+Uri? albumCoverUri(
+  SubsonicRepository? repo,
+  String? coverArtId, {
+  int size = 512,
+}) {
+  if (repo == null || coverArtId == null || coverArtId.isEmpty) return null;
+  try {
+    return repo.coverUri(coverArtId, size: size);
+  } on SubsonicException {
+    return null;
   }
 }

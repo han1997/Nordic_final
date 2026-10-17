@@ -4,6 +4,7 @@ import '../../data/models.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import 'cover.dart';
+import 'components.dart';
 
 /// 通用列表行 —— `.row`。歌曲 / 艺人 / 歌单 / 设置项共用一份骨架。
 ///
@@ -36,11 +37,15 @@ class NordicRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    return GestureDetector(
+    return Pressable(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
+      // 整行按下去的反馈取原型的 `.row:hover{background:var(--fill-1)}` ——
+      // 手机上按 = 悬停,缩放在 64px 高的整行上会晃眼。
+      pressedDecoration: BoxDecoration(color: t.fill1),
       child: Container(
-        height: height,
+        // `minHeight` 而不是写死高度:系统字号拉大时行要能跟着长高,
+        // 写死 64 的话文字会被裁掉半截(无障碍里这是最常见的设置)。
+        constraints: BoxConstraints(minHeight: height),
         padding: padding,
         color: Colors.transparent,
         child: Row(
@@ -209,6 +214,16 @@ String formatDuration(Duration duration) {
   final minutes = total ~/ 60;
   final seconds = total % 60;
   return '$minutes:${seconds.toString().padLeft(2, '0')}';
+}
+
+/// 字节 → `138 MB` / `1.4 GB`。下载管理与歌曲缓存两处都用它。
+///
+/// 不到 1 GB 就别硬撑「0.1 GB」—— 该显示 MB 的时候显示 MB,
+/// 而小数位在 MB 这一档没有意义,直接取整。
+String formatBytes(int bytes) {
+  final mb = bytes / (1024 * 1024);
+  if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)} GB';
+  return '${mb.round()} MB';
 }
 
 /// 横滑货架的高度 —— 按内容算,不写死。

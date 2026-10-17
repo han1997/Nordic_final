@@ -227,8 +227,9 @@ class _Swatch extends StatelessWidget {
     final c1 = HSLColor.fromAHSL(1, hue.toDouble(), 0.42, 0.30).toColor();
     final c2 = HSLColor.fromAHSL(1, hue.toDouble(), 0.48, 0.12).toColor();
 
-    return GestureDetector(
+    return Pressable(
       onTap: onTap,
+      scale: 0.92,
       child: Container(
         width: 44,
         height: 44,

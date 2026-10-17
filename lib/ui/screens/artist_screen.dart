@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/subsonic_payload.dart';
+import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
@@ -120,38 +121,51 @@ class _ArtistScreenState extends State<ArtistScreen> {
 
     final playable = context.watch<PlaybackController>();
     final currentId = playable.state.song?.id;
-    final state = context.watch<AppState>();
+    // 订阅的只有「仓库」这一件(拼封面地址用);动作(收藏、下载)走取值函数,
+    // 下载进度与缓存淘汰于是不会把这一屏拖着重建。
+    final repo = context.select<AppState, SubsonicRepository?>(
+      (s) => s.repository,
+    );
 
     // 有作品才给播放入口。库里没歌的艺人点「播放」会去播上一首别人的歌 ——
     // 那一下等于对用户说了假话,所以整行收掉,旁边说明一句。
     final playableSongs = _topSongs.isNotEmpty || _albums.isNotEmpty;
 
-    return ListView(
-      padding: EdgeInsets.only(
-        bottom: BottomStack.listInset(context),
-      ),
-      children: [
-        _ArtistHead(artist: artist),
-        _ArtistActions(
-          starred: _starred,
-          playable: playableSongs && _topSongs.isNotEmpty,
-          onPlay: _topSongs.isEmpty
-              ? null
-              : () => playable.playAll(_topSongs, index: 0),
-          onShuffle: _topSongs.isEmpty
-              ? null
-              : () {
-                  final shuffled = [..._topSongs]..shuffle();
-                  playable.playAll(shuffled, index: 0);
-                },
-          onToggleStar: _toggleStar,
+    // sliver 铺法 —— 与专辑页、歌单页同一条家法:热门曲目一次全建出来,
+    // 每次播放状态一变就重来一遍,没必要。
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(child: _ArtistHead(artist: artist)),
+        SliverToBoxAdapter(
+          child: _ArtistActions(
+            starred: _starred,
+            playable: playableSongs && _topSongs.isNotEmpty,
+            onPlay: _topSongs.isEmpty
+                ? null
+                : () => playable.playAll(_topSongs, index: 0),
+            onShuffle: _topSongs.isEmpty
+                ? null
+                : () {
+                    final shuffled = [..._topSongs]..shuffle();
+                    playable.playAll(shuffled, index: 0);
+                  },
+            onToggleStar: _toggleStar,
+          ),
         ),
         if (!playableSongs)
-          const ListNote('这个库里没有这位艺人的可播放曲目,换一位试试。'),
+          const SliverToBoxAdapter(
+            child: ListNote('这个库里没有这位艺人的可播放曲目,换一位试试。'),
+          ),
         if (_topSongs.isNotEmpty) ...[
-          SectionHeader(title: '热门歌曲', count: '${_topSongs.length} 首'),
-          for (var i = 0; i < _topSongs.length; i++)
-            TrackRow(
+          SliverToBoxAdapter(
+            child: SectionHeader(
+              title: '热门歌曲',
+              count: '${_topSongs.length} 首',
+            ),
+          ),
+          SliverList.builder(
+            itemCount: _topSongs.length,
+            itemBuilder: (context, i) => TrackRow(
               song: _topSongs[i],
               // 「热门」按播放量排,序数没有意义,所以不排曲序。
               playing: _topSongs[i].id == currentId && playable.state.playing,
@@ -164,76 +178,90 @@ class _ArtistScreenState extends State<ArtistScreen> {
                 onPressed: () => _songMenu(_topSongs[i]),
               ),
             ),
+          ),
         ],
-        SectionHeader(
-          title: '专辑',
-          count: _albums.length < artist.albumCount
-              ? '${_albums.length} / ${artist.albumCount} 张'
-              : '${_albums.length} 张',
+        SliverToBoxAdapter(
+          child: SectionHeader(
+            title: '专辑',
+            count: _albums.length < artist.albumCount
+                ? '${_albums.length} / ${artist.albumCount} 张'
+                : '${_albums.length} 张',
+          ),
         ),
         if (_albums.isEmpty)
-          const ListNote('服务器上这位艺人名下有专辑记录,但这次没有返回具体条目。')
+          const SliverToBoxAdapter(
+            child: ListNote('服务器上这位艺人名下有专辑记录,但这次没有返回具体条目。'),
+          )
         else
-          SizedBox(
-            height: shelfHeight(context, artwork: 142),
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(
-                NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s4),
-              itemCount: _albums.length,
-              separatorBuilder: (_, _) => const SizedBox(width: NordicSpace.s4),
-              itemBuilder: (context, index) {
-                final album = _albums[index];
-                return GestureDetector(
-                  onTap: () => AppRoutes.openAlbum(context, album.id),
-                  child: SizedBox(
-                    width: 142,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Cover(
-                          coverArtId: album.coverArtId,
-                          seed: album.id,
-                          uri: _cover(context, state, album.coverArtId),
-                          size: 142,
-                          radius: 22,
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          album.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          album.year == null ? '${album.songCount} 首' : '${album.year}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
-                              ?.copyWith(color: context.nordic.fg3),
-                        ),
-                      ],
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: shelfHeight(context, artwork: 142),
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(
+                  NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s4),
+                itemCount: _albums.length,
+                separatorBuilder: (_, _) => const SizedBox(width: NordicSpace.s4),
+                itemBuilder: (context, index) {
+                  final album = _albums[index];
+                  return Pressable(
+                    onTap: () => AppRoutes.openAlbum(context, album.id),
+                    scale: 0.97,
+                    child: SizedBox(
+                      width: 142,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Cover(
+                            coverArtId: album.coverArtId,
+                            seed: album.id,
+                            uri: _cover(repo, album.coverArtId),
+                            size: 142,
+                            radius: 22,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            album.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            album.year == null
+                                ? '${album.songCount} 首'
+                                : '${album.year}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: context.nordic.fg3),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         if (_albums.isNotEmpty && _albums.length < artist.albumCount)
-          ListNote(
-            '服务器上 ${artist.name} 共有 ${artist.albumCount} 张唱片,'
-            '这里列出了 ${_albums.length} 张。',
+          SliverToBoxAdapter(
+            child: ListNote(
+              '服务器上 ${artist.name} 共有 ${artist.albumCount} 张唱片,'
+              '这里列出了 ${_albums.length} 张。',
+            ),
           ),
+        SliverToBoxAdapter(
+          child: SizedBox(height: BottomStack.listInset(context)),
+        ),
       ],
     );
   }
 
-  Uri? _cover(BuildContext context, AppState state, String? artId) {
-    final repo = state.repository;
+  Uri? _cover(SubsonicRepository? repo, String? artId) {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: 512);
@@ -251,9 +279,8 @@ class _ArtistScreenState extends State<ArtistScreen> {
   }
 
   void _showMenu() {
-    showModalBottomSheet<void>(
+    showNordicSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (context) => NordicScrim(
         onTap: () => Navigator.of(context).pop(),
         child: NordicSheet(

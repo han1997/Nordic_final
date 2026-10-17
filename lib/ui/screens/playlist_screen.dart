@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/subsonic_payload.dart';
+import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
@@ -29,8 +30,14 @@ class PlaylistScreen extends StatefulWidget {
 class _PlaylistScreenState extends State<PlaylistScreen> {
   Playlist? _playlist;
   List<Song> _songs = const [];
+  /// 整单时长。**在取到 / 改动曲目时算一次**,不在 build 里现算 ——
+  /// 每帧 fold 一遍几百首歌,换来的只是标题里那几个字。
+  Duration _totalDuration = Duration.zero;
   String? _error;
   bool _loading = true;
+
+  static Duration _sumOf(Iterable<Song> songs) =>
+      songs.fold(Duration.zero, (sum, s) => sum + s.duration);
 
   @override
   void initState() {
@@ -59,6 +66,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       setState(() {
         _playlist = detail.playlist;
         _songs = detail.songs;
+        _totalDuration = _sumOf(detail.songs);
         _loading = false;
       });
     } on SubsonicException catch (e) {
@@ -117,124 +125,138 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       return const EmptyState(title: '这个歌单已经不在库里了');
     }
 
-    final state = context.watch<AppState>();
+    // 订阅的只有「仓库」这一件(拼封面地址用);写操作(加歌、改名、移除)
+// 走取值函数 —— 下载进度与缓存淘汰于是不会把这一屏拖着重建。
+    final repo = context.select<AppState, SubsonicRepository?>(
+      (s) => s.repository,
+    );
     final playable = context.watch<PlaybackController>();
     final currentId = playable.state.song?.id;
-    final total = _songs.fold(Duration.zero, (sum, s) => sum + s.duration);
 
-    return ListView(
-      padding: EdgeInsets.only(
-        bottom: BottomStack.listInset(context),
-      ),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s5),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Cover(
-                coverArtId: playlist.coverArtId,
-                seed: playlist.id,
-                uri: _coverUri(state, playlist.coverArtId),
-                size: 140,
-                radius: 24,
-              ),
-              const SizedBox(width: NordicSpace.s4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      playlist.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            height: 1.08,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${playlist.songCount} 首 · ${formatRemaining(total)}',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: context.nordic.fg3),
-                    ),
-                    if (playlist.description != null) ...[
-                      const SizedBox(height: 4),
+    // sliver 铺法 —— 与专辑页同一条家法:曲目多的时候(几百首的歌单)
+    // 一次全建出来要好几帧,而且每次播放状态 / 应用状态一变就重来一遍。
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Cover(
+                  coverArtId: playlist.coverArtId,
+                  seed: playlist.id,
+                  uri: _coverUri(repo, playlist.coverArtId),
+                  size: 140,
+                  radius: 24,
+                ),
+                const SizedBox(width: NordicSpace.s4),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Text(
-                        playlist.description!,
+                        playlist.name,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              height: 1.08,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${playlist.songCount} 首 · ${formatRemaining(_totalDuration)}',
                         style: Theme.of(context)
                             .textTheme
                             .bodySmall
                             ?.copyWith(color: context.nordic.fg3),
                       ),
+                      if (playlist.description != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          playlist.description!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: context.nordic.fg3),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s4),
-          child: Row(
-            children: [
-              Expanded(
-                child: PrimaryButton(
-                  label: '播放',
-                  icon: Icons.play_arrow,
-                  height: 48,
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: PrimaryButton(
+                    label: '播放',
+                    icon: Icons.play_arrow,
+                    height: 48,
+                    onPressed: _songs.isEmpty
+                        ? null
+                        : () => playable.playAll(_songs, index: 0),
+                  ),
+                ),
+                const SizedBox(width: NordicSpace.s3),
+                IconButtonRound(
+                  icon: Icons.shuffle,
+                  size: 48,
+                  iconSize: 20,
+                  halo: true,
                   onPressed: _songs.isEmpty
                       ? null
-                      : () => playable.playAll(_songs, index: 0),
+                      : () {
+                          final shuffled = [..._songs]..shuffle();
+                          playable.playAll(shuffled, index: 0);
+                        },
                 ),
-              ),
-              const SizedBox(width: NordicSpace.s3),
-              IconButtonRound(
-                icon: Icons.shuffle,
-                size: 48,
-                iconSize: 20,
-                halo: true,
-                onPressed: _songs.isEmpty
-                    ? null
-                    : () {
-                        final shuffled = [..._songs]..shuffle();
-                        playable.playAll(shuffled, index: 0);
-                      },
-              ),
-              const SizedBox(width: NordicSpace.s3),
-              IconButtonRound(
-                icon: Icons.queue_music,
-                size: 48,
-                iconSize: 20,
-                halo: true,
-                onPressed: _songs.isEmpty ? null : () => _addAll(playable),
-              ),
-            ],
+                const SizedBox(width: NordicSpace.s3),
+                IconButtonRound(
+                  icon: Icons.queue_music,
+                  size: 48,
+                  iconSize: 20,
+                  halo: true,
+                  onPressed: _songs.isEmpty ? null : () => _addAll(playable),
+                ),
+              ],
+            ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
-          child: Divider(height: 1, color: context.nordic.line),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
+            child: Divider(height: 1, color: context.nordic.line),
+          ),
         ),
         if (_songs.isEmpty)
-          const EmptyState(
-            title: '这个歌单里还没有歌',
-            detail: '在歌曲菜单里可以把它加进来。',
-            topPadding: 40,
+          const SliverToBoxAdapter(
+            child: EmptyState(
+              title: '这个歌单里还没有歌',
+              detail: '在歌曲菜单里可以把它加进来。',
+              topPadding: 40,
+            ),
           )
         else
-          for (var i = 0; i < _songs.length; i++)
-            TrackRow(
+          // 歌单里的歌**要带封面** —— 曲序数字在这里没有意义(歌单不是专辑,
+          // 顺序也不按 track),而封面是「一眼认出是哪首」最快的线索。
+          // 与音乐库「全部歌曲」那一栏同一颗 [SongRow],观感一致。
+          SliverList.builder(
+            itemCount: _songs.length,
+            itemBuilder: (context, i) => SongRow(
               song: _songs[i],
-              trackNumber: i + 1,
+              coverUri: (id) => repo!.coverUri(id, size: 128),
               playing: _songs[i].id == currentId && playable.state.playing,
               onTap: () => playable.playAll(_songs, index: i),
               trailing: playlist.readonly
@@ -260,18 +282,23 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       ],
                     ),
             ),
+          ),
         // 服务器报的首数与实际取到的条数不一致时说明一句,免得像漏数据。
         if (_songs.isNotEmpty && playlist.songCount > _songs.length)
-          ListNote(
-            '服务器把这张歌单记为 ${playlist.songCount} 首,'
-            '这次取到 ${_songs.length} 首。',
+          SliverToBoxAdapter(
+            child: ListNote(
+              '服务器把这张歌单记为 ${playlist.songCount} 首,'
+              '这次取到 ${_songs.length} 首。',
+            ),
           ),
+        SliverToBoxAdapter(
+          child: SizedBox(height: BottomStack.listInset(context)),
+        ),
       ],
     );
   }
 
-  Uri? _coverUri(AppState state, String? artId) {
-    final repo = state.repository;
+  Uri? _coverUri(SubsonicRepository? repo, String? artId) {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: 512);
@@ -295,9 +322,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     final playlist = _playlist;
     if (playlist == null) return;
 
-    showModalBottomSheet<void>(
+    showNordicSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (sheetContext) => NordicScrim(
         onTap: () => Navigator.of(sheetContext).pop(),
         child: NordicSheet(
@@ -341,11 +367,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         extentOffset: playlist.name.length,
       );
 
-    final name = await showModalBottomSheet<String>(
+    final name = await showNordicSheet<String>(
       context: context,
-      backgroundColor: Colors.transparent,
       // 软键盘弹出时整张纸要跟着抬起来,不然输入框会被盖住。
-      isScrollControlled: true,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
@@ -441,6 +465,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       if (!mounted) return;
       setState(() {
         _songs = [..._songs]..removeAt(index);
+        _totalDuration -= song.duration;
         _playlist = playlist.copyWith(
           songCount: (playlist.songCount - 1).clamp(0, 1 << 30),
         );

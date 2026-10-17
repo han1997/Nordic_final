@@ -10,10 +10,8 @@ import '../widgets/components.dart';
 
 /// 揭开线路切换面板 —— 播放中随时可换。
 void showRoutesSheet(BuildContext context) {
-  showModalBottomSheet<void>(
+  showNordicSheet<void>(
     context: context,
-    backgroundColor: Colors.transparent,
-    isScrollControlled: true,
     builder: (sheetContext) => const _RoutesSheet(),
   );
 }
@@ -62,6 +60,7 @@ class _RoutesSheetState extends State<_RoutesSheet> {
                           route: routes[i],
                           ping: state.pings[routes[i].id],
                           selected: routes[i].id == active?.id,
+                          locked: routes[i].selected,
                           onTap: () => _select(state, routes[i]),
                         ),
                     ],
@@ -96,7 +95,7 @@ class _RoutesSheetState extends State<_RoutesSheet> {
                   NordicSpace.s5, NordicSpace.s4, NordicSpace.s5, 0),
                 child: Text(
                   '播放时优先走延迟最低的可用线路,当前线路中断会自动换到下一条'
-                  '并接着放。手动锁定后不再自动切换。',
+                  '并接着放。手动锁定后不再自动切换 —— 想放手,再点一下锁定中的那条。',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
@@ -123,11 +122,15 @@ class _RoutesSheetState extends State<_RoutesSheet> {
     );
   }
 
-  /// 选中一条线路。**同时取消其它线路的锁定** —— 「锁定」是单选语义,
-  /// 留两条 selected 会让 activeRoute 的取值变得不确定。
+  /// 选中一条线路。**再点一下锁定中的那条就是解除锁定**(回到自动择优)。
+  ///
+  /// 「锁定」是单选语义:留两条 `selected` 会让 [AppState.activeRoute] 的取值
+  /// 不确定。所以锁一条就取消其余;而只有**已经锁着的那条**能解 ——
+  /// 之前只有「锁」没有「解」,点错了就再也回不到自动择优,真机上就卡在这儿。
   Future<void> _select(AppState state, ServerRoute route) async {
+    final unlocking = route.selected;
     final routes = (state.server?.routes ?? const <ServerRoute>[])
-        .map((r) => r.copyWith(selected: r.id == route.id))
+        .map((r) => r.copyWith(selected: unlocking ? false : r.id == route.id))
         .toList();
     await state.updateRoutes(routes);
     await state.refreshRouteLatency();
@@ -140,12 +143,20 @@ class _RouteRow extends StatelessWidget {
     required this.route,
     required this.ping,
     required this.selected,
+    required this.locked,
     required this.onTap,
   });
 
   final ServerRoute route;
   final RoutePing? ping;
+
+  /// 当前生效的那条(界面上的勾)。
   final bool selected;
+
+  /// 用户手动锁定的那条。锁定与生效是两件事 —— 自动择优下生效的未必被锁,
+  /// 而只有锁着的那条点一下能解。
+  final bool locked;
+
   final VoidCallback onTap;
 
   @override
@@ -153,8 +164,9 @@ class _RouteRow extends StatelessWidget {
     final t = context.nordic;
     final failed = ping != null && !ping!.isOk;
 
-    return InkWell(
+    return Pressable(
       onTap: onTap,
+      pressedDecoration: BoxDecoration(color: t.fill1),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: NordicSpace.s4),
         decoration: BoxDecoration(
@@ -182,6 +194,13 @@ class _RouteRow extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      // 锁着的那条挂一枚标记 —— 勾只说「现在走它」,说不了
+                      // 「它被点名了」,而这两件事点一下的结果完全不同
+                      // (锁着的点了解锁,没锁的点上锁)。
+                      if (locked) ...[
+                        Icon(Icons.push_pin, size: 13, color: context.accentSafe),
+                        const SizedBox(width: 5),
+                      ],
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 7, vertical: 3),

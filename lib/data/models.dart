@@ -352,6 +352,19 @@ class LyricLine {
   final Duration? start;
 
   bool get isSynced => start != null;
+
+  /// 落盘用(歌词磁盘缓存,见 `state/app_state.dart`)。
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'start': start?.inMilliseconds,
+      };
+
+  static LyricLine fromJson(Map<String, dynamic> json) => LyricLine(
+        text: json['text'] as String? ?? '',
+        start: (json['start'] as num?) == null
+            ? null
+            : Duration(milliseconds: (json['start'] as num).toInt()),
+      );
 }
 
 /// 一首歌的歌词。
@@ -367,12 +380,35 @@ class Lyrics {
   bool get isEmpty => lines.isEmpty;
 
   static const empty = Lyrics(lines: []);
+
+  /// 落盘用(歌词磁盘缓存,见 `state/app_state.dart`)。
+  Map<String, dynamic> toJson() => {
+        'lines': [for (final l in lines) l.toJson()],
+        'synced': synced,
+      };
+
+  static Lyrics fromJson(Map<String, dynamic> json) => Lyrics(
+        lines: [
+          for (final item in (json['lines'] as List? ?? const []))
+            if (item is Map) LyricLine.fromJson(item.cast<String, dynamic>()),
+        ],
+        synced: json['synced'] as bool? ?? false,
+      );
 }
 
-/// 音乐库的一屏数据 —— 五份列表一起换,界面据此一次性重绘。
+/// 音乐库的一屏数据 —— 几份列表一起换,界面据此一次性重绘。
 ///
 /// 放在数据层(而不是状态层)是因为**它要落盘**:音乐库缓存存的正是这一份
 /// (见 `library_cache.dart`),缓存不该反过来依赖状态层。
+///
+/// 首页那几条货架([recentlyAddedSongs] / [recentlyPlayed] / [mostPlayed])
+/// 是首页要的「常见信息」。其中两条是服务器口径(`getAlbumList2` 的
+/// `recent` / `frequent`)—— 「最近播放 / 最常播放」本地算不出来,只有服务器
+/// 有播放统计;**「最近添加」铺的是歌曲**,由 [songs] 按入库时间本地排出来
+/// (见 `app_state.dart` 的 `_recentlyAddedSongs`)。
+///
+/// [recentlyAdded] 这个专辑口径的旧字段**保留但不再填**:缓存文件格式与
+/// 就地更新那几处还在用它,清掉会让旧缓存读不进来。
 @immutable
 class LibrarySnapshot {
   const LibrarySnapshot({
@@ -381,13 +417,36 @@ class LibrarySnapshot {
     required this.songs,
     required this.playlists,
     required this.recentlyAdded,
+    required this.recentlyAddedSongs,
+    // 这两个故意**不给默认值**:给一个 `const []` 看着省事,但每个「只改一份
+    // 列表」的地方(换排序、建歌单……)漏传一次,首页那两条货架就会悄悄空掉,
+    // 而且没有任何报错。要求传,漏了就编译不过。
+    required this.recentlyPlayed,
+    required this.mostPlayed,
+    this.songsComplete = false,
   });
 
   final List<Album> albums;
   final List<Artist> artists;
   final List<Song> songs;
   final List<Playlist> playlists;
+  /// 专辑口径的「最近添加」—— **已不再填值**(首页改铺歌曲)。
+  ///
+  /// 留着是为了缓存文件格式与就地更新那几处不用改;新代码请用
+  /// [recentlyAddedSongs]。
   final List<Album> recentlyAdded;
+
+  /// 最近添加的**歌曲**,按 [Song.created] 降序取前 20 首。
+  ///
+  /// 服务器没有「最近添加歌曲」端点(`getAlbumList2` 的 `newest` 只给专辑),
+  /// 所以这一条是**本地**从 [songs] 排出来的 —— 见 `app_state.dart`。
+  final List<Song> recentlyAddedSongs;
+
+  /// 最近播放(服务器口径 `recent`)。
+  final List<Album> recentlyPlayed;
+
+  /// 常听 / 最常播放(服务器口径 `frequent`)。
+  final List<Album> mostPlayed;
 
   static const empty = LibrarySnapshot(
     albums: <Album>[],
@@ -395,6 +454,10 @@ class LibrarySnapshot {
     songs: <Song>[],
     playlists: <Playlist>[],
     recentlyAdded: <Album>[],
+    recentlyAddedSongs: <Song>[],
+    recentlyPlayed: <Album>[],
+    mostPlayed: <Album>[],
+    songsComplete: true,
   );
 
   bool get isEmpty =>
@@ -403,10 +466,64 @@ class LibrarySnapshot {
       songs.isEmpty &&
       playlists.isEmpty;
 
-  /// 服务器上标称的总曲目数。取专辑的 songCount 之和而不是 songs.length ——
-  /// 后者受我们一次拉多少条的限制,不是库的真实规模。
+  /// 只换其中几份列表,**没提的照旧**。
+  ///
+  /// 给「改一份列表」的地方用(换排序 / 建歌单 / 删歌单……):它们原先各写一遍
+  /// 全字段,每加一份列表就得全部改一次,漏一处那份数据就悄悄空了。
+  /// 三条货架(服务器按播放统计给的)**不在这里** —— 它们只在整库刷新时
+  /// 整体换掉,没有「就地改一条」的场景。
+  LibrarySnapshot copyWith({
+    List<Album>? albums,
+    List<Artist>? artists,
+    List<Song>? songs,
+    List<Playlist>? playlists,
+    // 「最近添加」由 [songs] 派生,所以并页时要能一起换掉(见 `sorting.dart`
+    // 的 `mergeSongPage`)。其余两条货架是服务器口径,不在这里改。
+    List<Song>? recentlyAddedSongs,
+  }) =>
+      LibrarySnapshot(
+        albums: albums ?? this.albums,
+        artists: artists ?? this.artists,
+        songs: songs ?? this.songs,
+        playlists: playlists ?? this.playlists,
+        recentlyAdded: recentlyAdded,
+        recentlyAddedSongs: recentlyAddedSongs ?? this.recentlyAddedSongs,
+        recentlyPlayed: recentlyPlayed,
+        mostPlayed: mostPlayed,
+        songsComplete: songsComplete,
+      );
+
+  /// 手上这份 [songs] 是不是**全集**。
+  ///
+  /// 启动只拉一页(见 `AppState._songPageSize`),余下的在后台续取
+  /// (见 `AppState._completeSongs`),用户滑到底也会接着取。
+  /// 取全之后置真 —— 在那之前界面不能说「这就是全部」。
+  final bool songsComplete;
+
+  /// 还差多少首没取。未知(还没翻完、也没有初始化)时为 null。
+  int? get songsMissing =>
+      songsComplete ? 0 : (totalSongs - songs.length).clamp(0, 1 << 30);
+
+  LibrarySnapshot markSongsComplete(bool complete) => LibrarySnapshot(
+        albums: albums,
+        artists: artists,
+        songs: songs,
+        playlists: playlists,
+        recentlyAdded: recentlyAdded,
+        recentlyAddedSongs: recentlyAddedSongs,
+        recentlyPlayed: recentlyPlayed,
+        mostPlayed: mostPlayed,
+        songsComplete: complete,
+      );
+
+  /// 库里的真实曲目数。
+  ///
+  /// **取全之后以实际条数为准**:专辑的 `songCount` 之和是服务器报的估计,
+  /// 实测会与实际曲目数差几首(有的曲子不在 search3 索引里,或专辑元数据过期)。
+  /// 那时再拿估计值,标题就会写「532 首」而列表只有 529 行 —— 用户看到的是
+  /// 数据对不上。没取全时才退回估计值(它是那时唯一能拿到的规模信息)。
   int get totalSongs =>
-      albums.fold(0, (sum, a) => sum + a.songCount);
+      songsComplete ? songs.length : albums.fold(0, (sum, a) => sum + a.songCount);
 
   /// 常听艺人:按专辑数取前几位。没有真实播放统计时的合理近似。
   List<Artist> get topArtists {

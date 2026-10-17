@@ -46,6 +46,26 @@ void main() {
           Playlist(id: 'pl-1', name: '深夜驾驶', songCount: 3, readonly: true),
         ],
         recentlyAdded: const [],
+        recentlyAddedSongs: const [],
+        // 首页那两条货架也要能往返 —— 它们和整库列表一样落盘。
+        recentlyPlayed: const [
+          Album(
+            id: 'al-9',
+            name: '上一张听过的',
+            artist: '程响',
+            artistId: 'ar-1',
+            songCount: 3,
+          ),
+        ],
+        mostPlayed: const [
+          Album(
+            id: 'al-8',
+            name: '听得最多的',
+            artist: '李宗盛',
+            artistId: 'ar-2',
+            songCount: 5,
+          ),
+        ],
       );
 
   test('写进去再读回来,内容一字不差', () async {
@@ -97,5 +117,40 @@ void main() {
   test('第一次装(没有文件)读到的是空,不是异常', () async {
     final cache = await LibraryCache.open(root: root);
     expect(await cache.read('nas|hhy|http://nas.example.com'), isNull);
+  });
+
+  /// 后台补齐曲目时会连着要求写好几次(每翻一页一次),而每次都要把整份快照
+  /// 编码一遍 —— 越写越大,合起来是平方级的活。所以合并:只保证**最新的那一份**
+  /// 最终落盘。但两条硬约定不能因此松掉:await 过之后必须读得到,清缓存必须
+  /// 等在写的后面(否则就是把文件删到一半又被写回来)。
+  group('合并写', () {
+    const key = 'nas|hhy|http://nas.example.com';
+
+    LibrarySnapshot withSongs(List<String> ids) =>
+        snapshot().copyWith(songs: [for (final id in ids) song(id)]);
+
+    test('连着写三次,最后落地的是第三份 —— 中间那两版没人要', () async {
+      final cache = await LibraryCache.open(root: root);
+
+      await Future.wait([
+        cache.write(key, withSongs(['s1'])),
+        cache.write(key, withSongs(['s1', 's2'])),
+        cache.write(key, withSongs(['s1', 's2', 's3'])),
+      ]);
+
+      final cached = await cache.read(key);
+      expect(cached!.snapshot.songs.map((s) => s.id), ['s1', 's2', 's3']);
+    });
+
+    test('写还没落地就清缓存:等在写的后面,清完读不到', () async {
+      final cache = await LibraryCache.open(root: root);
+
+      final writing = cache.write(key, snapshot());
+      await cache.clear();
+      await writing;
+
+      expect(await cache.read(key), isNull,
+          reason: '清就是要清干净,写回来的那份不算数');
+    });
   });
 }

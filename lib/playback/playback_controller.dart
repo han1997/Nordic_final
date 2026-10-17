@@ -8,6 +8,41 @@ import '../data/models.dart';
 import 'audio_handler.dart';
 import 'quality.dart';
 
+/// 循环模式。
+///
+/// **这是本层自己的枚举** —— just_audio / audio_service 的类型不该漏进界面。
+/// (名字带 `Playback` 前缀是因为 Flutter 3.44 的 `material.dart` 也导出了一个
+/// `RepeatMode`(`repeating_animation_builder.dart`),裸名在界面层会撞。)
+///
+/// 原型只有两态(原型里「循环」就是单曲循环,图标始终是那个双箭头圈)。
+/// 三态是真机上要求做宽的一处,刻意偏离原型:顺序播放 → 列表循环 → 单曲循环。
+enum PlaybackRepeat {
+  /// 顺序播放:队列走到头就停。
+  off,
+
+  /// 列表循环:队列走到头接着从第一首来。
+  all,
+
+  /// 单曲循环:一首放完原地重来。
+  one,
+}
+
+/// 循环键点一下的下一态。抽成顶层纯函数是为了能直接测。
+PlaybackRepeat nextRepeatMode(PlaybackRepeat current) => switch (current) {
+      PlaybackRepeat.off => PlaybackRepeat.all,
+      PlaybackRepeat.all => PlaybackRepeat.one,
+      PlaybackRepeat.one => PlaybackRepeat.off,
+    };
+
+/// 界面态 → `audio_service` 的重复模式。反方向在 `audio_handler.dart` 的
+/// [loopModeFor] 那头,两处都是顶层纯函数,能直接测。
+AudioServiceRepeatMode audioServiceRepeatModeFor(PlaybackRepeat mode) =>
+    switch (mode) {
+      PlaybackRepeat.off => AudioServiceRepeatMode.none,
+      PlaybackRepeat.all => AudioServiceRepeatMode.all,
+      PlaybackRepeat.one => AudioServiceRepeatMode.one,
+    };
+
 /// 界面看到的播放状态。
 ///
 /// 把 `just_audio` 的几个流合成一份不可变快照,界面订阅一个对象即可,
@@ -22,7 +57,7 @@ class PlaybackState {
     this.hasNext = false,
     this.hasPrevious = false,
     this.shuffle = false,
-    this.repeatOne = false,
+    this.repeat = PlaybackRepeat.off,
     this.error,
   });
 
@@ -36,7 +71,7 @@ class PlaybackState {
   final bool hasNext;
   final bool hasPrevious;
   final bool shuffle;
-  final bool repeatOne;
+  final PlaybackRepeat repeat;
 
   /// 播放失败的原因。非空时界面要显示错误而不是空态。
   final String? error;
@@ -49,7 +84,7 @@ class PlaybackState {
     bool? hasNext,
     bool? hasPrevious,
     bool? shuffle,
-    bool? repeatOne,
+    PlaybackRepeat? repeat,
     String? error,
     bool clearError = false,
   }) =>
@@ -61,7 +96,7 @@ class PlaybackState {
         hasNext: hasNext ?? this.hasNext,
         hasPrevious: hasPrevious ?? this.hasPrevious,
         shuffle: shuffle ?? this.shuffle,
-        repeatOne: repeatOne ?? this.repeatOne,
+        repeat: repeat ?? this.repeat,
         error: clearError ? null : (error ?? this.error),
       );
 }
@@ -78,6 +113,19 @@ double playbackProgress(Duration position, Duration duration) {
 ///
 /// [NordicAudioHandler] 面向系统(通知栏 / 锁屏),这个类面向界面:
 /// 把它的状态收拢成一个可监听对象,并暴露界面要用的命令。
+/// 队列里第 [index] 首**之后**的总时长(不含这一首本身,也不含它已经播掉的
+/// 那一部分)。
+///
+/// 提成顶层函数是为了能直接测:它是 [PlaybackController.remaining] 里那段
+/// 缓存值的唯一来源,而控制器要一个真的播放器才建得起来 —— 测试环境里没有
+/// 那条平台通道,`currentIndex` 永远是 null。
+Duration tailDurationAfter(List<Song> queue, int index) {
+  if (index < 0 || index >= queue.length) return Duration.zero;
+  return queue
+      .skip(index + 1)
+      .fold(Duration.zero, (sum, s) => sum + s.duration);
+}
+
 class PlaybackController extends ChangeNotifier {
   PlaybackController(this._handler) {
     _wire();
@@ -128,17 +176,37 @@ class PlaybackController extends ChangeNotifier {
     }));
 
     _track(_subs, player.playerStateStream.listen((ps) {
+      final song = _handler.currentSong ?? _state.song;
+      // 换了一首就把元数据里的时长先铺上:转码流的响应没有 Content-Length,
+      // 平台报不出时长(ExoPlayer 给 TIME_UNSET),而进度条拿不到时长会**结构性**
+      // 卡在 0 —— 滑块最左、还禁用拖动。平台一旦报出真值,durationStream 那条会覆盖。
+      // 顺带修掉「换歌后残留上一首时长」。
+      final trackChanged = song?.id != _state.song?.id;
       _emit(_state.copyWith(
-        song: _handler.currentSong ?? _state.song,
+        song: song,
+        duration: trackChanged ? (song?.duration ?? Duration.zero) : null,
         playing: ps.playing,
         processing: ps.processingState == ProcessingState.loading ||
             ps.processingState == ProcessingState.buffering,
         hasNext: player.hasNext,
         hasPrevious: player.hasPrevious,
         shuffle: player.shuffleModeEnabled,
-        repeatOne: player.loopMode == LoopMode.one,
         // 播放器重新跑起来就说明上一次错误过去了。
         clearError: ps.processingState != ProcessingState.idle,
+      ));
+    }));
+
+    // 曲目下标 —— 切歌(自动接下一首 / 手动跳)真正发生的信号。
+    // `playerStateStream` 只对 (playing, processingState) 去重,同一组合下切歌
+    // 不会再发事件,界面于是停在上一首(坞、通知栏、播放页)。下标变一律重发。
+    _track(_subs, player.currentIndexStream.listen((_) {
+      final song = _handler.currentSong ?? _state.song;
+      final trackChanged = song?.id != _state.song?.id;
+      _emit(_state.copyWith(
+        song: song,
+        duration: trackChanged ? (song?.duration ?? Duration.zero) : null,
+        hasNext: _handler.player.hasNext,
+        hasPrevious: _handler.player.hasPrevious,
       ));
     }));
 
@@ -164,6 +232,20 @@ class PlaybackController extends ChangeNotifier {
     _track(_subs, player.shuffleModeEnabledStream.listen((enabled) {
       if (enabled == _state.shuffle) return;
       _emit(_state.copyWith(shuffle: enabled));
+    }));
+
+    // 循环模式**同样单独一条**,理由一模一样:`setLoopMode` 也只改序列状态、
+    // 不发 playerEvent,而 `playerStateStream` 被 `.distinct()` 压在
+    // (playing, processingState) 上 —— 从它派生出来的循环态于是永远停在旧值。
+    // 症状:灯不亮;而且 `cycleRepeat` 读这个假值,于是**开了关不掉**。
+    _track(_subs, player.loopModeStream.listen((mode) {
+      final next = switch (mode) {
+        LoopMode.off => PlaybackRepeat.off,
+        LoopMode.all => PlaybackRepeat.all,
+        LoopMode.one => PlaybackRepeat.one,
+      };
+      if (next == _state.repeat) return;
+      _emit(_state.copyWith(repeat: next));
     }));
   }
 
@@ -224,15 +306,26 @@ class PlaybackController extends ChangeNotifier {
             : AudioServiceShuffleMode.all,
       );
 
-  Future<void> toggleRepeat() => _handler.setRepeatMode(
-        _state.repeatOne
-            ? AudioServiceRepeatMode.none
-            : AudioServiceRepeatMode.one,
+  /// 循环键点一下:**顺序播放 → 列表循环 → 单曲循环 → 顺序播放**。
+  ///
+  /// 落成哪一态由界面从 [state] 上读(图标 + 选中底色),这里不返回值 ——
+  /// 早先返回过,是为了让界面弹一句文案说「刚才那下生效了」,那句已移除。
+  Future<void> cycleRepeat() => _handler.setRepeatMode(
+        audioServiceRepeatModeFor(nextRepeatMode(_state.repeat)),
       );
 
   /// 切转码档位。会以新档位重新加载当前曲目,位置尽量保住。
   Future<void> setQuality(QualityOption option) async {
     await _handler.applyQuality(option);
+    _emit(_state.copyWith(error: null, clearError: true));
+  }
+
+  /// 线路换了 —— 正在放的这一首用新线路重新加载,位置尽量保住。
+  ///
+  /// 由**换线路的那一处**调用(线路面板 / 服务器页锁定与增删线路)。不在这里
+  /// 监听服务器配置:播放层与状态层互不认识,硬连起来只会多一条隐式依赖。
+  Future<void> retargetRoute() async {
+    await _handler.retargetCurrentRoute();
     _emit(_state.copyWith(error: null, clearError: true));
   }
 
@@ -244,10 +337,32 @@ class PlaybackController extends ChangeNotifier {
   Duration get remaining {
     final index = _handler.player.currentIndex;
     if (index == null || index < 0) return Duration.zero;
-    final after = queue.skip(index + 1).fold(Duration.zero, (s, x) => s + x.duration);
+    final list = queue;
+    final currentId = index < list.length ? list[index].id : null;
+    if (_tailIndex != index ||
+        _tailLength != list.length ||
+        _tailId != currentId) {
+      // 先落到局部变量再存 —— 直接赋给 `Duration?` 字段的话,类型推断会
+      // 把 `fold` 的累加器也推成可空,`s + x.duration` 就编译不过了。
+      final after = tailDurationAfter(list, index);
+      _tail = after;
+      _tailIndex = index;
+      _tailLength = list.length;
+      _tailId = currentId;
+    }
     final currentLeft = _state.duration - position.value;
-    return after + (currentLeft.isNegative ? Duration.zero : currentLeft);
+    return _tail! + (currentLeft.isNegative ? Duration.zero : currentLeft);
   }
+
+  /// [remaining] 的缓存。
+  ///
+  /// 尾部那段时长只跟「当前第几首、队列多长、那一首是谁」有关,与播放位置无关,
+  /// 而队列面板每次 build 都会来问一次 —— 长队列上那就是白 fold 几百项。
+  /// 位置那部分(一行减法)照旧实时算,所以结果与逐项相加完全一致。
+  Duration? _tail;
+  int? _tailIndex;
+  int? _tailLength;
+  String? _tailId;
 
   @override
   void dispose() {

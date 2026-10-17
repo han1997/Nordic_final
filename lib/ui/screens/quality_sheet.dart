@@ -10,10 +10,8 @@ import '../widgets/components.dart';
 
 /// 揭开转码质量面板 —— 播放页与设置页共用同一张。
 void showQualitySheet(BuildContext context) {
-  showModalBottomSheet<void>(
+  showNordicSheet<void>(
     context: context,
-    backgroundColor: Colors.transparent,
-    isScrollControlled: true,
     builder: (sheetContext) => const _QualitySheet(),
   );
 }
@@ -92,8 +90,12 @@ class _QualityOptionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    return InkWell(
+    // 玻璃里的行**不能用 InkWell**:涟漪画在 Material 的墨层上,而那一层在这张
+    // 纸的玻璃底下 —— 按下去屏幕上什么都不动。原型的 `.qopt:hover` 本来就是
+    // 换一层底色,这里照它来。
+    return Pressable(
       onTap: onTap,
+      pressedDecoration: BoxDecoration(color: t.fill1),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
