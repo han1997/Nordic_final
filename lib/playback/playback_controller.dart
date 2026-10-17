@@ -143,6 +143,15 @@ class PlaybackController extends ChangeNotifier {
   /// 它们各自订阅这一条就够了。
   final ValueNotifier<Duration> position = ValueNotifier(Duration.zero);
 
+  /// 已缓冲到哪儿 —— 与 [position] **同一套待遇**:单独一条通道,不进 [state]。
+  ///
+  /// 它与位置同源(just_audio 的 `playbackEventStream`),远端流上一首歌缓冲的
+  /// 过程中几乎每次事件都会动一下。本机 / 已下完的那一份到手之后这个值就稳住了,
+  /// 于是**不会**再触发重建。
+  ///
+  /// 换歌时由 [_wire] 里那条下标流归零 —— 否则上一首留下的缓冲带会在新歌上闪一帧。
+  final ValueNotifier<Duration> buffered = ValueNotifier(Duration.zero);
+
   PlaybackState _state = const PlaybackState();
   PlaybackState get state => _state;
 
@@ -175,6 +184,12 @@ class PlaybackController extends ChangeNotifier {
       position.value = next;
     }));
 
+    // 缓冲位置走**同一套**:一条自己的通道。`ValueNotifier` 自带相等判断,
+    // 值没动就不播报 —— 本机文件整首到手之后这条流等于静止。
+    _track(_subs, player.bufferedPositionStream.listen((next) {
+      buffered.value = next;
+    }));
+
     _track(_subs, player.playerStateStream.listen((ps) {
       final song = _handler.currentSong ?? _state.song;
       // 换了一首就把元数据里的时长先铺上:转码流的响应没有 Content-Length,
@@ -202,6 +217,10 @@ class PlaybackController extends ChangeNotifier {
     _track(_subs, player.currentIndexStream.listen((_) {
       final song = _handler.currentSong ?? _state.song;
       final trackChanged = song?.id != _state.song?.id;
+      // 换歌先把缓冲归零:否则上一首缓冲到哪儿会以新歌的时长画一遍,
+      // 屏幕上闪出一条不属于这一首的缓冲带(下一批事件就把它纠正过来,
+      // 但那一帧是看得见的)。
+      if (trackChanged) buffered.value = Duration.zero;
       _emit(_state.copyWith(
         song: song,
         duration: trackChanged ? (song?.duration ?? Duration.zero) : null,
@@ -370,6 +389,7 @@ class PlaybackController extends ChangeNotifier {
       sub.cancel();
     }
     position.dispose();
+    buffered.dispose();
     super.dispose();
   }
 }

@@ -292,6 +292,19 @@ function progressOf(song, sec) {
   return Math.max(0, Math.min(100, (sec / song.dur) * 100));
 }
 
+/* 已缓冲到哪儿 —— 原型按「播放位置 + 一段固定提前量」模拟边听边下。
+   返回百分比,**null = 不画那条缓冲带**,两条口径:
+   - 提前量顶到曲尾 = 整首都在手边(本机文件 / 已下完的缓存),没有待拉的东西,
+     再画一层只是把整条轨道点亮,没有信息量;
+   - 拉不动的位置(没有余量)也一样。
+   与应用的 `scrubberFrame` 是同一套话(那边还有「时长未知不画」一条)。 */
+const BUFFER_AHEAD = 15;
+function bufferedPctOf(song, sec) {
+  const buf = Math.min(song.dur, sec + BUFFER_AHEAD);
+  if (buf >= song.dur) return null;
+  return progressOf(song, buf);
+}
+
 const THEMES = [
   { id: 'dark',  name: '深色', desc: '近黑底，靠光晕撑层次' },
   { id: 'light', name: '浅色', desc: '浅灰底，靠留白与描边' },
@@ -960,8 +973,14 @@ function screenArtist(id) {
    播放页是铺满的五键 —— 现在就一份,五键、同样的位置、同样的间距。 */
 function scrubBar(s, elapsed) {
   const pct = progressOf(s, elapsed);
+  const buf = bufferedPctOf(s, elapsed);
+  /* 三层轨道:未加载的底 → 已缓冲 → 已播。前两层是这里的 `i`,
+     已播那一段压在最后(DOM 顺序即层级,不写 z-index),
+     于是可见的正好是 [已播 → 已缓冲] 那一段,永远不会盖到已播部分上。 */
   return `<div class="scrub">
-      <div class="track" data-seek><i style="width:${pct}%"></i><span class="knob" style="left:${pct}%"></span></div>
+      <div class="track" data-seek>${
+        buf == null ? '' : `<i class="buf" style="width:${buf}%"></i>`
+      }<i class="played" style="width:${pct}%"></i><span class="knob" style="left:${pct}%"></span></div>
       <div class="times"><span>${mmss(elapsed)}</span><span>-${mmss(s.dur - elapsed)}</span></div>
     </div>`;
 }
@@ -1876,8 +1895,16 @@ function renderStage(root) {
       const r = trackEl.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
       STATE.elapsed = Math.round(ratio * s.dur);
-      const bar = trackEl.querySelector('i');
+      /* **`i.played`,不是 `i`**:轨道里多了缓冲带之后,第一个 `i` 是**缓冲带**,
+         照旧写 `i` 的话拖动的就是那一条(看起来像「拖动改了缓冲进度」)。
+         两条 `i` 一律按类名点。 */
+      const bar = trackEl.querySelector('i.played');
       if (bar) bar.style.width = `${ratio * 100}%`;
+      const bufBar = trackEl.querySelector('i.buf');
+      if (bufBar) {
+        const buf = bufferedPctOf(s, STATE.elapsed);
+        bufBar.style.width = buf == null ? '0%' : `${buf}%`;
+      }
       const knob = trackEl.querySelector('.knob');
       if (knob) knob.style.left = `${ratio * 100}%`;
       const times = trackEl.parentElement.querySelector('.times');
@@ -2230,8 +2257,14 @@ function renderStage(root) {
       .forEach((x) => { x.style.width = `${pct}%`; });
     const track = el.querySelector('[data-seek]');
     if (track) {
-      const bar = track.querySelector('i');
+      const bar = track.querySelector('i.played');
       if (bar) bar.style.width = `${pct}%`;
+      // 缓冲带跟着位置走(见 bufferedPctOf);顶到曲尾那一档把它收成 0。
+      const bufBar = track.querySelector('i.buf');
+      if (bufBar) {
+        const buf = bufferedPctOf(s, STATE.elapsed);
+        bufBar.style.width = buf == null ? '0%' : `${buf}%`;
+      }
       const knob = track.querySelector('.knob');
       if (knob) knob.style.left = `${pct}%`;
       const times = track.parentElement.querySelector('.times');

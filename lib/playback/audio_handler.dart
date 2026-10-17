@@ -375,6 +375,10 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// 混进 [playbackState] 会让通知栏跟着频繁重建。
   Stream<Duration> get positionStream => _player.positionStream;
 
+  /// 已经缓冲到哪儿。与位置同源(`playbackEventStream`),噪声量级也一样 ——
+  /// 界面那边照位置的待遇,单开一条通道,别混进 [playbackState]。
+  Stream<Duration> get bufferedPositionStream => _player.bufferedPositionStream;
+
   Stream<Duration?> get durationStream => _player.durationStream;
 
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;

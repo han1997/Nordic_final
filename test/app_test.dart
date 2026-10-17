@@ -554,6 +554,64 @@ void main() {
       expect(frame.value, 45000);
       expect(frame.shownPosition, const Duration(seconds: 45));
     });
+
+    // ---- 缓冲带画到哪儿(见 scrubberFrame 的头一段口径) ----
+    // 画不画全在这一层决定,那头的 trackShape 只管画。
+
+    test('缓冲跑到播放位置前面就把那一段标出来', () {
+      final frame = scrubberFrame(
+        position: const Duration(seconds: 15),
+        duration: const Duration(seconds: 60),
+        buffered: const Duration(seconds: 30),
+      );
+      expect(frame.bufferedRatio, 0.5);
+    });
+
+    test('整首都在手边就不画 —— 没有待拉的东西', () {
+      // 本机文件 / 已下完的那一份整首到手,缓冲值顶到曲尾。
+      final frame = scrubberFrame(
+        position: const Duration(seconds: 15),
+        duration: const Duration(seconds: 60),
+        buffered: const Duration(seconds: 60),
+      );
+      expect(frame.bufferedRatio, isNull);
+    });
+
+    test('缓冲没跑到播放位置前面不画', () {
+      final frame = scrubberFrame(
+        position: const Duration(seconds: 30),
+        duration: const Duration(seconds: 60),
+        buffered: const Duration(seconds: 30),
+      );
+      expect(frame.bufferedRatio, isNull);
+    });
+
+    test('时长未知时不画,越界的缓冲夹回量程', () {
+      final unknown = scrubberFrame(
+        position: const Duration(seconds: 5),
+        duration: Duration.zero,
+        buffered: const Duration(seconds: 20),
+      );
+      expect(unknown.bufferedRatio, isNull, reason: '没有量程就没有比例');
+
+      // 缓冲值越界(平台偶尔报得比时长还大)不该画出格 ——
+      // 夹回之后正好等于时长,按「没有待拉的」处理。
+      final over = scrubberFrame(
+        position: const Duration(seconds: 5),
+        duration: const Duration(seconds: 60),
+        buffered: const Duration(seconds: 90),
+      );
+      expect(over.bufferedRatio, isNull);
+
+      // 拖动期间用**真实位置**判,不看手指拖到哪儿。
+      final dragging = scrubberFrame(
+        position: const Duration(seconds: 10),
+        duration: const Duration(seconds: 60),
+        buffered: const Duration(seconds: 30),
+        dragValue: 50000,
+      );
+      expect(dragging.bufferedRatio, 0.5);
+    });
   });
 
   group('松手之后的落点', () {

@@ -22,23 +22,41 @@ import '../widgets/rows.dart';
 ///   而且**不给拖** —— 拖一个没有长度的轴没有意义;
 /// - 但左端仍然写**真实位置**:写 0 就成了「歌在放、进度条说还在开头」;
 /// - 位置越界(比如拖动中途换了档位)一律夹回 `[0, duration]`。
+///
+/// 另外算出**缓冲带该画到哪儿**([bufferedRatio],null = 这一帧不画)。
+/// 判断全落在这一层(能直接测),画的那头只管画:
+/// - 时长未知 → 不画(没有量程,画出来是撒谎);
+/// - 已经缓冲到曲尾 → 不画:本机文件 / 已下完的那一份整首都在手边,
+///   没有「待拉」的东西,再点亮一条等于把整条轨道涂满,没有信息量;
+/// - 缓冲没跑到播放位置前面 → 不画(前面没有余量);
+/// - 其余按夹回 `[已播, 时长]` 之后算比例。**拖动期间用真实位置判**,
+///   不看手指拖到哪儿 —— 拖到还没拉回来的地方本来就是「那儿还没加载」。
 ({
   double value,
   double max,
   Duration shownPosition,
   Duration remaining,
   bool hasDuration,
+  double? bufferedRatio,
 }) scrubberFrame({
   required Duration position,
   required Duration duration,
+  Duration buffered = Duration.zero,
   double? dragValue,
 }) {
   final durationMs = duration.inMilliseconds;
   final hasDuration = durationMs > 0;
-  final value = dragValue ??
-      (hasDuration
-          ? position.inMilliseconds.clamp(0, durationMs).toDouble()
-          : 0.0);
+  final clampedPosition =
+      hasDuration ? position.inMilliseconds.clamp(0, durationMs) : 0;
+  final value = dragValue ?? (hasDuration ? clampedPosition.toDouble() : 0.0);
+
+  double? bufferedRatio;
+  if (hasDuration) {
+    final bufferedMs = buffered.inMilliseconds.clamp(0, durationMs);
+    if (bufferedMs > clampedPosition && bufferedMs < durationMs) {
+      bufferedRatio = bufferedMs / durationMs;
+    }
+  }
 
   return (
     value: value,
@@ -50,6 +68,7 @@ import '../widgets/rows.dart';
             milliseconds: (durationMs - value).round().clamp(0, durationMs))
         : Duration.zero,
     hasDuration: hasDuration,
+    bufferedRatio: bufferedRatio,
   );
 }
 
@@ -82,6 +101,103 @@ Duration? scrubberHold({
   return held;
 }
 
+/// 轨道的三层画法:未加载的底 → **已缓冲的一段** → 已播的那一段。
+///
+/// **只换绘制,手势仍归 `Slider`**:拖动、[scrubberHold]、「时长未知不给拖」
+/// 那一整套都在上面那一层,一个字不用动 —— 自己重写命中与拖动得不偿失。
+///
+/// 顺序上有个必须照做的细节:父类会把**未加载段**从拇指往右整个重画一遍,
+/// 那一下正好把缓冲带擦掉。所以这里画完底与缓冲带之后,把父类的 inactive
+/// 调成透明再调它 —— 留给父类的只有「已播的那一段」。
+class _BufferedTrackShape extends RoundedRectSliderTrackShape {
+  const _BufferedTrackShape({
+    required this.bufferedRatio,
+    required this.bufferedColor,
+  });
+
+  /// 已缓冲到哪儿(0–1,已经夹好)。**该不该画由 `scrubberFrame` 说了算**,
+  /// 这个类不做决定,拿到非空就是画。
+  final double bufferedRatio;
+
+  /// 「加载了但还没播到」那一段的颜色 —— 由调用点从 token 层挑(见 [_build]),
+  /// 不写死在这里(深浅两套要分别取色)。
+  final Color bufferedColor;
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    double additionalActiveTrackHeight = 2,
+  }) {
+    if (sliderTheme.trackHeight == null || sliderTheme.trackHeight! <= 0) {
+      return;
+    }
+
+    final rect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    final radius = Radius.circular(rect.height / 2);
+    final isLtr = textDirection == TextDirection.ltr;
+
+    // 1) 未加载的整条底。取色口径与父类一致(禁用态那条动画同样要吃进去)。
+    final basePaint = Paint()
+      ..color = ColorTween(
+        begin: sliderTheme.disabledInactiveTrackColor,
+        end: sliderTheme.inactiveTrackColor,
+      ).evaluate(enableAnimation)!;
+    context.canvas.drawRRect(RRect.fromRectAndRadius(rect, radius), basePaint);
+
+    // 2) 已缓冲的一段。左端与轨底同圆角,**右端方切** —— 右端也圆的话,
+    //    中场会多出一颗药丸头,看着像并排放了两截。
+    final edge = rect.left + rect.width * bufferedRatio.clamp(0.0, 1.0);
+    final band = isLtr
+        ? Rect.fromLTRB(rect.left, rect.top, edge, rect.bottom)
+        : Rect.fromLTRB(edge, rect.top, rect.right, rect.bottom);
+    if (band.width > 0) {
+      context.canvas.drawRRect(
+        RRect.fromRectAndCorners(
+          band,
+          topLeft: isLtr ? radius : Radius.zero,
+          bottomLeft: isLtr ? radius : Radius.zero,
+          topRight: isLtr ? Radius.zero : radius,
+          bottomRight: isLtr ? Radius.zero : radius,
+        ),
+        Paint()..color = bufferedColor,
+      );
+    }
+
+    // 3) 已播的那一段交给父类画(它的 inactive 置透明,免得盖掉上面两层)。
+    super.paint(
+      context,
+      offset,
+      parentBox: parentBox,
+      sliderTheme: sliderTheme.copyWith(
+        inactiveTrackColor: Colors.transparent,
+        disabledInactiveTrackColor: Colors.transparent,
+      ),
+      enableAnimation: enableAnimation,
+      textDirection: textDirection,
+      thumbCenter: thumbCenter,
+      secondaryOffset: secondaryOffset,
+      isDiscrete: isDiscrete,
+      isEnabled: isEnabled,
+      additionalActiveTrackHeight: additionalActiveTrackHeight,
+    );
+  }
+}
+
 class PlaybackScrubber extends StatefulWidget {
   const PlaybackScrubber({super.key, required this.playable});
 
@@ -103,14 +219,22 @@ class _PlaybackScrubberState extends State<PlaybackScrubber> {
   @override
   Widget build(BuildContext context) {
     // 位置单独订阅(见 PlaybackController.position):只让这个滑块跟着走,
-    // 不必把整屏拉进「每秒重建几次」的名单里。
+    // 不必把整屏拉进「每秒重建几次」的名单里。**缓冲同理**
+    // (PlaybackController.buffered)—— 两条通道嵌套着读,重建面还是这一块叶子。
     return ValueListenableBuilder<Duration>(
       valueListenable: widget.playable.position,
-      builder: (context, position, _) => _build(context, position),
+      builder: (context, position, _) => ValueListenableBuilder<Duration>(
+        valueListenable: widget.playable.buffered,
+        builder: (context, buffered, _) => _build(context, position, buffered),
+      ),
     );
   }
 
-  Widget _build(BuildContext context, Duration position) {
+  Widget _build(
+    BuildContext context,
+    Duration position,
+    Duration buffered,
+  ) {
     // 落点还该不该停着 —— 位置追上了、或者等够久了就交回去。
     final hold = scrubberHold(
       held: _dropped,
@@ -126,6 +250,7 @@ class _PlaybackScrubberState extends State<PlaybackScrubber> {
     final frame = scrubberFrame(
       position: position,
       duration: widget.playable.state.duration,
+      buffered: buffered,
       dragValue: _dragValue ?? hold?.inMilliseconds.toDouble(),
     );
     final dragging = _dragValue != null;
@@ -147,7 +272,16 @@ class _PlaybackScrubberState extends State<PlaybackScrubber> {
                 elevation: 2,
               ),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
-              trackShape: const RoundedRectSliderTrackShape(),
+              // 有待拉的东西(远端流还在缓冲)才换成三层绘制;其余时候连绘制
+              // 路径都不换 —— 本机文件那一条路与改动前逐像素一样。
+              trackShape: frame.bufferedRatio == null
+                  ? const RoundedRectSliderTrackShape()
+                  : _BufferedTrackShape(
+                      bufferedRatio: frame.bufferedRatio!,
+                      // 中性的 fill3:夹在未加载的 fill2 与强调色之间,亮一档
+                      // 又不抢 —— 强调色是「播到哪儿」的专用信号。
+                      bufferedColor: context.nordic.fill3,
+                    ),
             ),
             child: Slider(
               value: frame.value,

@@ -1268,9 +1268,18 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   position: absolute;
   inset: -11px 0;
 }
+/* 轨道里那两段:**已缓冲**与**已播**,共用定位,颜色分开。
+   DOM 里 .buf 在 .played 前面 —— 顺序即层级(不写 z-index),强调色压在上面,
+   于是看得见的两段正好是 [已播 → 已缓冲]。 */
 .scrub .track i {
   position: absolute; left: 0; top: 0; bottom: 0;
   border-radius: var(--r-full);
+}
+/* 已加载、还没播到的那一段。**中性色,不用强调色** —— 强调色是「播到哪儿」的
+   专用信号;它去管两件事,这两段在屏幕上就分不出来了。fill-3 正好夹在未加载的
+   fill-2 与强调色之间,亮一档但不抢。 */
+.scrub .track i.buf { background: var(--fill-3); }
+.scrub .track i.played {
   background: linear-gradient(90deg,
               color-mix(in srgb, var(--accent) 70%, #fff), var(--accent));
   box-shadow: 0 0 14px -2px color-mix(in srgb, var(--accent) 85%, transparent);
