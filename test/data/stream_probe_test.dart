@@ -5,16 +5,19 @@ import 'package:nordic/data/models.dart';
 import 'package:nordic/data/subsonic_auth.dart';
 import 'package:nordic/data/subsonic_client.dart';
 
+import 'live_server.dart';
+
 /// 播放前的最后一道关:**流地址真的能拉到音频字节吗**。
 ///
 /// 这条路径与浏览走的是两套东西 —— 曲库拉取走 [SubsonicClient] 的
 /// Dio 包装,而音频由 ExoPlayer / 系统媒体栈直接开流。
 /// 所以「曲库能看」不代表「歌能播」,必须单独验。
 ///
-/// 打到真服务器,不可达时跳过。
-const _serverUrl = 'http://192.168.10.4:4533';
-const _username = 'hhy';
-const _password = 'REDACTED';
+/// 打到真服务器,**凭据从环境变量读**(见 `live_server.dart`);
+/// 没配环境变量时退回一个够不着的地址,于是整组跳过。
+final _serverUrl = liveServerUrl;
+final _username = liveServerUser;
+final _password = liveServerPassword;
 
 void main() {
   late SubsonicRepositoryLike repo;
@@ -23,7 +26,7 @@ void main() {
     repo = SubsonicRepositoryLike(
       SubsonicClient(
         auth: SubsonicAuth(username: _username, password: _password),
-        routes: const [
+        routes: [
           ServerRoute(id: 'lan', name: '局域网', url: _serverUrl),
         ],
       ),

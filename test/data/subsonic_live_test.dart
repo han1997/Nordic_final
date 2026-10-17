@@ -4,21 +4,25 @@ import 'package:nordic/data/server_config.dart';
 import 'package:nordic/data/subsonic_client.dart';
 import 'package:nordic/data/subsonic_repository.dart';
 
+import 'live_server.dart';
+
 /// 这些用例打的是开发机上真实的 Navidrome —— 数据层的地基,
 /// 用假响应测「字段名对不对」很容易自说自话(照着实现编 JSON,
 /// 再照着实现断言),打到真服务器上才能发现协议口径的偏差。
 ///
-/// 服务器不可达时整组跳过,不让 CI / 离线开发平白失败。
-const _serverUrl = 'http://192.168.10.4:4533';
-const _username = 'hhy';
-const _password = 'REDACTED';
+/// **凭据从环境变量读**(见 `live_server.dart`):仓库是公开的,
+/// 密码不能跟着代码走。没配环境变量时退回一个够不着的地址,
+/// 于是整组照旧跳过,不让 CI / 离线开发平白失败。
+final _serverUrl = liveServerUrl;
+final _username = liveServerUser;
+final _password = liveServerPassword;
 
 void main() {
   late SubsonicRepository repo;
 
   setUp(() {
     repo = SubsonicRepository(clientFor(
-      config: const ServerConfig(
+      config: ServerConfig(
         id: 's1',
         name: '客厅 Navidrome',
         kind: ServerKind.navidrome,
@@ -33,7 +37,7 @@ void main() {
   Future<bool> reachable() async {
     try {
       final ping = await repo.client.pingRoute(
-        const ServerRoute(id: 'lan', name: '局域网直连', url: _serverUrl),
+        ServerRoute(id: 'lan', name: '局域网直连', url: _serverUrl),
       );
       return ping.isOk;
     } catch (_) {
@@ -146,6 +150,11 @@ void main() {
   });
 
   test('封面与流地址带上鉴权参数且指向当前线路', () async {
+    // 这一条不碰网络,但断言的是**真实**账号与地址;没配环境变量就没得可验。
+    if (!liveServerConfigured) {
+      markTestSkipped('没配 NORDIC_LIVE_* 环境变量,跳过');
+      return;
+    }
     final cover = repo.coverUri('al-abc', size: 256);
     expect(cover.path, '/rest/getCoverArt.view');
     expect(cover.queryParameters['id'], 'al-abc');

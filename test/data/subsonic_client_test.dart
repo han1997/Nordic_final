@@ -15,12 +15,12 @@ void main() {
     });
 
     test('每次请求的参数齐全,且 salt 每次都不同', () {
-      final auth = SubsonicAuth(username: 'hhy', password: 'pw');
+      final auth = SubsonicAuth(username: 'u', password: 'pw');
       final first = auth.queryParams();
       final second = auth.queryParams();
 
       for (final params in [first, second]) {
-        expect(params['u'], 'hhy');
+        expect(params['u'], 'u');
         expect(params['v'], SubsonicAuth.apiVersion);
         expect(params['c'], SubsonicAuth.clientName);
         expect(params['f'], 'json');
@@ -39,7 +39,7 @@ void main() {
       name: '局域网',
       url: 'http://192.168.10.4:4533',
     );
-    final auth = SubsonicAuth(username: 'hhy', password: 'pw');
+    final auth = SubsonicAuth(username: 'u', password: 'pw');
 
     test('端点落到 /rest/<name>.view 下', () {
       final uri = SubsonicClient.buildUri(route, 'getAlbum', {'id': 'a1'}, auth);
@@ -171,7 +171,7 @@ void main() {
         id: 's1',
         name: '客厅',
         kind: ServerKind.navidrome,
-        username: 'hhy',
+        username: 'u',
         routes: [
           ServerRoute(id: 'lan', name: '局域网', url: 'http://192.168.10.4:4533'),
         ],
@@ -180,7 +180,7 @@ void main() {
       expect(json.containsKey('password'), isFalse);
       expect(
         json.toString(),
-        isNot(contains('REDACTED')),
+        isNot(contains('不该出现在配置里的密码')),
         reason: '配置里不该出现任何密码痕迹',
       );
     });
@@ -190,7 +190,7 @@ void main() {
         id: 's1',
         name: '客厅',
         kind: ServerKind.fnos,
-        username: 'hhy',
+        username: 'u',
         routes: [
           ServerRoute(
             id: 'lan',

@@ -7,23 +7,26 @@ import 'package:nordic/data/server_config.dart';
 import 'package:nordic/data/subsonic_client.dart';
 import 'package:nordic/data/subsonic_repository.dart';
 
+import 'live_server.dart';
+
 /// 真下载 —— 拿真服务器上的一首歌走完「拉流 → 落盘 → 登记」全程。
 ///
 /// 前面那些下载用例用的是假传输(验的是排队 / 门控 / 续传这些逻辑),
 /// 这一条验的是**协议那一半**:鉴权参数、流地址、Content-Type,
 /// 以及文件头是不是真的音频。这些在假 Dio 上永远测不出偏差。
 ///
-/// 服务器不可达时整组跳过,不让离线开发平白失败。
-const _serverUrl = 'http://192.168.10.4:4533';
-const _username = 'hhy';
-const _password = 'REDACTED';
+/// **凭据从环境变量读**(见 `live_server.dart`):仓库是公开的,密码不能跟着代码走。
+/// 没配环境变量时退回一个够不着的地址,整组照旧跳过,不让离线开发平白失败。
+final _serverUrl = liveServerUrl;
+final _username = liveServerUser;
+final _password = liveServerPassword;
 
 void main() {
   late SubsonicRepository repo;
 
   setUp(() {
     repo = SubsonicRepository(clientFor(
-      config: const ServerConfig(
+      config: ServerConfig(
         id: 's1',
         name: '客厅 Navidrome',
         kind: ServerKind.navidrome,
@@ -37,7 +40,7 @@ void main() {
   Future<bool> reachable() async {
     try {
       final ping = await repo.client.pingRoute(
-        const ServerRoute(id: 'lan', name: '局域网直连', url: _serverUrl),
+        ServerRoute(id: 'lan', name: '局域网直连', url: _serverUrl),
       );
       return ping.isOk;
     } catch (_) {
