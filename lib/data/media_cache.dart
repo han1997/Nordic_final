@@ -257,10 +257,41 @@ class MediaCache extends ChangeNotifier {
   /// 不看 [_usedBytes]:那个数要等下一轮数目录才刷新,刚下完的那一份还不在里头。
   bool isComplete(Song song, {required String qualityId, String? format}) {
     if (!enabled) return false;
-    final file = _slotFor(song, qualityId: qualityId, format: format);
-    if (!file.existsSync()) return false;
-    return !File('${file.path}$_partialSuffix').existsSync();
+    return _isCompleteFile(_slotFor(song, qualityId: qualityId, format: format));
   }
+
+  /// 这一首在本机的**更高档**那一份(有才算数)。[candidates] 由播放层按
+  /// 「从高到低」给出(见 `quality.dart` 的 `betterTiersThan`),取第一个命中的。
+  ///
+  /// 为什么值得做:同一首已经留着一份更好的音频时,照所选档再拉一遍等于
+  /// **白花流量**,还会再写一份低档缓存 —— 于是同一首在磁盘上并存两份,
+  /// 正是要治的那件事。拿更高的那份播之后,这一首压根不会再写缓存
+  /// ([fileFor] 都轮不上)。
+  ///
+  /// 只要**完整**的那一份(半截的播到一半会断);[candidates] 最多三档,
+  /// 路径纯算(有备忘录),不扫目录。
+  ({String path, String qualityId})? completeCopyAmong(
+    Song song,
+    List<({String qualityId, String? format})> candidates,
+  ) {
+    // 一个文件都没有就不必碰盘(与 [cachedPathFor] 同一条快路)。
+    if (!enabled || _usedBytes == 0) return null;
+    for (final candidate in candidates) {
+      final file = _slotFor(
+        song,
+        qualityId: candidate.qualityId,
+        format: candidate.format,
+      );
+      if (!_isCompleteFile(file)) continue;
+      return (path: file.path, qualityId: candidate.qualityId);
+    }
+    return null;
+  }
+
+  /// 「盘上有这一份,而且不是半截」—— [isComplete] 与 [_dropLowerTiers]
+  /// 共用这一条口径,免得两处对「完整」的理解不一样。
+  bool _isCompleteFile(File file) =>
+      file.existsSync() && !File('${file.path}$_partialSuffix').existsSync();
 
   /// 开始放某一首时叫一声:记下「正在听的是哪一份」(淘汰时跳过它),
   /// 命中的话刷新它的「最近听过」,然后按上限淘汰一轮。
@@ -272,25 +303,71 @@ class MediaCache extends ChangeNotifier {
   /// 淘汰也放在这里,是因为它是**会话中途唯一的算账时刻**:一直放下去不会重建
   /// 播放源,不在这里淘汰的话,缓存能一路涨过上限(上限只在启动与调额度时才查)。
   /// 走的是 [_pruneAfterTrackChange] —— 不算账的那几下不白扫目录。
+  /// [playingPath] 是**实际装载的那个文件**:播放层可能拿的是更高档那一份
+  /// (见 [completeCopyAmong]),这时按 [qualityId] 现算路径会指到一个不存在的
+  /// 文件 —— `_playingPath` 指错,淘汰时就可能把正在解码的那一份删掉。
+  /// 所以让知道的那一头直接说,不去猜。
+  ///
+  /// [lowerTiers] 见 [_dropLowerTiers]。
   Future<void> markPlaying(
     Song song, {
     required String qualityId,
     String? format,
+    String? playingPath,
+    List<({String qualityId, String? format})> lowerTiers = const [],
   }) async {
     if (!enabled) return;
-    final file = _slotFor(song, qualityId: qualityId, format: format);
-    _playingPath = file.path;
+    final slot = _slotFor(song, qualityId: qualityId, format: format);
+    final playing = File(playingPath ?? slot.path);
+    _playingPath = playing.path;
 
-    if (file.existsSync()) {
+    if (playing.existsSync()) {
       // 命中就刷新 mtime —— LRU 的「最近听过」就是文件时间,不刷的话
       // 一首天天听的歌会因为它当初落盘的时刻早而被先扔掉。
       try {
-        await file.setLastModified(DateTime.now());
+        await playing.setLastModified(DateTime.now());
       } catch (_) {
         // 刷不动只是这一份的 LRU 位置不准,不影响播放。
       }
     }
+
+    await _dropLowerTiers(
+      song,
+      playingPath: playing.path,
+      lowerTiers: lowerTiers,
+    );
     await _pruneAfterTrackChange();
+  }
+
+  /// 同一首的**更低档**那几份,在当前在放的这一份**已经完整落到本机**之后才丢。
+  ///
+  /// 两条判据缺一不可:
+  /// - 高码率那份还在下(只有 `.part`)就把低码率的扔掉,网络一断就两头落空 ——
+  ///   用户既没拿到好的那份,也没有回得去的差的那份。所以先看「好的那份完整吗」;
+  /// - 候选路径**纯算**([_slotFor] 有备忘录),最多三下 stat、**不扫目录** ——
+  ///   这一步挂在每次换歌上,不能变贵。
+  ///
+  /// 正在听的那一份永远先跳过(防御:它不该出现在 [lowerTiers] 里,
+  /// 真出了这种事也不该删)。
+  Future<void> _dropLowerTiers(
+    Song song, {
+    required String playingPath,
+    required List<({String qualityId, String? format})> lowerTiers,
+  }) async {
+    if (lowerTiers.isEmpty) return;
+    if (!_isCompleteFile(File(playingPath))) return;
+
+    for (final lower in lowerTiers) {
+      final slot = _slotFor(
+        song,
+        qualityId: lower.qualityId,
+        format: lower.format,
+      );
+      if (slot.path == playingPath) continue;
+      if (!_isCompleteFile(slot)) continue;
+      // 连同 `.mime` 旁注一起删,并对好占用账(见 [_delete])。
+      await _delete(slot);
+    }
   }
 
   // ---------------- 占用与淘汰 ----------------

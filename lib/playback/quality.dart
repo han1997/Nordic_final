@@ -95,3 +95,22 @@ extension _FirstOrNull<T> on Iterable<T> {
     return it.moveNext() ? it.current : null;
   }
 }
+
+/// 比 [base] **低**的档位,由高到低 —— 给「换到这一档之后,更低的那几份缓存
+/// 可以丢了」用(见 `MediaCache.markPlaying` 的 `lowerTiers`)。
+///
+/// **只列更低的**:更高的那份绝不进这个名单(那是要留下的)。
+List<QualityOption> lowerTiersThan(QualityOption base) {
+  final index = QualityOption.all.indexOf(base);
+  return index < 0 ? const [] : QualityOption.all.sublist(index + 1);
+}
+
+/// 比 [base] **高**的档位,由高到低 —— 给「本机要是已经有更高那一档的完整缓存,
+/// 直接拿它播」用(见 `NordicAudioHandler._sourceFor`)。
+///
+/// 白拿的音质:那一份已经在磁盘上了,用它既不花流量、也不会再写第二份缓存 ——
+/// 与 README 里「已经留着的照旧读本机」同一条口径。
+List<QualityOption> betterTiersThan(QualityOption base) {
+  final index = QualityOption.all.indexOf(base);
+  return index <= 0 ? const [] : QualityOption.all.sublist(0, index);
+}

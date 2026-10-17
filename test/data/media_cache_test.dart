@@ -433,6 +433,191 @@ void main() {
     });
   });
 
+  group('同一首只留最高档那一份', () {
+    // 路径里带着档位,于是同一首在 192 与 原音 各留一份**永远并存**、额度白占。
+    // 规矩是两条:
+    //   1. 本机已经有**更高**一档的完整缓存 → 播放层直接拿它播(见 completeCopyAmong),
+    //      于是根本不会再写第二份;
+    //   2. 更高档那份**完整落到本机之后**,同曲更低档那几份让位(见 markPlaying)。
+    // 四条护栏逐条钉住:完整才动手 / 正在听的不删 / 半截的不碰 / 绝不向上删。
+
+    test('更高档完整在手边时,播放层拿到的是它', () async {
+      final cache = await open();
+      const candidates = [
+        (qualityId: 'original', format: null),
+        (qualityId: 'high', format: 'mp3'),
+      ];
+      expect(cache.completeCopyAmong(song, candidates), isNull);
+
+      final original = await seed(
+        cache,
+        song,
+        qualityId: 'original',
+        format: null,
+        listenedAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+
+      final hit = cache.completeCopyAmong(song, candidates);
+      expect(hit?.path, original);
+      expect(hit?.qualityId, 'original', reason: '按给的顺序取第一个命中的(从高到低)');
+    });
+
+    test('半截的那一份不算「在手边」', () async {
+      final cache = await open();
+      const candidates = [(qualityId: 'original', format: null)];
+      final original = await seed(
+        cache,
+        song,
+        qualityId: 'original',
+        format: null,
+        listenedAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+
+      // 还在往那儿写 —— 拿它播会播到一半没了。
+      await File('$original.part').writeAsString('half');
+      expect(cache.completeCopyAmong(song, candidates), isNull);
+    });
+
+    test('更高档完整落下之后,更低那份连 .mime 一起消失', () async {
+      final cache = await open();
+      final low = await seed(
+        cache,
+        song,
+        qualityId: 'low',
+        format: 'mp3',
+        listenedAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+      final high = await seed(
+        cache,
+        song,
+        qualityId: 'high',
+        format: 'mp3',
+        listenedAt: DateTime.now(),
+      );
+      expect(cache.usedBytes, 2048);
+
+      await cache.markPlaying(
+        song,
+        qualityId: 'high',
+        format: 'mp3',
+        lowerTiers: const [
+          (qualityId: 'medium', format: 'mp3'),
+          (qualityId: 'low', format: 'mp3'),
+        ],
+      );
+
+      expect(File(low).existsSync(), isFalse, reason: '更低那份该让位');
+      expect(File('$low.mime').existsSync(), isFalse, reason: '旁注要跟着走');
+      expect(File(high).existsSync(), isTrue, reason: '更高的那一份是留下的');
+      expect(cache.usedBytes, 1024, reason: '占用与文件数要跟着降');
+      expect(cache.fileCount, 1);
+    });
+
+    test('更高那份还没落盘(只有 .part)时一个都不删', () async {
+      final cache = await open();
+      final low = await seed(
+        cache,
+        song,
+        qualityId: 'low',
+        format: 'mp3',
+        listenedAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+      // 先拿到槽位再摆半截文件(`fileFor` 见到 `.part` 会拒发这个位置)。
+      final highSlot = cache.fileFor(song, qualityId: 'high', format: 'mp3')!;
+      await File('${highSlot.path}.part').writeAsString('half');
+
+      await cache.markPlaying(
+        song,
+        qualityId: 'high',
+        format: 'mp3',
+        lowerTiers: const [(qualityId: 'low', format: 'mp3')],
+      );
+
+      expect(
+        File(low).existsSync(),
+        isTrue,
+        reason: '高的那份还在下:这时候把低的删了,网络一断就两头落空',
+      );
+    });
+
+    test('只删更低的那一档 —— 更高的那份留着', () async {
+      final cache = await open();
+      final original = await seed(
+        cache,
+        song,
+        qualityId: 'original',
+        format: null,
+        listenedAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+      final medium = await seed(
+        cache,
+        song,
+        qualityId: 'medium',
+        format: 'mp3',
+        listenedAt: DateTime.now(),
+      );
+
+      // 在「均衡」这一档换歌:候选名单里只有省流那一档(盘上没有)。
+      await cache.markPlaying(
+        song,
+        qualityId: 'medium',
+        format: 'mp3',
+        lowerTiers: const [(qualityId: 'low', format: 'mp3')],
+      );
+
+      expect(File(original).existsSync(), isTrue, reason: '下次播还能白拿这一份');
+      expect(File(medium).existsSync(), isTrue);
+    });
+
+    test('正在听的那一份即使被列进候选也不删', () async {
+      final cache = await open();
+      final low = await seed(
+        cache,
+        song,
+        qualityId: 'low',
+        format: 'mp3',
+        listenedAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+
+      // 防御性用例:真按 `playingPath` 指着低档那份时,列出它也不该动手 ——
+      // 删掉正在放的那份文件等于掐断这一首的声音。
+      await cache.markPlaying(
+        song,
+        qualityId: 'low',
+        format: 'mp3',
+        playingPath: low,
+        lowerTiers: const [(qualityId: 'low', format: 'mp3')],
+      );
+
+      expect(File(low).existsSync(), isTrue);
+    });
+
+    test('低档那份还在写(半截)时不动它', () async {
+      final cache = await open();
+      final high = await seed(
+        cache,
+        song,
+        qualityId: 'high',
+        format: 'mp3',
+        listenedAt: DateTime.now(),
+      );
+      // 低档的位置上只有半截:那是 just_audio 正写着的一份,清理由
+      // 「半截文件超过 30 分钟」那条路管(见 stalePartialAge)。
+      final lowSlot = cache.fileFor(song, qualityId: 'low', format: 'mp3')!;
+      await File('${lowSlot.path}.part').writeAsString('half');
+
+      await cache.markPlaying(
+        song,
+        qualityId: 'high',
+        format: 'mp3',
+        lowerTiers: const [(qualityId: 'low', format: 'mp3')],
+      );
+
+      expect(File('${lowSlot.path}.part').existsSync(), isTrue);
+      expect(File(high).existsSync(), isTrue);
+    });
+  });
+
   group('档位定义', () {
     test('认不出来的档位退回默认,而不是抛异常', () {
       expect(CacheLimit.byId('1g'), CacheLimit.gb1);

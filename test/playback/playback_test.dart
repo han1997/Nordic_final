@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart' show AudioServiceRepeatMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nordic/data/media_cache.dart';
 import 'package:nordic/data/models.dart';
 import 'package:nordic/data/network_status.dart';
 import 'package:nordic/playback/audio_handler.dart';
@@ -39,6 +40,34 @@ void main() {
           .map((q) => q.maxBitRate ?? 99999)
           .toList();
       expect(rates, orderedEquals([...rates]..sort((a, b) => b.compareTo(a))));
+    });
+
+    test('「比它低」与「比它高」两串名单都从档位表上切出来', () {
+      // 删除候选:只列更低的。更高的那份绝不能进去 —— 那是要留下的那一份。
+      expect(
+        lowerTiersThan(QualityOption.original).map((q) => q.id),
+        orderedEquals(['high', 'medium', 'low']),
+      );
+      expect(
+        lowerTiersThan(QualityOption.medium).map((q) => q.id),
+        orderedEquals(['low']),
+      );
+      expect(lowerTiersThan(QualityOption.low), isEmpty);
+
+      // 接管候选:只列更高的,由高到低(越好的越先试)。
+      expect(
+        betterTiersThan(QualityOption.low).map((q) => q.id),
+        orderedEquals(['original', 'high', 'medium']),
+      );
+      expect(betterTiersThan(QualityOption.original), isEmpty);
+
+      // 两串互不重叠,合上自己正好是整张表 —— 换档时不会漏掉也不会重复。
+      for (final q in QualityOption.all) {
+        expect(
+          [...betterTiersThan(q), q, ...lowerTiersThan(q)],
+          orderedEquals(QualityOption.all),
+        );
+      }
     });
 
     test('未知 id 退回默认档而不是抛异常', () {
@@ -572,6 +601,84 @@ void main() {
       }
     });
   });
+
+  group('缓存接管:同一首只留最高那一份', () {
+    // 路径里带着档位,同一首在 192 与 原音 本来各留一份、永远并存。这一组从
+    // **处理器那一头**钉住整条链路:本机已有更高档那份 → 装载的就是那个文件
+    // (而不是又拉一遍网络、又写第二份);换歌那一下把更低档那几份丢掉。
+
+    late Directory root;
+    late MediaCache cache;
+    late _FakePlayer player;
+    late NordicAudioHandler handler;
+
+    const song = Song(
+      id: 'song-1',
+      title: '可能',
+      artist: '程响',
+      album: '可能',
+      albumId: 'al-1',
+      suffix: 'flac',
+    );
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('nordic-takeover');
+      cache = await MediaCache.open(
+        limitBytes: CacheLimit.gb1.bytes,
+        root: Directory('${root.path}${Platform.pathSeparator}audio'),
+      );
+      player = _FakePlayer();
+      // 所选档是「均衡」,而本机留着的是原音那一份。
+      handler = NordicAudioHandler(
+        () => null,
+        QualityController(QualityOption.medium),
+        cache: cache,
+        player: player,
+      );
+    });
+
+    tearDown(() async {
+      await player.dispose();
+      cache.dispose();
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+
+    /// 往缓存里写一份完整的那一份(走缓存自己算出来的位置)。
+    Future<String> write(String qualityId, {String? format}) async {
+      final file = cache.fileFor(song, qualityId: qualityId, format: format)!;
+      await file.writeAsBytes(List<int>.filled(64, 1));
+      await File('${file.path}.mime').writeAsString('audio/mpeg');
+      await cache.prune();
+      return file.path;
+    }
+
+    test('本机已有更高档那一份 —— 装的是那个文件,不再走网络', () async {
+      final original = await write('original');
+
+      await handler.setQueue(const [song], index: 0);
+
+      expect(
+        (player.loaded.first as ProgressiveAudioSource).uri.toFilePath(),
+        original,
+        reason: '白拿的音质:那一份已经在磁盘上,拿它播既不花流量也不会再写一份',
+      );
+    });
+
+    test('更高档那份完整之后,同曲更低档那几份让位', () async {
+      final original = await write('original');
+      final low = await write('low', format: 'mp3');
+      expect(File(low).existsSync(), isTrue);
+
+      await handler.setQueue(const [song], index: 0);
+      // 换歌那一下:缓存那边据此记「正在听的是哪一份」并把更低档的丢掉。
+      player.events.add(PlaybackEvent(currentIndex: 0));
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(File(low).existsSync(), isFalse, reason: '同一首只留最高那一份');
+      expect(File(original).existsSync(), isTrue, reason: '正在听的是它,动不得');
+    });
+  });
 }
 
 /// 可摆布的播放器 —— 位置监察那条护栏只吃这几样(位置流、下标、循环模式、
@@ -581,6 +688,13 @@ void main() {
 /// 构造函数在测试环境里本来就是惰性的(见上面那条「播放层无条件在场」)。
 class _FakePlayer extends AudioPlayer {
   final positions = StreamController<Duration>.broadcast();
+
+  /// 处理器订阅的那条播放事件流 —— 只用来推「换到第几首」这类事件
+  /// (缓存那边「正在听的是哪一份」就挂在这条流上)。
+  final events = StreamController<PlaybackEvent>.broadcast();
+
+  /// 最近一次装载进去的播放源 —— 用来断言「装的是哪一份」。
+  List<AudioSource> loaded = const [];
 
   int seekToNextCalls = 0;
   int playCalls = 0;
@@ -605,6 +719,21 @@ class _FakePlayer extends AudioPlayer {
   Stream<Duration> get positionStream => positions.stream;
 
   @override
+  Stream<PlaybackEvent> get playbackEventStream => events.stream;
+
+  @override
+  Future<Duration?> setAudioSources(
+    List<AudioSource> audioSources, {
+    bool preload = true,
+    int? initialIndex,
+    Duration? initialPosition,
+    ShuffleOrder? shuffleOrder,
+  }) async {
+    loaded = audioSources;
+    return null;
+  }
+
+  @override
   Future<void> play() async {
     playCalls++;
   }
@@ -625,5 +754,6 @@ class _FakePlayer extends AudioPlayer {
   @override
   Future<void> dispose() async {
     await positions.close();
+    await events.close();
   }
 }

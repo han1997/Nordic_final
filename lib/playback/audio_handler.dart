@@ -288,15 +288,20 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// id 而非下标判断要不要重发:队列可能被拖动重排 / 插播,那时下标不是同一份。
   String? _publishedMediaItemId;
 
-  /// 「这一首**装载那一刻**走的是不是本机文件」。
+  /// 「这一首**装载那一刻**」装的是哪一份:是不是本机文件、实际用的是哪一档、
+/// 以及那个文件的路径。
   ///
   /// 为什么是「装载那一刻」而不是「此刻磁盘上有没有」:边听边缓存的那一份会在
   /// 播到一半时下完(磁盘上从无到有),而**正在放的播放源没有换** —— 它还是那条
   /// 流。「本机文件」是平台唯一能 seek 的东西(见 [_seekRemote]),
   /// 记错了就会出现「明明缓存好了却还是跳不动」。
   ///
+  /// 「实际用的是哪一档」也是同一回事:本机已经有更高档那一份时,[_sourceFor]
+  /// 会直接拿它播 —— 这时照**所选档**去算缓存路径会指到一个不存在的文件,
+  /// 缓存那边记「正在听的是哪一份」就会记错(淘汰时可能删掉正在解码的那份)。
+  ///
   /// 覆盖写:每次拼播放源都会把那一首的实况记一遍。
-  final Map<String, bool> _localLoaded = {};
+  final Map<String, ({bool local, QualityOption quality, String? path})> _localLoaded = {};
 
   /// 第几次 seek。等待期间用户又拖了一次的话,先前那一次作废 ——
   /// 否则两次重载会前后脚打起来。
@@ -543,7 +548,10 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (index == null || index < 0 || index >= _queue.length) return;
 
     final song = _queue[index];
-    if (_localFileFor(song) != null) return;
+    // 本机那一份:下载过的、缓存过的,或者**更高档那份缓存**(见 [_sourceFor])——
+    // 它与线路无关,重载只是白等一次缓冲。
+    final local = _localLoaded['${song.id}@${_quality.value.id}']?.local ?? false;
+    if (local || _localFileFor(song) != null) return;
     // 没有仓库就拼不出新地址 —— 与 [setQueue] 一样,由那一头提前拦下。
     if (_repo == null) return;
 
@@ -610,14 +618,14 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     final song = _queue[index];
     final quality = _quality.value;
     // 正在放的已经是本机那一份 —— 平台自己就能 seek,不必绕这一圈。
-    if (_localLoaded['${song.id}@${quality.id}'] ?? false) return false;
+    if (_localLoaded['${song.id}@${quality.id}']?.local ?? false) return false;
 
     final token = ++_seekToken;
     final ready = await _waitForLocalCopy(song, quality);
     // 等待期间可能又拖了一次 / 换了歌 / 这一首已经放完 —— 后来那一次说了算。
     if (!ready || token != _seekToken) return false;
     if (_player.currentIndex != index) return false;
-    if (_localLoaded['${song.id}@${quality.id}'] ?? false) return false;
+    if (_localLoaded['${song.id}@${quality.id}']?.local ?? false) return false;
 
     await _reloadAt(index, position);
     return true;
@@ -726,10 +734,19 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       format: quality.format,
     );
 
+    // 本机要是有**更高**一档的完整缓存,直接拿它播:白拿的音质,而且不花流量
+    // (与「已经留着的照旧读本机」同一条口径)。命中时这一首根本不会再写一份
+    // 缓存 —— 同一首两台并存的那件事,从源头上就不发生了。
+    final better = cached == null
+        ? _cache?.completeCopyAmong(song, _tierSpecs(betterTiersThan(quality)))
+        : null;
+    // 实际用的是哪一档 —— 下面要按它记账(见 [_localLoaded])。
+    final resolved = better == null ? quality : QualityOption.byId(better.qualityId);
+
     final origin = playbackOriginFor(
       song,
       localPath: _downloads?.localPathFor(song.id),
-      cachedPath: cached,
+      cachedPath: cached ?? better?.path,
       remote: () {
         final repo = _repo;
         if (repo == null) {
@@ -750,7 +767,12 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     final duration = song.duration;
     final declared = duration > Duration.zero ? duration : null;
     // 记下这一首**装载的是哪一份** —— 只有本机文件 seek 得动(见 [_seekRemote])。
-    _localLoaded['${song.id}@${quality.id}'] = origin.local;
+    // 键是「所选档」(`_seekRemote` 就按这个键查),值里带着**实际用的那一档**。
+    _localLoaded['${song.id}@${quality.id}'] = (
+      local: origin.local,
+      quality: resolved,
+      path: origin.local ? origin.uri.toFilePath() : null,
+    );
     final item = _mediaItemFor(
       song,
       // 本机文件配本机的封面 —— 离线时通知栏不该只剩一块灰。
@@ -812,12 +834,27 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (key == _notedTrack) return;
     _notedTrack = key;
 
+    // **实际用的那一档**与**那个文件**:本机已经有更高档那一份时,
+    // 上面拼播放源的那一步拿的是它 —— 照所选档去报,缓存那边会记错
+    // (淘汰时可能删掉正在解码的那份,而低档那几份反倒留着)。
+    final loaded = _localLoaded[key];
+    final playing = loaded?.quality ?? quality;
+
     unawaited(cache.markPlaying(
       song,
-      qualityId: quality.id,
-      format: quality.format,
+      qualityId: playing.id,
+      format: playing.format,
+      playingPath: loaded?.path,
+      // 更高档那份**完整落到本机之后**,同曲更低档那几份就该让位了。
+      lowerTiers: _tierSpecs(lowerTiersThan(playing)),
     ));
   }
+
+  /// 档位 → 缓存那边要的「(档位 id, 格式)」列表。
+  static List<({String qualityId, String? format})> _tierSpecs(
+    List<QualityOption> tiers,
+  ) =>
+      [for (final q in tiers) (qualityId: q.id, format: q.format)];
 
   /// 系统 UI (通知栏 / 锁屏) 用的 `mediaItem` 跟随当前曲目。
   ///
