@@ -164,7 +164,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (!view.hasServer) {
       return EmptyState(
         title: '还没有连接服务器',
-        detail: '填上服务器地址与账号,曲库会显示在这里。',
+        detail: '填上服务器地址与账号，曲库会显示在这里。',
         topPadding: 80,
         // 与首页同一颗入口(见那儿为什么加)。
         action: SizedBox(
@@ -191,7 +191,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           isAuthFailure: view.errorIsAuth,
           onRetry: () => state.loadLibrary(),
           onOpenSettings: () => AppRoutes.openServers(context),
-          hint: offlineReady ? '本机已下载的音乐还在,去「下载管理」就能离线听。' : null,
+          hint: offlineReady ? '本机已下载的音乐还在，去「下载管理」就能离线听。' : null,
           onHintTap:
               offlineReady ? () => AppRoutes.openDownloads(context) : null,
         );
@@ -204,7 +204,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (library.isEmpty) {
       return EmptyState(
         title: '这个库里还没有内容',
-        detail: '如果服务器上确实有歌,到设置里重新扫描一次曲库,或下拉刷新。',
+        detail: '如果服务器上确实有歌，到设置里重新扫描一次曲库，或下拉刷新。',
         topPadding: 80,
       );
     }
@@ -624,7 +624,7 @@ class _SongsFooter extends StatelessWidget {
     // 列表还小(有的曲子不在任何专辑里)。那时印出来是「库里 0 首,还有 0 首
     // 没取」—— 两个数自相矛盾,不如只说还没取完。
     final progress = missing > 0
-        ? '已取到 $loaded 首 · 库里 $total 首,还有 $missing 首没取'
+        ? '已取到 $loaded 首 · 库里 $total 首，还有 $missing 首没取'
         : '已取到 $loaded 首 · 库里还有没取到的曲目';
 
     return Padding(

@@ -48,7 +48,11 @@ import '../widgets/rows.dart';
   final hasDuration = durationMs > 0;
   final clampedPosition =
       hasDuration ? position.inMilliseconds.clamp(0, durationMs) : 0;
-  final value = dragValue ?? (hasDuration ? clampedPosition.toDouble() : 0.0);
+  // **拖动中那个值也要夹**:它带着「松手之后停在手指放开的地方」那一份
+  // (`scrubberHold`),而拖动途中自动接到下一首时,它可能比新曲的时长还大 ——
+  // 原样交给 Slider 就是 `value <= max` 的断言失败(debug 直接崩)。
+  final rawValue = dragValue ?? clampedPosition.toDouble();
+  final value = hasDuration ? rawValue.clamp(0.0, durationMs.toDouble()) : 0.0;
 
   double? bufferedRatio;
   if (hasDuration) {
@@ -160,11 +164,15 @@ class _BufferedTrackShape extends RoundedRectSliderTrackShape {
     context.canvas.drawRRect(RRect.fromRectAndRadius(rect, radius), basePaint);
 
     // 2) 已缓冲的一段。左端与轨底同圆角,**右端方切** —— 右端也圆的话,
-    //    中场会多出一颗药丸头,看着像并排放了两截。
-    final edge = rect.left + rect.width * bufferedRatio.clamp(0.0, 1.0);
+    //    中场会多出一颗药丸头,看着像并排放了两截(原型那边同一个口径,
+    //    见 styles.css 的 `.track i.buf`)。带宽按方向算:
+    //    右边起头的语言里,这段要从右缘往左长。
+    final ratio = bufferedRatio.clamp(0.0, 1.0);
     final band = isLtr
-        ? Rect.fromLTRB(rect.left, rect.top, edge, rect.bottom)
-        : Rect.fromLTRB(edge, rect.top, rect.right, rect.bottom);
+        ? Rect.fromLTRB(
+            rect.left, rect.top, rect.left + rect.width * ratio, rect.bottom)
+        : Rect.fromLTRB(
+            rect.right - rect.width * ratio, rect.top, rect.right, rect.bottom);
     if (band.width > 0) {
       context.canvas.drawRRect(
         RRect.fromRectAndCorners(

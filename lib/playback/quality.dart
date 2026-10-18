@@ -37,14 +37,14 @@ class QualityOption {
   static const original = QualityOption(
     id: 'original',
     name: '原音直出',
-    description: '不转码,按原始文件播放。仅建议在局域网使用。',
+    description: '不转码，按原始文件播放。仅建议在局域网使用。',
     tag: '无损',
   );
 
   static const high = QualityOption(
     id: 'high',
     name: '高质量',
-    description: '转码为 320 kbps。音质接近原始,流量约减半。',
+    description: '转码为 320 kbps。音质接近原始，流量约减半。',
     maxBitRate: 320,
     format: 'mp3',
   );
@@ -52,7 +52,7 @@ class QualityOption {
   static const medium = QualityOption(
     id: 'medium',
     name: '均衡',
-    description: '转码为 192 kbps。移动网络下推荐,拖动进度更快。',
+    description: '转码为 192 kbps。移动网络下推荐，拖动进度更快。',
     maxBitRate: 192,
     format: 'mp3',
   );

@@ -1894,6 +1894,10 @@ function renderStage(root) {
      委托只绑一次，天然跟着新节点走。 */
   const bindSeekDrag = (trackEl, ev) => {
     const s = currentSong();
+    /* 缓冲带按**真实播放位置**算,不跟着手指走:边听边下与手指在哪儿无关,
+       跟着跑的话「已下到哪儿」就读不出来了(往后一拖,缓冲区整条跟着挪)。
+       应用那边(`PlaybackScrubber`)是同一个口径,拖动不改这一层。 */
+    const realElapsed = STATE.elapsed;
     const paint = (clientX) => {
       const r = trackEl.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
@@ -1905,7 +1909,7 @@ function renderStage(root) {
       if (bar) bar.style.width = `${ratio * 100}%`;
       const bufBar = trackEl.querySelector('i.buf');
       if (bufBar) {
-        const buf = bufferedPctOf(s, STATE.elapsed);
+        const buf = bufferedPctOf(s, realElapsed);
         bufBar.style.width = buf == null ? '0%' : `${buf}%`;
       }
       const knob = trackEl.querySelector('.knob');

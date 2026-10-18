@@ -301,6 +301,12 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// 缓存那边记「正在听的是哪一份」就会记错(淘汰时可能删掉正在解码的那份)。
   ///
   /// 覆盖写:每次拼播放源都会把那一首的实况记一遍。
+  ///
+  /// **有上限**:键是「曲目 @ 所选档」,而一次 `setQueue` 会把整条队列都拼
+  /// 一遍 —— 几千首的库、来回换档,它就会一直涨(每条都不大,涨起来却是
+  /// 没有尽头的)。记的是「装载那一刻」的实况,清掉只会让下一次查询退回
+  /// 保守判断(见 [retargetCurrentRoute]),不会算错。
+  static const _localLoadedLimit = 512;
   final Map<String, ({bool local, QualityOption quality, String? path})> _localLoaded = {};
 
   /// 第几次 seek。等待期间用户又拖了一次的话,先前那一次作废 ——
@@ -756,7 +762,7 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       remote: () {
         final repo = _repo;
         if (repo == null) {
-          throw StateError('还没有配置服务器,无法构建播放源');
+          throw StateError('还没有配置服务器，无法构建播放源');
         }
         return repo.streamUri(
           song.id,
@@ -779,6 +785,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       quality: resolved,
       path: origin.local ? origin.uri.toFilePath() : null,
     );
+    // 装完整条队列之后会攒下成千上万条(每次 setQueue 都会重记一遍)——
+    // 满了整体清掉,下一次查询退回保守判断即可(见 [_localLoadedLimit])。
+    if (_localLoaded.length > _localLoadedLimit) _localLoaded.clear();
     final item = _mediaItemFor(
       song,
       // 本机文件配本机的封面 —— 离线时通知栏不该只剩一块灰。
@@ -834,17 +843,23 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
 
     final song = _queue[index];
     final quality = _quality.value;
-    // 记「曲目 + 档位」而不是下标:队列会被拖动重排、会被插播、会换档,
-    // 那时候下标指的已经不是同一份了。
-    final key = '${song.id}@${quality.id}';
-    if (key == _notedTrack) return;
-    _notedTrack = key;
 
     // **实际用的那一档**与**那个文件**:本机已经有更高档那一份时,
     // 上面拼播放源的那一步拿的是它 —— 照所选档去报,缓存那边会记错
     // (淘汰时可能删掉正在解码的那份,而低档那几份反倒留着)。
-    final loaded = _localLoaded[key];
+    final loaded = _localLoaded['${song.id}@${quality.id}'];
     final playing = loaded?.quality ?? quality;
+
+    // 记账的键把**实际用的那一份**也算进去(不只是「曲目 + 所选档」):
+    // 播放途中换了源、而所选档没变的情形是有的 —— 更高档那份刚下完被接管、
+    // 缓存刚写完从流切到本机文件(见 [_waitForLocalCopy])。那一刻要做的三件
+    // 事(记「正在听的是哪一份」、刷它的 LRU、让更低档那几份让位)一件都不该
+    // 等到用户换歌或换档才发生;只按「曲目 + 所选档」去重就正好把它们全挡掉。
+    //
+    // 记键而不是下标:队列会被拖动重排、会被插播,那时下标不是同一份了。
+    final noteKey = '${song.id}@${playing.id}@${loaded?.path ?? '-'}';
+    if (noteKey == _notedTrack) return;
+    _notedTrack = noteKey;
 
     unawaited(cache.markPlaying(
       song,

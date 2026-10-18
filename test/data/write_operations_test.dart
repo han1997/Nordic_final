@@ -46,7 +46,7 @@ void main() {
     ));
   });
 
-  test('加一首进歌单:updatePlaylist + songIdToAdd', () async {
+  test('加一首进歌单：updatePlaylist + songIdToAdd', () async {
     await repo.addToPlaylist('pl-1', 'song-9');
 
     final uri = seen.single;
@@ -55,7 +55,7 @@ void main() {
     expect(uri.queryParameters['songIdToAdd'], 'song-9');
   });
 
-  test('从歌单移除:**按位置**发 songIndexToRemove', () async {
+  test('从歌单移除：**按位置**发 songIndexToRemove', () async {
     // 按 id 移除在协议里没有对应参数;同一首歌在歌单里出现两次时,
     // 也只有位置说得清要移掉哪一次。
     await repo.removeFromPlaylist('pl-1', 2);
@@ -66,7 +66,7 @@ void main() {
     expect(uri.queryParameters['songIndexToRemove'], '2');
   });
 
-  test('重命名走同一个端点,name 参数', () async {
+  test('重命名走同一个端点，name 参数', () async {
     await repo.renamePlaylist('pl-1', '夜间驾驶');
 
     final uri = seen.single;
@@ -76,7 +76,7 @@ void main() {
     expect(uri.queryParameters.containsKey('songIdToAdd'), isFalse);
   });
 
-  test('删除歌单:deletePlaylist + id', () async {
+  test('删除歌单：deletePlaylist + id', () async {
     await repo.deletePlaylist('pl-1');
 
     final uri = seen.single;
@@ -84,7 +84,7 @@ void main() {
     expect(uri.queryParameters['id'], 'pl-1');
   });
 
-  test('服务器说失败就抛出来,不当作写成功', () async {
+  test('服务器说失败就抛出来，不当作写成功', () async {
     final failing = SubsonicRepository(SubsonicClient(
       auth: SubsonicAuth(username: 'u', password: 'p'),
       routes: const [
@@ -110,7 +110,7 @@ void main() {
   });
 
   group('收藏写操作', () {
-    test('收藏一首歌:star + id', () async {
+    test('收藏一首歌：star + id', () async {
       await repo.setStarred(songId: 'song-9', starred: true);
 
       final uri = seen.single;
@@ -121,7 +121,7 @@ void main() {
       expect(uri.queryParameters.containsKey('artistId'), isFalse);
     });
 
-    test('取消收藏一张专辑:unstar + albumId', () async {
+    test('取消收藏一张专辑：unstar + albumId', () async {
       await repo.setStarred(albumId: 'al-1', starred: false);
 
       final uri = seen.single;
@@ -130,7 +130,7 @@ void main() {
       expect(uri.queryParameters.containsKey('id'), isFalse);
     });
 
-    test('收藏一位艺人:artistId', () async {
+    test('收藏一位艺人：artistId', () async {
       await repo.setStarred(artistId: 'ar-1', starred: true);
 
       expect(seen.single.queryParameters['artistId'], 'ar-1');

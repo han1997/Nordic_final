@@ -197,8 +197,8 @@ void main() {
         matching: find.byType(Hero, skipOffstage: false),
       ),
       findsNothing,
-      reason: '播放页一旦挂着 Hero,框架就会去整个来源路由里按 tag 找起点 —— '
-          '保活但看不见的那张专辑网格会来当起点,封面从屏幕外飞进来',
+      reason: '播放页一旦挂着 Hero，框架就会去整个来源路由里按 tag 找起点 —— '
+          '保活但看不见的那张专辑网格会来当起点，封面从屏幕外飞进来',
     );
   });
 
@@ -224,7 +224,7 @@ void main() {
     await settleStarToggle(tester);
   });
 
-  testWidgets('收藏当前这一首,心形要跟着变', (tester) async {
+  testWidgets('收藏当前这一首，心形要跟着变', (tester) async {
     await pumpPlayer(tester);
     expect(find.byIcon(Icons.favorite_border), findsOneWidget);
 

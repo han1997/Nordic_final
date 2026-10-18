@@ -161,13 +161,13 @@ class SettingsScreen extends StatelessWidget {
                 _SettingRow(
                   icon: Icons.shield_outlined,
                   title: '凭据仅存本机',
-                  subtitle: '密码交给系统密钥库加密保存,不上传任何数据',
+                  subtitle: '密码交给系统密钥库加密保存，不上传任何数据',
                 ),
                 Divider(height: 1, thickness: 0.5),
                 _SettingRow(
                   icon: Icons.history,
                   title: '播放记录',
-                  subtitle: '只用于服务器端的播放统计,本机不另存一份',
+                  subtitle: '只用于服务器端的播放统计，本机不另存一份',
                 ),
               ],
             ),
@@ -200,8 +200,8 @@ class _CacheSection extends StatelessWidget {
           icon: Icons.storage_outlined,
           title: '歌曲缓存',
           subtitle: limit.isOff
-              ? '已关闭:听过的歌每次都从服务器拉'
-              : '听过的歌留在本机,再听不用重新拉',
+              ? '已关闭：听过的歌每次都从服务器拉'
+              : '听过的歌留在本机，再听不用重新拉',
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -225,7 +225,7 @@ class _CacheSection extends StatelessWidget {
           // 那种时候说「缓存里还没有东西」,而右边却挂着一颗「清除」,两句话
           // 自相矛盾。所以:占用非 0 就如实报数,上限只在缓存开着时才提。
           subtitle: switch ((used > 0, limit.isOff)) {
-            (false, true) => '缓存已关闭,本机没有留下东西',
+            (false, true) => '缓存已关闭，本机没有留下东西',
             (false, false) => '缓存里还没有东西',
             (true, true) => '占用 ${formatBytes(used)} · 缓存已关闭',
             (true, false) => '占用 ${formatBytes(used)} · 上限 ${limit.label}',
@@ -253,9 +253,9 @@ class _CacheSection extends StatelessWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: dialogContext.nordic.glass3,
-        title: const Text('清除歌曲缓存?'),
+        title: const Text('清除歌曲缓存？'),
         content: Text(
-          '本机留着的 ${formatBytes(state.cacheUsedBytes)} 会删掉,'
+          '本机留着的 ${formatBytes(state.cacheUsedBytes)} 会删掉，'
           '其中断网时还能听的那些就听不到了 —— 下次播放会从服务器重新拉。'
           '点名下好的内容不受影响。',
           style: Theme.of(dialogContext).textTheme.bodySmall,
@@ -277,7 +277,7 @@ class _CacheSection extends StatelessWidget {
     final freed = await state.clearCache();
     messenger?.showSnackBar(
       SnackBar(
-        content: Text('已清除缓存,释放 ${formatBytes(freed)}'),
+        content: Text('已清除缓存，释放 ${formatBytes(freed)}'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -334,8 +334,8 @@ class _ThemeSection extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       current == NordicThemeMode.follow
-                          ? '跟随系统。深浅两套共用同一份结构,只换材质。'
-                          : '深浅两套共用同一份结构,只换材质。',
+                          ? '跟随系统。深浅两套共用同一份结构，只换材质。'
+                          : '深浅两套共用同一份结构，只换材质。',
                       style: Theme.of(context)
                           .textTheme
                           .labelSmall

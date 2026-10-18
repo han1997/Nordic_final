@@ -226,7 +226,7 @@ class DownloadJob {
         DownloadState.done => '这项已经在本机了',
         DownloadState.waitingWifi => '等待 Wi-Fi 后开始下载',
         DownloadState.waitingNetwork => '等网络恢复后开始下载',
-        DownloadState.failed => '下载失败:${error ?? '原因不明'}',
+        DownloadState.failed => '下载失败：${error ?? '原因不明'}',
         _ => '已加入下载队列',
       };
 }
@@ -290,7 +290,7 @@ class DownloadManager extends ChangeNotifier {
   /// 界面据此说「已经在本地了」而不是「已加入队列」。
   Future<DownloadJob> enqueue(DownloadRequest request) async {
     if (!_store.isAvailable) {
-      throw const DownloadFailure('本机找不到可写的目录,没法保存下载内容');
+      throw const DownloadFailure('本机找不到可写的目录，没法保存下载内容');
     }
 
     final existing = _jobs.where((j) => j.request.id == request.id).firstOrNull;
@@ -700,8 +700,8 @@ class DownloadManager extends ChangeNotifier {
       };
 
   static String _describe(DioException e) {
-    if (_isNetworkFailure(e)) return '连接失败,检查网络或线路';
-    return '下载中断:${e.message ?? e.type.name}';
+    if (_isNetworkFailure(e)) return '连接失败，检查网络或线路';
+    return '下载中断：${e.message ?? e.type.name}';
   }
 
   static bool _looksLikeErrorBody(String? contentType) {

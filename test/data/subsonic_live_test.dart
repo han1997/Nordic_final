@@ -47,7 +47,7 @@ void main() {
 
   test('鉴权通过并能拉到专辑列表', () async {
     if (!await reachable()) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
     final albums = await repo.albums();
@@ -59,9 +59,9 @@ void main() {
     expect(first.artist, isNot('未知艺人'));
   });
 
-  test('专辑详情能拉到曲目,且曲目挂在同一张专辑上', () async {
+  test('专辑详情能拉到曲目，且曲目挂在同一张专辑上', () async {
     if (!await reachable()) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
     final albums = await repo.albums();
@@ -80,7 +80,7 @@ void main() {
 
   test('艺人详情返回专辑与热门曲目', () async {
     if (!await reachable()) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
     final artists = await repo.artists();
@@ -97,7 +97,7 @@ void main() {
 
   test('歌单列表可读', () async {
     if (!await reachable()) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
     final playlists = await repo.playlists();
@@ -107,7 +107,7 @@ void main() {
 
   test('搜索命中专辑 / 艺人 / 歌曲', () async {
     if (!await reachable()) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
     // 拿一位真实艺人的名字去搜,三个桶至少该中一个。
@@ -118,7 +118,7 @@ void main() {
 
   test('歌词优先走带时间轴的结构化接口', () async {
     if (!await reachable()) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
     final albums = await repo.albums();
@@ -135,7 +135,7 @@ void main() {
       }
     }
     if (found == null) {
-      markTestSkipped('这批曲目都没有歌词,跳过');
+      markTestSkipped('这批曲目都没有歌词，跳过');
       return;
     }
     expect(found.lines, isNotEmpty);
@@ -152,7 +152,7 @@ void main() {
   test('封面与流地址带上鉴权参数且指向当前线路', () async {
     // 这一条不碰网络,但断言的是**真实**账号与地址;没配环境变量就没得可验。
     if (!liveServerConfigured) {
-      markTestSkipped('没配 NORDIC_LIVE_* 环境变量,跳过');
+      markTestSkipped('没配 NORDIC_LIVE_* 环境变量，跳过');
       return;
     }
     final cover = repo.coverUri('al-abc', size: 256);

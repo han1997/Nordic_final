@@ -1284,8 +1284,15 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 }
 /* 已加载、还没播到的那一段。**中性色,不用强调色** —— 强调色是「播到哪儿」的
    专用信号;它去管两件事,这两段在屏幕上就分不出来了。fill-3 正好夹在未加载的
-   fill-2 与强调色之间,亮一档但不抢。 */
-.scrub .track i.buf { background: var(--fill-3); }
+   fill-2 与强调色之间,亮一档但不抢。
+
+   **右端方切**(只圆左端):右端也圆的话,中场会多出一颗药丸头,看着像并排
+   放了两截;而右端本来就是「下到哪儿了」这条进展的开口边。应用那边
+   (`_BufferedTrackShape`)同一个口径。 */
+.scrub .track i.buf {
+  background: var(--fill-3);
+  border-radius: var(--r-full) 0 0 var(--r-full);
+}
 .scrub .track i.played {
   background: linear-gradient(90deg,
               color-mix(in srgb, var(--accent) 70%, #fff), var(--accent));

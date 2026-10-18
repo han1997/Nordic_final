@@ -196,12 +196,12 @@ void main() {
     expect(
       line.dy,
       closeTo(list.center.dy, 1.5),
-      reason: '当前句要落在框中央。停在第一句(或者压根找不到这一行)都是'
+      reason: '当前句要落在框中央。停在第一句（或者压根找不到这一行）都是'
           '「离屏幕远的行没被建出来」—— 那样 ensureVisible 无从下手',
     );
   });
 
-  testWidgets('点某一句跳到那一段,高亮跟着过去', (tester) async {
+  testWidgets('点某一句跳到那一段，高亮跟着过去', (tester) async {
     final playable = await pumpLyrics(tester);
     expect(playable.seeks, isEmpty);
 
@@ -210,10 +210,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(playable.seeks, [const Duration(seconds: 10)],
-        reason: '点了第 1 句就该跳到它的起点(第 0 句是 0 秒、第 1 句是 10 秒)');
+        reason: '点了第 1 句就该跳到它的起点（第 0 句是 0 秒、第 1 句是 10 秒）');
     expect(lineColor(tester, '第 1 句'), activeBefore,
         reason: '高亮要落到被点的那一句上 —— 这是「点第三句、高亮停第二句」的护栏');
-    expect(find.byType(LyricsScreen), findsOneWidget, reason: '点句子是跳转,不是返回');
+    expect(find.byType(LyricsScreen), findsOneWidget, reason: '点句子是跳转，不是返回');
   });
 
   testWidgets('句子上下那截行距也算点这一句', (tester) async {
@@ -228,7 +228,7 @@ void main() {
     final row = tester.getRect(
       find.ancestor(of: find.text('第 1 句'), matching: find.byType(Opacity)).first,
     );
-    expect(row.top, lessThan(text.top), reason: '行比文字高,上面那截就是行距');
+    expect(row.top, lessThan(text.top), reason: '行比文字高，上面那截就是行距');
 
     await tester.tapAt(Offset(row.center.dx, row.top + 2));
     await tester.pumpAndSettle();
@@ -236,7 +236,39 @@ void main() {
     expect(playable.seeks, [const Duration(seconds: 10)],
         reason: '行距上那半截也要算「点了这一句」');
     expect(find.byType(LyricsScreen), findsOneWidget,
-        reason: '不能漏给外层,那一下会把歌词页关掉');
+        reason: '不能漏给外层，那一下会把歌词页关掉');
+  });
+
+  testWidgets('翻过歌词之后，宽限一过还是会把当前句拉回来', (tester) async {
+    // 「让用户看一眼」不该变成「永远不回来」:长句子、间奏里几十秒不换行是
+    // 常态,那时唯一会把视线拉回去的机会就是位置那几跳。
+    //
+    // 宽限比的是**真实时钟**,假时钟推不动它 —— 直接把宽限调没。
+    addTearDown(() => lyricBrowseGrace = const Duration(seconds: 4));
+
+    final playable = await pumpLyrics(tester, at: const Duration(seconds: 305));
+    final list = tester.getRect(find.byType(SingleChildScrollView));
+
+
+    // 手指翻一段(拖动手势才算「用户在翻」)。
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -200));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getCenter(find.text('第 30 句')).dy,
+      isNot(closeTo(list.center.dy, 1.5)),
+      reason: '刚翻过时确实让着他',
+    );
+
+    // 宽限过了,歌还在同一句上放着(位置在动、行没换)。
+    lyricBrowseGrace = Duration.zero;
+    playable.position.value = const Duration(seconds: 306);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getCenter(find.text('第 30 句')).dy,
+      closeTo(list.center.dy, 1.5),
+      reason: '行没换也要把人拉回当前句上 —— 否则高亮一直停在屏幕外',
+    );
   });
 
   testWidgets('点行以外的空白仍是回封面', (tester) async {
@@ -251,7 +283,7 @@ void main() {
         reason: '「点封面看歌词」的回头路不能因为「点句子跳转」被吃掉');
   });
 
-  testWidgets('换行只重画那两行,整列歌词不重建', (tester) async {
+  testWidgets('换行只重画那两行，整列歌词不重建', (tester) async {
     final playable = await pumpLyrics(tester, at: const Duration(seconds: 305));
     final listBefore = tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView));
     final activeBefore = lineColor(tester, '第 30 句');
@@ -262,11 +294,11 @@ void main() {
     expect(
       identical(tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)), listBefore),
       isTrue,
-      reason: '位置跳一下就重建了整列歌词(上百行)—— 那正是自动滚动那 260ms '
+      reason: '位置跳一下就重建了整列歌词（上百行）—— 那正是自动滚动那 260ms '
           '动画里掉帧的来源之一',
     );
     expect(lineColor(tester, '第 31 句'), activeBefore, reason: '高亮要跟到新那一句');
     expect(lineColor(tester, '第 30 句'), isNot(activeBefore),
-        reason: '上一句要暗下去(过去那一档)');
+        reason: '上一句要暗下去（过去那一档）');
   });
 }

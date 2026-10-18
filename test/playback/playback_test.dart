@@ -25,7 +25,7 @@ void main() {
       expect(QualityOption.original.isOriginal, isTrue);
     });
 
-    test('三档转码各自对应码率,且都标为无损之外的档', () {
+    test('三档转码各自对应码率，且都标为无损之外的档', () {
       expect(QualityOption.high.maxBitRate, 320);
       expect(QualityOption.medium.maxBitRate, 192);
       expect(QualityOption.low.maxBitRate, 96);
@@ -91,7 +91,7 @@ void main() {
   });
 
   group('播放状态', () {
-    test('时长未知时进度不假装是 0%,也不越界', () {
+    test('时长未知时进度不假装是 0%，也不越界', () {
       expect(
         playbackProgress(const Duration(seconds: 30), Duration.zero),
         0,
@@ -123,7 +123,7 @@ void main() {
   });
 
   group('循环模式', () {
-    test('三态轮转:顺序播放 → 列表循环 → 单曲循环 → 回到原位', () {
+    test('三态轮转：顺序播放 → 列表循环 → 单曲循环 → 回到原位', () {
       // 真机上报的是「循环键点了没反应」。以前不但只有两态(off / one),
       // 而且状态是单向写的 —— 这条钉住三态的顺序本身。
       expect(nextRepeatMode(PlaybackRepeat.off), PlaybackRepeat.all);
@@ -204,11 +204,11 @@ void main() {
       expect(rewind(loopsOne: true), isFalse);
     });
 
-    test('小抖动不算,在开头附近来回也不算', () {
+    test('小抖动不算，在开头附近来回也不算', () {
       expect(
         rewind(previous: const Duration(seconds: 100), next: const Duration(seconds: 97)),
         isFalse,
-        reason: '三秒的差是位置流的常态,不该当成倒回',
+        reason: '三秒的差是位置流的常态，不该当成倒回',
       );
       expect(
         rewind(previous: const Duration(seconds: 4), next: Duration.zero),
@@ -294,7 +294,7 @@ void main() {
     });
   });
 
-  group('位置监察(冷流末尾那一支)', () {
+  group('位置监察（冷流末尾那一支）', () {
     // 冷流(没有长度的源)上平台不切下一首、而是把这一首原地重放,而且**全程不给
     // Dart 任何信号**(没 `completed`、没暂停、没断点)。于是这条护栏是那一类源上
     // **唯一在切歌的一支** —— 它值得被真的测到,不只是测那个纯函数。
@@ -315,7 +315,7 @@ void main() {
       await pumpEventQueue();
     }
 
-    test('平台放完一首原地回 0 —— 自己切下一首,而且只切一次', () async {
+    test('平台放完一首原地回 0 —— 自己切下一首，而且只切一次', () async {
       await emit(const Duration(seconds: 200));
       await emit(Duration.zero);
 
@@ -370,7 +370,7 @@ void main() {
       expect(player.seekToNextCalls, 0);
     });
 
-    test('队列走到头 —— 要真的把播放器按住,不能只播报状态', () async {
+    test('队列走到头 —— 要真的把播放器按住，不能只播报状态', () async {
       player.hasNext = false;
       await emit(const Duration(seconds: 200));
       await emit(Duration.zero);
@@ -395,7 +395,7 @@ void main() {
             ),
         ];
 
-    test('是后面那几首之和,不含当前这首', () {
+    test('是后面那几首之和，不含当前这首', () {
       final queue = songsOf([10, 20, 30, 40]);
       expect(tailDurationAfter(queue, 0), const Duration(seconds: 90));
       expect(tailDurationAfter(queue, 1), const Duration(seconds: 70));
@@ -406,7 +406,7 @@ void main() {
       expect(tailDurationAfter(queue, 2), Duration.zero);
     });
 
-    test('还没落在队列里(或队列是空的)也返回零,不抛', () {
+    test('还没落在队列里（或队列是空的）也返回零，不抛', () {
       expect(tailDurationAfter(songsOf([10]), 5), Duration.zero);
       expect(tailDurationAfter(const <Song>[], 0), Duration.zero);
       expect(tailDurationAfter(songsOf([10]), -1), Duration.zero);
@@ -424,7 +424,7 @@ void main() {
   });
 
   group('后台运行开关', () {
-    test('开关开着:退到后台不动', () async {
+    test('开关开着：退到后台不动', () async {
       var paused = false;
 
       final did = await pauseWhenBackgrounded(
@@ -436,7 +436,7 @@ void main() {
       expect(paused, isFalse, reason: '开着后台运行就得继续放');
     });
 
-    test('开关关掉:退到后台就暂停', () async {
+    test('开关关掉：退到后台就暂停', () async {
       var paused = false;
 
       final did = await pauseWhenBackgrounded(
@@ -470,7 +470,7 @@ void main() {
       if (dir.existsSync()) await dir.delete(recursive: true);
     });
 
-    test('本机有下载就走本机文件,连网络地址都不拼', () {
+    test('本机有下载就走本机文件，连网络地址都不拼', () {
       final file = File('${dir.path}${Platform.pathSeparator}01 - 曲目.flac')
         ..writeAsBytesSync([1, 2, 3]);
       var askedRemote = false;
@@ -491,7 +491,7 @@ void main() {
       expect(askedRemote, isFalse, reason: '有本机文件就不该再问网络要地址');
     });
 
-    test('记录里有路径但文件没了 —— 回退到网络,而不是播一个空', () {
+    test('记录里有路径但文件没了 —— 回退到网络，而不是播一个空', () {
       final missing = '${dir.path}${Platform.pathSeparator}被删掉了.flac';
 
       final origin = playbackOriginFor(
@@ -514,7 +514,7 @@ void main() {
       expect(origin.uri.queryParameters['id'], 's1');
     });
 
-    test('听过的那一首(缓存)也走本机,连网络地址都不拼', () {
+    test('听过的那一首（缓存）也走本机，连网络地址都不拼', () {
       final cached = File('${dir.path}${Platform.pathSeparator}s1-medium.mp3')
         ..writeAsBytesSync([1, 2, 3]);
       var askedRemote = false;
@@ -534,7 +534,7 @@ void main() {
       expect(askedRemote, isFalse);
     });
 
-    test('下载优先于缓存 —— 下载的是原文件,缓存那份可能是转码过的', () {
+    test('下载优先于缓存 —— 下载的是原文件，缓存那份可能是转码过的', () {
       final downloaded =
           File('${dir.path}${Platform.pathSeparator}01 - 曲目.flac')
             ..writeAsBytesSync([1]);
@@ -551,7 +551,7 @@ void main() {
       expect(origin.uri.toFilePath(), downloaded.path);
     });
 
-    test('缓存被清掉了 —— 回退到网络,而不是播一个空', () {
+    test('缓存被清掉了 —— 回退到网络，而不是播一个空', () {
       final gone = '${dir.path}${Platform.pathSeparator}清掉了.mp3';
 
       final origin = playbackOriginFor(
@@ -568,24 +568,24 @@ void main() {
   group('要不要留新缓存', () {
     // 开关右边那句就是「流量下不缓存」,而留缓存同样在花流量 ——
     // 一整首歌会在后台被拉完。这一条判错的代价是用户的钱。
-    test('开关关着:什么连接都留', () {
+    test('开关关着：什么连接都留', () {
       for (final status in NetworkStatus.values) {
         expect(
           shouldWriteCache(wifiOnly: false, status: status),
           isTrue,
-          reason: '开关关着时不该有任何门控($status)',
+          reason: '开关关着时不该有任何门控（$status)',
         );
       }
     });
 
-    test('开关开着:计费连接上不留', () {
+    test('开关开着：计费连接上不留', () {
       expect(
         shouldWriteCache(wifiOnly: true, status: NetworkStatus.metered),
         isFalse,
       );
     });
 
-    test('开关开着:Wi-Fi 与「问不出来」都照留', () {
+    test('开关开着：Wi-Fi 与「问不出来」都照留', () {
       // 问不出来(桌面 / 平台通道异常)按能用处理 —— 门控是为了省流量,
       // 不是为了在问不出来的地方把功能锁死。
       for (final status in [
@@ -602,7 +602,7 @@ void main() {
     });
   });
 
-  group('缓存接管:同一首只留最高那一份', () {
+  group('缓存接管：同一首只留最高那一份', () {
     // 路径里带着档位,同一首在 192 与 原音 本来各留一份、永远并存。这一组从
     // **处理器那一头**钉住整条链路:本机已有更高档那份 → 装载的就是那个文件
     // (而不是又拉一遍网络、又写第二份);换歌那一下把更低档那几份丢掉。
@@ -652,7 +652,7 @@ void main() {
       return file.path;
     }
 
-    test('本机已有更高档那一份 —— 装的是那个文件,不再走网络', () async {
+    test('本机已有更高档那一份 —— 装的是那个文件，不再走网络', () async {
       final original = await write('original');
 
       await handler.setQueue(const [song], index: 0);
@@ -660,11 +660,11 @@ void main() {
       expect(
         (player.loaded.first as ProgressiveAudioSource).uri.toFilePath(),
         original,
-        reason: '白拿的音质:那一份已经在磁盘上,拿它播既不花流量也不会再写一份',
+        reason: '白拿的音质：那一份已经在磁盘上，拿它播既不花流量也不会再写一份',
       );
     });
 
-    test('所选档自己也有缓存时,更高档那份照样接管', () async {
+    test('所选档自己也有缓存时，更高档那份照样接管', () async {
       // 「先按均衡听过」(于是均衡那份落了盘)、「后来原音那份也完整了」——
       // 这是最容易漏的一种顺序。早先只在**所选档没有**缓存时才去找更高档,
       // 于是这一刻会一直播着均衡那份,而原音那份躺在盘上吃灰。
@@ -677,11 +677,11 @@ void main() {
       expect(
         (player.loaded.first as ProgressiveAudioSource).uri.toFilePath(),
         original,
-        reason: '手上有更好的那一份,就不该再拿低档的播',
+        reason: '手上有更好的那一份，就不该再拿低档的播',
       );
     });
 
-    test('更高档那份完整之后,同曲更低档那几份让位', () async {
+    test('更高档那份完整之后，同曲更低档那几份让位', () async {
       final original = await write('original');
       final low = await write('low', format: 'mp3');
       expect(File(low).existsSync(), isTrue);
@@ -693,7 +693,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
       expect(File(low).existsSync(), isFalse, reason: '同一首只留最高那一份');
-      expect(File(original).existsSync(), isTrue, reason: '正在听的是它,动不得');
+      expect(File(original).existsSync(), isTrue, reason: '正在听的是它，动不得');
     });
   });
 }

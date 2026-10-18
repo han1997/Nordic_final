@@ -13,7 +13,7 @@ extension NordicContextX on BuildContext {
   /// 静默回退成默认主题只会让样式问题更难查。
   NordicTokens get nordic {
     final tokens = Theme.of(this).extension<NordicTokens>();
-    assert(tokens != null, '主题里没有 NordicTokens:检查 NordicTheme.build');
+    assert(tokens != null, '主题里没有 NordicTokens：检查 NordicTheme.build');
     return tokens!;
   }
 

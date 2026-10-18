@@ -71,7 +71,7 @@ void main() {
         songsComplete: true,
       );
 
-  test('写进去再读回来,内容一字不差', () async {
+  test('写进去再读回来，内容一字不差', () async {
     final cache = await LibraryCache.open(root: root);
     await cache.write('nas|hhy|http://nas.example.com', snapshot());
 
@@ -100,7 +100,7 @@ void main() {
     expect(await cache.read('别的|hhy|http://other'), isNull);
   });
 
-  test('文件坏了当没有缓存,而不是抛异常', () async {
+  test('文件坏了当没有缓存，而不是抛异常', () async {
     final cache = await LibraryCache.open(root: root);
     await cache.write('nas|hhy|http://nas.example.com', snapshot());
     File('${root.path}${Platform.pathSeparator}library.json')
@@ -118,7 +118,7 @@ void main() {
     expect(await cache.read('nas|hhy|http://nas.example.com'), isNull);
   });
 
-  test('第一次装(没有文件)读到的是空,不是异常', () async {
+  test('第一次装（没有文件）读到的是空，不是异常', () async {
     final cache = await LibraryCache.open(root: root);
     expect(await cache.read('nas|hhy|http://nas.example.com'), isNull);
   });
@@ -133,7 +133,7 @@ void main() {
     LibrarySnapshot withSongs(List<String> ids) =>
         snapshot().copyWith(songs: [for (final id in ids) song(id)]);
 
-    test('连着写三次,最后落地的是第三份 —— 中间那两版没人要', () async {
+    test('连着写三次，最后落地的是第三份 —— 中间那两版没人要', () async {
       final cache = await LibraryCache.open(root: root);
 
       await Future.wait([
@@ -146,7 +146,7 @@ void main() {
       expect(cached!.snapshot.songs.map((s) => s.id), ['s1', 's2', 's3']);
     });
 
-    test('写还没落地就清缓存:等在写的后面,清完读不到', () async {
+    test('写还没落地就清缓存：等在写的后面，清完读不到', () async {
       final cache = await LibraryCache.open(root: root);
 
       final writing = cache.write(key, snapshot());
@@ -154,7 +154,7 @@ void main() {
       await writing;
 
       expect(await cache.read(key), isNull,
-          reason: '清就是要清干净,写回来的那份不算数');
+          reason: '清就是要清干净，写回来的那份不算数');
     });
   });
 }

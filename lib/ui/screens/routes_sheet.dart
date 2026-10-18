@@ -46,7 +46,7 @@ class _RoutesSheetState extends State<_RoutesSheet> {
                   padding: EdgeInsets.symmetric(vertical: NordicSpace.s6),
                   child: EmptyState(
                     title: '还没有配置线路',
-                    detail: '一个账号可以配多条地址,内外网各留一条。',
+                    detail: '一个账号可以配多条地址，内外网各留一条。',
                     topPadding: 0,
                   ),
                 )
@@ -94,8 +94,8 @@ class _RoutesSheetState extends State<_RoutesSheet> {
                 padding: const EdgeInsets.fromLTRB(
                   NordicSpace.s5, NordicSpace.s4, NordicSpace.s5, 0),
                 child: Text(
-                  '播放时优先走延迟最低的可用线路,当前线路中断会自动换到下一条'
-                  '并接着放。手动锁定后不再自动切换 —— 想放手,再点一下锁定中的那条。',
+                  '播放时优先走延迟最低的可用线路，当前线路中断会自动换到下一条'
+                  '并接着放。手动锁定后不再自动切换 —— 想放手，再点一下锁定中的那条。',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall

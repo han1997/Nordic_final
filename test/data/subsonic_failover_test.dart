@@ -71,7 +71,7 @@ void main() {
       expect(hits, ['http://lan.example.com']);
     });
 
-    test('所有线路都连不上时,抛出最后那条的错误', () async {
+    test('所有线路都连不上时，抛出最后那条的错误', () async {
       final client = SubsonicClient(
         auth: SubsonicAuth(username: 'u', password: 'p'),
         routes: const [
@@ -90,7 +90,7 @@ void main() {
       );
     });
 
-    test('一条线路都没有时给出可读的提示,而不是空指针', () async {
+    test('一条线路都没有时给出可读的提示，而不是空指针', () async {
       final client = SubsonicClient(
         auth: SubsonicAuth(username: 'u', password: 'p'),
         routes: const [],
@@ -123,7 +123,7 @@ void main() {
     });
   });
 
-  group('手动锁定(关掉线路自动择优)', () {
+  group('手动锁定（关掉线路自动择优）', () {
     test('锁定了哪条就走哪条', () async {
       final hits = <String>[];
       final client = SubsonicClient(
@@ -172,7 +172,7 @@ void main() {
       await client.pingAll();
       await client.call('ping');
 
-      expect(client.activeRoute?.id, 'slow', reason: '用户点名的是顺序,不是延迟');
+      expect(client.activeRoute?.id, 'slow', reason: '用户点名的是顺序，不是延迟');
       expect(hits.last, 'http://slow.example.com');
     });
 
@@ -204,7 +204,7 @@ void main() {
       expect(hits, ['http://lan.invalid']);
     });
 
-    test('锁定之后,「自动择优」开着也不换线', () async {
+    test('锁定之后，「自动择优」开着也不换线', () async {
       // 判据不能只看那个全局开关:用户点了锁定,开关多半还开着。换过去的话,
       // 线路面板上那句「当前走 X」与实际发请求的那条就不是同一条了 ——
       // 而锁定这件事的含义,原型与面板上写的都是「不再自动切换」。
@@ -295,7 +295,7 @@ void main() {
       expect(
         client.pings.containsKey('wan'),
         isFalse,
-        reason: '删掉的线路不该留着上一次的测速结果,否则「N / M 条可用」会算错',
+        reason: '删掉的线路不该留着上一次的测速结果，否则「N / M 条可用」会算错',
       );
     });
 

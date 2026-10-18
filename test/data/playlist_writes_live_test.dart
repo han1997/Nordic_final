@@ -48,7 +48,7 @@ void main() {
 
   test('歌单能建、能加歌、能改名、能按位置移除、能删', () async {
     if (!await reachable()) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
 
@@ -58,11 +58,11 @@ void main() {
 
     try {
       created = await repo.createPlaylist(name);
-      expect(created.name, name, reason: '建完要拿得回对象,不然调用方以为失败了');
+      expect(created.name, name, reason: '建完要拿得回对象，不然调用方以为失败了');
 
       final songs = await repo.allSongs(size: 5);
       if (songs.isEmpty) {
-        markTestSkipped('库里没有歌可用,跳过');
+        markTestSkipped('库里没有歌可用，跳过');
         return;
       }
       final song = songs.first;

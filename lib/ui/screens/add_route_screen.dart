@@ -81,8 +81,8 @@ class _AddRouteScreenState extends State<AddRouteScreen> {
                   padding: const EdgeInsets.fromLTRB(
                     NordicSpace.s5, NordicSpace.s4, NordicSpace.s5, NordicSpace.s5),
                   child: Text(
-                    '一个账号可以配多条线路,客户端按延迟自动择优。'
-                    '内外网各留一条,出门也能听。',
+                    '一个账号可以配多条线路，客户端按延迟自动择优。'
+                    '内外网各留一条，出门也能听。',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
@@ -92,7 +92,7 @@ class _AddRouteScreenState extends State<AddRouteScreen> {
                 if (state.server == null)
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: NordicSpace.s5),
-                    child: _Warning('还没有配置服务器,先去「服务器与线路」填一次账号。'),
+                    child: _Warning('还没有配置服务器，先去「服务器与线路」填一次账号。'),
                   )
                 else
                   Padding(
@@ -101,7 +101,7 @@ class _AddRouteScreenState extends State<AddRouteScreen> {
                       children: [
                         NordicField(
                           label: '服务器地址',
-                          hint: '支持 http / https,也可以是域名或 IPv6。',
+                          hint: '支持 http / https，也可以是域名或 IPv6。',
                           child: NordicTextField(
                             controller: _urlController,
                             hintText: 'http://192.168.1.10:4533',
@@ -120,7 +120,7 @@ class _AddRouteScreenState extends State<AddRouteScreen> {
                           const Padding(
                             padding: EdgeInsets.only(top: NordicSpace.s5),
                             child: _Warning(
-                              '这个地址还不完整 —— 要以 http:// 或 https:// 开头,'
+                              '这个地址还不完整 —— 要以 http:// 或 https:// 开头，'
                               '并且带上主机名。',
                             ),
                           ),
@@ -171,7 +171,7 @@ class _AddRouteScreenState extends State<AddRouteScreen> {
     Navigator.of(context).pop();
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       const SnackBar(
-        content: Text('线路已添加,正在测速'),
+        content: Text('线路已添加，正在测速'),
         duration: Duration(seconds: 2),
       ),
     );
@@ -210,7 +210,7 @@ class _TagPicker extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(left: 4),
           child: Text(
-            '标记只影响显示,择优仍按实测延迟来。',
+            '标记只影响显示，择优仍按实测延迟来。',
             style: Theme.of(context).textTheme.labelSmall,
           ),
         ),

@@ -332,7 +332,7 @@ class SubsonicClient {
       // 拿到 HTML 通常意味着地址指到了一个网页(端口错了 / 被网关劫持),
       // 这是配置问题,不是网络抖动 —— 说清楚比抛 JSON 解析错更有用。
       throw SubsonicException(
-        '${route.url} 返回的不是 Subsonic 响应,检查地址与端口',
+        '${route.url} 返回的不是 Subsonic 响应，检查地址与端口',
         statusCode: 200,
       );
     }
@@ -377,7 +377,7 @@ class SubsonicClient {
     if (e.error is SocketException) {
       return '${route.name} 无法连接';
     }
-    return '${route.name} 请求失败:${e.message ?? e.type.name}';
+    return '${route.name} 请求失败：${e.message ?? e.type.name}';
   }
 }
 

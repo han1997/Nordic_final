@@ -156,9 +156,9 @@ Future<NordicAudioHandler> _startPlayback(
     await handler.configureSession();
     return handler;
   } on TimeoutException catch (e) {
-    debugPrint('后台播放服务启动超时,退到没有通知栏控制的播放层:$e');
+    debugPrint('后台播放服务启动超时，退到没有通知栏控制的播放层：$e');
   } catch (e) {
-    debugPrint('后台播放服务启动失败,退到没有通知栏控制的播放层:$e');
+    debugPrint('后台播放服务启动失败，退到没有通知栏控制的播放层：$e');
   }
 
   return NordicAudioHandler(

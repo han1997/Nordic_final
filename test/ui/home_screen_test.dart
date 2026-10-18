@@ -189,7 +189,7 @@ void main() {
   Future<void> loadLibrary(WidgetTester tester) =>
       tester.runAsync(() => state.loadLibrary());
 
-  testWidgets('加载完就把三条货架铺出来,各是各的', (tester) async {
+  testWidgets('加载完就把三条货架铺出来，各是各的', (tester) async {
     await loadLibrary(tester);
     await pumpHome(tester);
 
@@ -234,7 +234,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('还没播过东西时,正在播放那一块说的是「从哪儿开始」', (tester) async {
+  testWidgets('还没播过东西时，正在播放那一块说的是「从哪儿开始」', (tester) async {
     await loadLibrary(tester);
     await pumpHome(tester);
 
@@ -244,7 +244,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('还没连服务器时给一句人话,不去碰播放层', (tester) async {
+  testWidgets('还没连服务器时给一句人话，不去碰播放层', (tester) async {
     // 全新用户看到的第一屏就是这个。这里造一个**没接管服务器**的实例 ——
     // 而不是调 disconnect():那条路要碰系统密钥库(测试里没有那个插件)。
     final fresh = AppState(
@@ -269,7 +269,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('还没在播时给一颗「随机播放」,按下去就开播', (tester) async {
+  testWidgets('还没在播时给一颗「随机播放」，按下去就开播', (tester) async {
     await loadLibrary(tester);
     await pumpHome(tester);
 

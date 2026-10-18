@@ -6,7 +6,7 @@ import 'package:nordic/data/subsonic_payload.dart';
 
 void main() {
   group('鉴权参数', () {
-    test('token 是 md5(密码 + salt),短盐也能对上', () {
+    test('token 是 md5（密码 + salt)，短盐也能对上', () {
       // 用固定 salt 钉住算法 —— 换写法会直接连不上真服务器。
       expect(
         SubsonicAuth.tokenFor('sesame', 'c19b2d'),
@@ -14,7 +14,7 @@ void main() {
       );
     });
 
-    test('每次请求的参数齐全,且 salt 每次都不同', () {
+    test('每次请求的参数齐全，且 salt 每次都不同', () {
       final auth = SubsonicAuth(username: 'u', password: 'pw');
       final first = auth.queryParams();
       final second = auth.queryParams();
@@ -221,7 +221,7 @@ void main() {
     // 表单上只有一个地址框 —— 它对应第一条线路。这一组钉住「改一处」的边界:
     // 改的是那一条,其余几条不该陪葬。
 
-    test('三条线路改地址,只换第一条,其余原样', () {
+    test('三条线路改地址，只换第一条，其余原样', () {
       const existing = [
         ServerRoute(id: 'lan', name: '局域网', url: 'http://lan.example.com'),
         ServerRoute(
@@ -256,7 +256,7 @@ void main() {
       expect(merged[2].tag, RouteTag.relay);
     });
 
-    test('原来那条是锁定的 —— 改完还是锁定的,不额外加锁', () {
+    test('原来那条是锁定的 —— 改完还是锁定的，不额外加锁', () {
       const existing = [
         ServerRoute(
           id: 'lan',
@@ -276,7 +276,7 @@ void main() {
       expect(merged.last.selected, isFalse, reason: '也不该顺手把别的线路锁上');
     });
 
-    test('一条都没有时就用表单里那条(第一次填)', () {
+    test('一条都没有时就用表单里那条（第一次填）', () {
       final merged = mergeEditedRoute(
         const [],
         const ServerRoute(id: 'route-1', name: '局域网直连', url: 'http://lan.example.com'),

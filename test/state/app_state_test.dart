@@ -150,7 +150,7 @@ void main() {
       expect(state.library.playlists.map((p) => p.name), ['深夜驾驶', '通勤']);
     });
 
-    test('加一首进歌单:本地条数立刻跟着变', () async {
+    test('加一首进歌单：本地条数立刻跟着变', () async {
       await state.addSongToPlaylist('pl-1', 'song-9');
 
       final write = seen.last;
@@ -163,21 +163,21 @@ void main() {
           reason: '没被点到的歌单不该跟着变');
     });
 
-    test('从歌单移除一首:本地条数减一', () async {
+    test('从歌单移除一首：本地条数减一', () async {
       await state.removeSongFromPlaylist('pl-1', 1);
 
       expect(seen.last.queryParameters['songIndexToRemove'], '1');
       expect(state.library.playlists.first.songCount, 2);
     });
 
-    test('重命名:首尾空格去掉,本地名字立刻跟着改', () async {
+    test('重命名：首尾空格去掉，本地名字立刻跟着改', () async {
       await state.renamePlaylist('pl-1', '  夜间驾驶  ');
 
       expect(seen.last.queryParameters['name'], '夜间驾驶');
       expect(state.library.playlists.first.name, '夜间驾驶');
     });
 
-    test('删除:本地列表里也就不再有它', () async {
+    test('删除：本地列表里也就不再有它', () async {
       await state.deletePlaylist('pl-1');
 
       expect(seen.last.path, '/rest/deletePlaylist.view');
@@ -195,7 +195,7 @@ void main() {
       expect(state.library.playlists.first.songCount, 3);
     });
 
-    test('还没连服务器时说人话,而不是静默失败', () async {
+    test('还没连服务器时说人话，而不是静默失败', () async {
       final bare = AppState(
         configStore: state.configStore,
         credentialStore: state.credentialStore,
@@ -240,7 +240,7 @@ void main() {
       if (root.existsSync()) await root.delete(recursive: true);
     });
 
-    test('刷新一次之后,快照落到缓存里 —— 重启就能直接铺出来', () async {
+    test('刷新一次之后，快照落到缓存里 —— 重启就能直接铺出来', () async {
       final warm = await buildState(
         payloadDio([], libraryFixtures()),
         root,
@@ -258,12 +258,12 @@ void main() {
 
       expect(fresh.library.albums.length, 2);
       expect(fresh.library.songs.length, 3);
-      expect(fresh.libraryFromCache, isTrue, reason: '这是缓存铺出来的,还没刷新');
+      expect(fresh.libraryFromCache, isTrue, reason: '这是缓存铺出来的，还没刷新');
       expect(fresh.libraryCachedAt, isNotNull);
-      expect(fresh.phase, LoadPhase.ready, reason: '铺完缓存就该 ready,不该空等');
+      expect(fresh.phase, LoadPhase.ready, reason: '铺完缓存就该 ready，不该空等');
     });
 
-    test('刷新失败但手上有缓存:不切错误态,只留一句「这次没刷上」', () async {
+    test('刷新失败但手上有缓存：不切错误态，只留一句「这次没刷上」', () async {
       final warm = await buildState(
         payloadDio([], libraryFixtures()),
         root,
@@ -282,7 +282,7 @@ void main() {
       expect(offline.libraryFromCache, isTrue);
     });
 
-    test('刷新成功之后,「来自缓存」归位', () async {
+    test('刷新成功之后，「来自缓存」归位', () async {
       final warm = await buildState(
         payloadDio([], libraryFixtures()),
         root,
@@ -353,7 +353,7 @@ void main() {
       if (root.existsSync()) await root.delete(recursive: true);
     });
 
-    test('测速期间有忙碌态,结束时收回', () async {
+    test('测速期间有忙碌态，结束时收回', () async {
       // 局域网一次 ping 是个位数毫秒 —— 没有这个状态,界面上按钮不变、
       // 数字也不变,用户只会觉得「按了没反应」。
       final state = await buildState(payloadDio([], libraryFixtures()), root);
@@ -399,7 +399,7 @@ void main() {
       expect(
         client.activeRoute?.id,
         'wan',
-        reason: '客户端也得跟着换,不然请求照旧走旧线路 —— 那个勾就是假的',
+        reason: '客户端也得跟着换，不然请求照旧走旧线路 —— 那个勾就是假的',
       );
     });
 
@@ -412,7 +412,7 @@ void main() {
       await state.updateRoutes(const [
         ServerRoute(id: 'lan', name: '局域网', url: 'http://nas.example.com'),
       ]);
-      expect(retargets, 0, reason: '线路没换就重新装载,只是白等一次缓冲');
+      expect(retargets, 0, reason: '线路没换就重新装载，只是白等一次缓冲');
 
       await state.updateRoutes(const [
         ServerRoute(
@@ -447,7 +447,7 @@ void main() {
           'frequent': _albumsPayload('听得最多的'),
         };
 
-    test('三条货架各按自己的口径取,整合进同一份快照', () async {
+    test('三条货架各按自己的口径取，整合进同一份快照', () async {
       final state = await buildState(
         payloadDio([], libraryFixtures(), byQueryType: homeTypes()),
         root,
@@ -474,7 +474,7 @@ void main() {
       expect(
         state.library.recentlyAddedSongs.map((s) => s.id),
         ['s2', 's1', 's3'],
-        reason: '「最近添加」是歌曲,按 Song.created 倒序,而不是专辑',
+        reason: '「最近添加」是歌曲，按 Song.created 倒序，而不是专辑',
       );
     });
 
@@ -489,13 +489,13 @@ void main() {
       expect(
         state.library.mostPlayed.map((a) => a.name),
         ['听得最多的'],
-        reason: '「改一份列表」的写法漏带上这几位,首页那一栏就会悄悄空掉',
+        reason: '「改一份列表」的写法漏带上这几位，首页那一栏就会悄悄空掉',
       );
       expect(state.library.recentlyPlayed, isNotEmpty);
       expect(state.library.recentlyAddedSongs, isNotEmpty);
     });
 
-    test('缓存往返:重启之后首页照样有东西', () async {
+    test('缓存往返：重启之后首页照样有东西', () async {
       final cache = await LibraryCache.open(root: root);
       final first = await buildState(
         payloadDio([], libraryFixtures(), byQueryType: homeTypes()),
@@ -609,7 +609,7 @@ void main() {
       expect(state.library.songs.length, 900);
       expect(state.library.songsComplete, isTrue);
       final searches = seen.where((u) => u.path.contains('search3')).toList();
-      expect(searches.length, 1, reason: '一页装下了,不该再发第二页');
+      expect(searches.length, 1, reason: '一页装下了，不该再发第二页');
       expect(searches.single.queryParameters['songCount'], '1000');
     });
 
@@ -665,7 +665,7 @@ void main() {
       final again = await state.loadMoreSongs();
 
       expect(again, isFalse);
-      expect(seen, isEmpty, reason: '已经取全了,不该再打服务器');
+      expect(seen, isEmpty, reason: '已经取全了，不该再打服务器');
     });
 
     test('翻页按 id 去重 + 按当前口径重排', () async {
@@ -675,7 +675,7 @@ void main() {
       await state.setSongSort(SongSort.title);
 
       final ids = state.library.songs.map((s) => s.id).toList();
-      expect(ids.length, ids.toSet().length, reason: '按 id 去重,不该出重复行');
+      expect(ids.length, ids.toSet().length, reason: '按 id 去重，不该出重复行');
       // 标题序:后一页不该整块挂在「第 100 首」后面。
       final titles = state.library.songs.map((s) => s.title).toList();
       expect(titles, orderedEquals([...titles]..sort()));
@@ -692,7 +692,7 @@ void main() {
       expect(
         newest.map((s) => s.id).take(3).toList(),
         ['s1499', 's1498', 's1497'],
-        reason: '补齐之后「最近添加」必须从全量里排,而不是只看第一页',
+        reason: '补齐之后「最近添加」必须从全量里排，而不是只看第一页',
       );
     });
   });
@@ -743,7 +743,7 @@ void main() {
       if (root.existsSync()) await root.delete(recursive: true);
     });
 
-    test('换专辑排序:按新口径重拉这一栏', () async {
+    test('换专辑排序：按新口径重拉这一栏', () async {
       expect(state.albumSort, AlbumSort.alphabeticalByArtist);
 
       await state.setAlbumSort(AlbumSort.alphabeticalByName);
@@ -755,7 +755,7 @@ void main() {
       expect(state.library.albums.first.name, '可能');
     });
 
-    test('排序口径存下来:下次开一个 AppState 还是它', () async {
+    test('排序口径存下来：下次开一个 AppState 还是它', () async {
       await state.setAlbumSort(AlbumSort.newest);
 
       // 同一份 prefs 再建一个 —— 相当于重启应用。
@@ -764,12 +764,12 @@ void main() {
       expect(fresh.songSort, SongSort.title);
     });
 
-    test('换歌曲排序:本地排,不再打服务器', () async {
+    test('换歌曲排序：本地排，不再打服务器', () async {
       final before = seen.length;
 
       await state.setSongSort(SongSort.added);
 
-      expect(seen.length, before, reason: '曲子本来就在手上,没必要再问一次');
+      expect(seen.length, before, reason: '曲子本来就在手上，没必要再问一次');
       expect(
         [for (final s in state.library.songs) s.title],
         ['Ultraviolet', '可能', '山丘'],
@@ -782,7 +782,7 @@ void main() {
       expect(song.created, DateTime.utc(2026, 1, 5));
     });
 
-    test('换排序时的失败会抛出来,本地那份列表保持原样', () async {
+    test('换排序时的失败会抛出来，本地那份列表保持原样', () async {
       final broken = Dio(BaseOptions(validateStatus: (_) => true));
       broken.interceptors.add(InterceptorsWrapper(
         onRequest: (options, interceptor) => interceptor.reject(DioException(
@@ -797,7 +797,7 @@ void main() {
         offline.setAlbumSort(AlbumSort.newest),
         throwsA(isA<SubsonicException>()),
       );
-      expect(offline.library.albums, isEmpty, reason: '没拉到就保持原样,别清空');
+      expect(offline.library.albums, isEmpty, reason: '没拉到就保持原样，别清空');
     });
   });
 
@@ -813,7 +813,7 @@ void main() {
       if (root.existsSync()) await root.delete(recursive: true);
     });
 
-    test('连不上服务器:标成网络问题(界面据此指去下载管理)', () async {
+    test('连不上服务器：标成网络问题（界面据此指去下载管理）', () async {
       final dio = Dio(BaseOptions(validateStatus: (_) => true));
       dio.interceptors.add(InterceptorsWrapper(
         onRequest: (options, interceptor) => interceptor.reject(DioException(
@@ -831,7 +831,7 @@ void main() {
       expect(state.errorIsAuth, isFalse, reason: '「连不上」不该被说成密码错');
     });
 
-    test('密码不对:标成认证问题,不误报成网络问题', () async {
+    test('密码不对：标成认证问题，不误报成网络问题', () async {
       final dio = payloadDio([], {
         for (final key in libraryFixtures().keys)
           key: _failed(40, 'Wrong username or password'),

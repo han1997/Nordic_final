@@ -36,16 +36,16 @@ void main() {
   test('原音流返回真实音频字节', () async {
     final song = await repo.firstSongOrNull();
     if (song == null) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
 
     final uri = repo.rawStreamUri(song.id);
     final result = await _probe(uri);
-    expect(result.status, 200, reason: '流地址应返回 200,实际=${result.status}');
+    expect(result.status, 200, reason: '流地址应返回 200，实际=${result.status}');
     expect(result.contentType, isNotNull);
     expect(result.contentType, startsWith('audio/'),
-        reason: 'Content-Type 应为 audio/*,实际=${result.contentType}');
+        reason: 'Content-Type 应为 audio/*，实际=${result.contentType}');
     expect(result.firstBytes, greaterThan(0), reason: '应该真的读到音频字节');
     // 先读到的头几个字节应与容器格式对得上,而不是一段 HTML 错误页。
     expect(result.firstBytes, greaterThanOrEqualTo(4));
@@ -54,15 +54,15 @@ void main() {
   test('转码流也返回音频字节', () async {
     final song = await repo.firstSongOrNull();
     if (song == null) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
 
     final uri = repo.rawStreamUri(song.id, maxBitRate: 192, format: 'mp3');
     final result = await _probe(uri);
-    expect(result.status, 200, reason: '转码流应返回 200,实际=${result.status}');
+    expect(result.status, 200, reason: '转码流应返回 200，实际=${result.status}');
     expect(result.contentType, startsWith('audio/'),
-        reason: '转码后应是 audio/*,实际=${result.contentType}');
+        reason: '转码后应是 audio/*，实际=${result.contentType}');
     expect(result.firstBytes, greaterThan(0));
     // 转码是现算现发的,Navidrome 用 chunked 编码回,**没有 Content-Length**
     // (实测 0.64.2)。有长度时才比体积 —— 不能因为服务器没报就判它错。
@@ -80,7 +80,7 @@ void main() {
   test('封面图返回图片字节', () async {
     final song = await repo.firstSongOrNull();
     if (song == null || !song.hasCover) {
-      markTestSkipped('Navidrome 不可达或首曲无封面,跳过');
+      markTestSkipped('Navidrome 不可达或首曲无封面，跳过');
       return;
     }
 

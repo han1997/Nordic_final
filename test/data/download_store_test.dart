@@ -51,7 +51,7 @@ void main() {
     return (store, file);
   }
 
-  test('登记一条下载后,播放层能按曲目 id 找到文件', () async {
+  test('登记一条下载后，播放层能按曲目 id 找到文件', () async {
     final (store, file) = await givenDownloaded();
 
     expect(store.isAvailable, isTrue);
@@ -84,7 +84,7 @@ void main() {
     expect(store.coverPathForArt(null), isNull);
   });
 
-  test('封面索引跟着记录一起变 —— 加了能查到,删了就查不到', () async {
+  test('封面索引跟着记录一起变 —— 加了能查到，删了就查不到', () async {
     final (store, _) = await givenDownloaded();
     expect(store.coverPathForArt('cover-1'), isNotNull);
 
@@ -98,7 +98,7 @@ void main() {
     expect(reopened.coverPathForArt('cover-1'), isNull);
   });
 
-  test('重开一次记录还在 —— 存的是相对路径,换根目录也还原得出来', () async {
+  test('重开一次记录还在 —— 存的是相对路径，换根目录也还原得出来', () async {
     await givenDownloaded();
 
     // 另一块「根」,里面摆同样的相对结构 —— 模拟重装 / 换设备路径。
@@ -133,7 +133,7 @@ void main() {
     expect(reopened.records, isEmpty);
   });
 
-  test('索引坏了当作没下过,但不动磁盘上的文件', () async {
+  test('索引坏了当作没下过，但不动磁盘上的文件', () async {
     final (_, file) = await givenDownloaded();
     await File('${root.path}${Platform.pathSeparator}index.json')
         .writeAsString('{ 这不是 json');
@@ -156,7 +156,7 @@ void main() {
     );
   });
 
-  test('标题为空时给个占位名,不拼出「01 - .flac」', () {
+  test('标题为空时给个占位名，不拼出「01 - .flac」', () {
     expect(DownloadStore.trackFileName(0, song('s1', title: '   ')),
         '01 - 未命名.flac');
   });
@@ -169,7 +169,7 @@ void main() {
     );
   });
 
-  test('根目录不可用时如实报「用不了」,而不是抛异常', () async {
+  test('根目录不可用时如实报「用不了」，而不是抛异常', () async {
     final blocked = File('${root.path}${Platform.pathSeparator}blocked');
     await blocked.writeAsString('占位');
 

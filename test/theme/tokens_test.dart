@@ -17,7 +17,7 @@ void main() {
     expect(NordicTokens.light.blurSm, lessThan(NordicTokens.dark.blurSm));
   });
 
-  test('主题切换瞬时换材质,不做插值', () {
+  test('主题切换瞬时换材质，不做插值', () {
     expect(NordicTokens.dark.lerp(NordicTokens.light, 0.2), NordicTokens.dark);
     expect(NordicTokens.dark.lerp(NordicTokens.light, 0.8), NordicTokens.light);
   });

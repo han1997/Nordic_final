@@ -27,7 +27,7 @@ class SubsonicEnvelope {
   static SubsonicEnvelope parse(Map<String, dynamic> body) {
     final envelope = body['subsonic-response'];
     if (envelope is! Map) {
-      throw const SubsonicException('响应里没有 subsonic-response,可能不是 Subsonic 服务');
+      throw const SubsonicException('响应里没有 subsonic-response，可能不是 Subsonic 服务');
     }
     final errorJson = envelope['error'];
     return SubsonicEnvelope(
@@ -171,7 +171,7 @@ abstract final class SubsonicPayload {
   static Map<String, dynamic> _root(Map<String, dynamic> body) {
     final envelope = body['subsonic-response'];
     if (envelope is! Map) {
-      throw const SubsonicException('响应里没有 subsonic-response,可能不是 Subsonic 服务');
+      throw const SubsonicException('响应里没有 subsonic-response，可能不是 Subsonic 服务');
     }
     return envelope.cast<String, dynamic>();
   }

@@ -41,10 +41,10 @@ class _CacheSheet extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(
                   NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s4),
                 child: Text(
-                  '听过的歌会在本机留一份,再听直接从本机取,断网也能放。'
-                  '上限到了会先扔掉最久没听的;下载是用户点名要的,'
-                  '不在这里面,永远不会被扔掉。开着「仅 Wi-Fi 下载」时,'
-                  '流量下不留新的缓存(已经留着的照旧能听)。',
+                  '听过的歌会在本机留一份，再听直接从本机取，断网也能放。'
+                  '上限到了会先扔掉最久没听的；下载是用户点名要的，'
+                  '不在这里面，永远不会被扔掉。开着「仅 Wi-Fi 下载」时，'
+                  '流量下不留新的缓存（已经留着的照旧能听）。',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall

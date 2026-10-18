@@ -48,7 +48,7 @@ class _QualitySheet extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(
                   NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s4),
                 child: Text(
-                  '档位由服务器实时转码后推送。切到转码档后拖动进度会重新请求音频,'
+                  '档位由服务器实时转码后推送。切到转码档后拖动进度会重新请求音频，'
                   '可能有短暂停顿。',
                   style: Theme.of(context)
                       .textTheme

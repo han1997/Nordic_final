@@ -404,7 +404,7 @@ class SubsonicRepository {
     final all = await playlists();
     final match = all.where((p) => p.name == name).toList();
     if (match.isEmpty) {
-      throw SubsonicException('歌单「$name」创建后没有返回,请下拉刷新看看');
+      throw SubsonicException('歌单「$name」创建后没有返回，请下拉刷新看看');
     }
     return match.first;
   }

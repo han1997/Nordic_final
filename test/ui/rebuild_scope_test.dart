@@ -189,7 +189,7 @@ void main() {
   AlbumRail firstRail(WidgetTester tester) =>
       tester.widgetList<AlbumRail>(find.byType(AlbumRail)).first;
 
-  testWidgets('首页:下载进度跳动不重建货架', (tester) async {
+  testWidgets('首页：下载进度跳动不重建货架', (tester) async {
     await loadLibrary(tester);
     await pump(tester, const HomeScreen());
     expect(firstRailName(tester), contains('A-最近播放'));
@@ -199,11 +199,11 @@ void main() {
     await tester.pump();
 
     expect(identical(firstRail(tester), before), isTrue,
-        reason: '首页没有订阅下载,进度跳动不该把它重建一遍');
+        reason: '首页没有订阅下载，进度跳动不该把它重建一遍');
     expect(firstRailName(tester), contains('A-最近播放'));
   });
 
-  testWidgets('首页:缓存淘汰的播报也不重建货架', (tester) async {
+  testWidgets('首页：缓存淘汰的播报也不重建货架', (tester) async {
     await loadLibrary(tester);
     await pump(tester, const HomeScreen());
 
@@ -212,10 +212,10 @@ void main() {
     await tester.pump();
 
     expect(identical(firstRail(tester), before), isTrue,
-        reason: '首页不显示缓存占用,它不该跟着缓存的播报重建');
+        reason: '首页不显示缓存占用，它不该跟着缓存的播报重建');
   });
 
-  testWidgets('首页:库真的换了照旧重建 —— 收窄不能收成「不更新」', (tester) async {
+  testWidgets('首页：库真的换了照旧重建 —— 收窄不能收成「不更新」', (tester) async {
     await loadLibrary(tester);
     await pump(tester, const HomeScreen());
     expect(firstRailName(tester), contains('A-最近播放'));
@@ -227,7 +227,7 @@ void main() {
     expect(firstRailName(tester), contains('B-最近播放'));
   });
 
-  testWidgets('音乐库:下载进度跳动不重建,库换了照旧重建', (tester) async {
+  testWidgets('音乐库：下载进度跳动不重建，库换了照旧重建', (tester) async {
     await loadLibrary(tester);
     await pump(tester, const LibraryScreen());
     expect(find.text('B-全部专辑'), findsNothing);
@@ -241,7 +241,7 @@ void main() {
     state.downloadManager.notifyListeners();
     await tester.pump();
     expect(identical(tester.widget<Text>(find.text('A-全部专辑')), before), isTrue,
-        reason: '这一栏不显示下载进度,不该跟着它重建');
+        reason: '这一栏不显示下载进度，不该跟着它重建');
 
     tag = 'B';
     await loadLibrary(tester);

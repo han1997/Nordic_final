@@ -154,7 +154,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
         ),
         if (!playableSongs)
           const SliverToBoxAdapter(
-            child: ListNote('这个库里没有这位艺人的可播放曲目,换一位试试。'),
+            child: ListNote('这个库里没有这位艺人的可播放曲目，换一位试试。'),
           ),
         if (_topSongs.isNotEmpty) ...[
           SliverToBoxAdapter(
@@ -190,7 +190,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
         ),
         if (_albums.isEmpty)
           const SliverToBoxAdapter(
-            child: ListNote('服务器上这位艺人名下有专辑记录,但这次没有返回具体条目。'),
+            child: ListNote('服务器上这位艺人名下有专辑记录，但这次没有返回具体条目。'),
           )
         else
           SliverToBoxAdapter(
@@ -250,7 +250,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
         if (_albums.isNotEmpty && _albums.length < artist.albumCount)
           SliverToBoxAdapter(
             child: ListNote(
-              '服务器上 ${artist.name} 共有 ${artist.albumCount} 张唱片,'
+              '服务器上 ${artist.name} 共有 ${artist.albumCount} 张唱片，'
               '这里列出了 ${_albums.length} 张。',
             ),
           ),

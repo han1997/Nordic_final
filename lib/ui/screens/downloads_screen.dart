@@ -110,8 +110,8 @@ class DownloadsScreen extends StatelessWidget {
                         ),
                       ),
                       ListNote(
-                        '下载走当前线路,存到本机的 ${DownloadStore.label} 目录。'
-                        '已完成的条目点开就能播,断网也一样。',
+                        '下载走当前线路，存到本机的 ${DownloadStore.label} 目录。'
+                        '已完成的条目点开就能播，断网也一样。',
                       ),
                     ],
                   ),
@@ -157,10 +157,10 @@ class DownloadsScreen extends StatelessWidget {
         context: context,
         builder: (dialogContext) => AlertDialog(
           backgroundColor: dialogContext.nordic.glass3,
-          title: const Text('删除本机文件?'),
+          title: const Text('删除本机文件？'),
           content: Text(
             '『${job.request.name}』在本机的 ${record?.files.length ?? 0} 个文件'
-            '会被删掉,释放约 ${record?.sizeLabel ?? '这些'} 空间。'
+            '会被删掉，释放约 ${record?.sizeLabel ?? '这些'} 空间。'
             '以后还能重新下载。',
             style: Theme.of(dialogContext).textTheme.bodySmall,
           ),

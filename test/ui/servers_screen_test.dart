@@ -104,7 +104,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('已配置时,管理页上有「服务器设置」这条入口', (tester) async {
+  testWidgets('已配置时，管理页上有「服务器设置」这条入口', (tester) async {
     await pumpServers(tester);
 
     // 管理页的正文:线路那一栏在。
@@ -115,7 +115,7 @@ void main() {
     expect(find.text('移除该服务器'), findsOneWidget);
   });
 
-  testWidgets('点「服务器设置」进表单,字段是现有配置,按钮说的是「保存」', (tester) async {
+  testWidgets('点「服务器设置」进表单，字段是现有配置，按钮说的是「保存」', (tester) async {
     await pumpServers(tester);
     await tester.tap(find.text('服务器设置'));
     await tester.pumpAndSettle();
@@ -137,7 +137,7 @@ void main() {
     expect(find.text('取消'), findsOneWidget);
   });
 
-  testWidgets('取消回到管理页,不留下任何改动', (tester) async {
+  testWidgets('取消回到管理页，不留下任何改动', (tester) async {
     await pumpServers(tester);
     await tester.tap(find.text('服务器设置'));
     await tester.pumpAndSettle();
@@ -164,7 +164,7 @@ void main() {
     expect(find.widgetWithText(TextField, '客厅 Navidrome'), findsOneWidget);
   });
 
-  testWidgets('startInForm(设置页的「添加服务器」)一进来就在表单上', (tester) async {
+  testWidgets('startInForm（设置页的「添加服务器」）一进来就在表单上', (tester) async {
     await pumpServers(tester, startInForm: true);
 
     expect(find.text('账户'), findsOneWidget);
@@ -172,7 +172,7 @@ void main() {
     expect(find.text('添加线路地址'), findsNothing);
   });
 
-  testWidgets('「添加服务器」给的是一张**空**表单,不是现有那台的配置', (tester) async {
+  testWidgets('「添加服务器」给的是一张**空**表单，不是现有那台的配置', (tester) async {
     // 用户点的是「用另一个账号或另一台机器」,预填上现有那台会让他以为在改
     // 现有那台 —— 而按下去确实会把它换掉。原型那条路(`screenAddServer`)
     // 也是空表单 + 先选接入类型。
@@ -190,7 +190,7 @@ void main() {
     expect(find.text('保存并重新连接'), findsNothing);
   });
 
-  testWidgets('还没配置过时表单就是正文,没有多余的「取消」', (tester) async {
+  testWidgets('还没配置过时表单就是正文，没有多余的「取消」', (tester) async {
     final fresh = AppState(
       configStore: await ConfigStore.open(),
       credentialStore: CredentialStore(),

@@ -77,7 +77,7 @@ class ServerConfig {
 /// 三者都讲 Subsonic 协议,差异在能力边界:飞牛音乐基于社区逆向,
 /// 官方无公开 API,可用性随系统版本变化(原型里那句提示照搬过来)。
 enum ServerKind {
-  navidrome('Navidrome', 'ND', '开源音乐服务器,Subsonic 兼容'),
+  navidrome('Navidrome', 'ND', '开源音乐服务器，Subsonic 兼容'),
   subsonic('Subsonic / OpenSubsonic', 'SU', 'Airsonic、Gonic、Ampache 等'),
   fnos('飞牛音乐', 'FN', 'fnOS 自带的音乐服务');
 

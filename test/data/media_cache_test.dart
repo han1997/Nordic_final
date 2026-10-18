@@ -113,7 +113,7 @@ void main() {
       expect(file.parent.path, root.path);
     });
 
-    test('没缓存过的曲目答「没有」,命中之后才答路径', () async {
+    test('没缓存过的曲目答「没有」，命中之后才答路径', () async {
       final cache = await open();
       expect(cache.cachedPathFor(song, qualityId: 'medium', format: 'mp3'), isNull);
 
@@ -139,7 +139,7 @@ void main() {
       expect(cache.cachedPathFor(other, qualityId: 'medium', format: 'mp3'), isNull);
     });
 
-    test('账还没数到,但盘上已经有了的那一份照样答得出来', () async {
+    test('账还没数到，但盘上已经有了的那一份照样答得出来', () async {
       // 冷启动走的是 `open(scan: false)`:占用要等首帧之后才数一遍。这中间的
       // 账是 0,而盘上可能刚落下文件(边听边缓存就是边写边播)。只看「账是 0」
       // 会答「没缓存」—— 同一首于是又拉一遍网络、又写一份,正是要治的那件事。
@@ -211,7 +211,7 @@ void main() {
         bytes: 400 * 1024,
         listenedAt: now,
       );
-      expect(cache.usedBytes, 800 * 1024, reason: '两份都还在,还没到上限');
+      expect(cache.usedBytes, 800 * 1024, reason: '两份都还在，还没到上限');
 
       // 正在听的就是最旧那一份 —— 它反而被保护起来。
       await cache.markPlaying(song, qualityId: 'medium', format: 'mp3');
@@ -222,7 +222,7 @@ void main() {
       await seed(cache, third, bytes: 400 * 1024, listenedAt: now);
 
       expect(File(playing).existsSync(), isTrue,
-          reason: '删掉正在放的文件的字节流,音就断了');
+          reason: '删掉正在放的文件的字节流，音就断了');
       expect(File(newer).existsSync(), isFalse,
           reason: '要腾地方就得扔别的 —— 哪怕它比正在听的那份新');
       expect(cache.usedBytes, lessThanOrEqualTo(1 * 1024 * 1024));
@@ -272,7 +272,7 @@ void main() {
       expect(
         (await file.stat()).modified,
         before,
-        reason: '下载的那份归用户,不归缓存的 LRU 记账',
+        reason: '下载的那份归用户，不归缓存的 LRU 记账',
       );
 
       if (downloads.existsSync()) await downloads.delete(recursive: true);
@@ -297,7 +297,7 @@ void main() {
       expect(cache.fileCount, 1);
     });
 
-    test('关掉缓存(上限 0)= 已经留着的全清掉,而且不再给缓存位', () async {
+    test('关掉缓存（上限 0)= 已经留着的全清掉，而且不再给缓存位', () async {
       final cache = await open();
       final path = await seed(
         cache,
@@ -327,7 +327,7 @@ void main() {
   });
 
   group('清空与半截文件', () {
-    test('清除:文件与旁注一起走,返回释放的体积', () async {
+    test('清除：文件与旁注一起走，返回释放的体积', () async {
       final cache = await open();
       final path = await seed(cache, song, bytes: 2048, listenedAt: DateTime.now());
 
@@ -340,7 +340,7 @@ void main() {
       expect(cache.fileCount, 0);
     });
 
-    test('没主的半截文件不算占用,也不会一直被留着', () async {
+    test('没主的半截文件不算占用，也不会一直被留着', () async {
       final cache = await open();
       final stale = File('${root.path}${Platform.pathSeparator}abc.part');
       await stale.writeAsBytes(List<int>.filled(4096, 1));
@@ -354,13 +354,13 @@ void main() {
       await cache.prune();
 
       expect(File(stale.path).existsSync(), isFalse, reason: '上一次被杀掉留下的');
-      expect(File(fresh.path).existsSync(), isTrue, reason: '可能正在写,别动');
+      expect(File(fresh.path).existsSync(), isTrue, reason: '可能正在写，别动');
       expect(cache.usedBytes, 0, reason: '半截的不该算进用户的「已用空间」');
     });
   });
 
   group('存储用不了时', () {
-    test('目录建不出来就退化成「不缓存」,别的照旧', () async {
+    test('目录建不出来就退化成「不缓存」，别的照旧', () async {
       // 拿一个**文件**当缓存根目录 —— create() 必然失败。
       final blocker = File('${root.path}${Platform.pathSeparator}not-a-dir');
       await blocker.writeAsString('x');
@@ -383,7 +383,7 @@ void main() {
   /// (见 `app_state.dart`),所以「扫一遍、什么都没变、还是播报一次」等于
   /// 让每一次换歌(淘汰就搭在那上面)都把整个界面重建一遍。
   group('占用没变就不播报', () {
-    test('第二次扫到同一份目录时,订阅者收不到通知', () async {
+    test('第二次扫到同一份目录时，订阅者收不到通知', () async {
       final cache = await MediaCache.open(
         limitBytes: CacheLimit.gb1.bytes,
         root: Directory('${root.path}${Platform.pathSeparator}audio'),
@@ -396,10 +396,10 @@ void main() {
 
       await cache.prune();
       expect(cache.usedBytes, 1024);
-      expect(notified, 1, reason: '占用从 0 变到 1 KB,该播报一次');
+      expect(notified, 1, reason: '占用从 0 变到 1 KB，该播报一次');
 
       await cache.prune();
-      expect(notified, 1, reason: '一个字节都没变,不该再播报');
+      expect(notified, 1, reason: '一个字节都没变，不该再播报');
 
       // 数字真的变了就还得播报 —— 收窄不能收成「不再通知」。
       await file.writeAsBytes(List<int>.filled(2048, 7));
@@ -416,7 +416,7 @@ void main() {
   /// 可能落盘」或「账面上已经超了」时才重新数 —— 两条都要钉住:漏了后者,
   /// 缓存就能一路涨过上限。
   group('换歌那一下的算账', () {
-    test('没有新东西落盘时,换歌不重扫目录', () async {
+    test('没有新东西落盘时，换歌不重扫目录', () async {
       final cache = await open();
       final gone = await seed(
         cache,
@@ -431,10 +431,10 @@ void main() {
       await cache.markPlaying(other, qualityId: 'medium', format: 'mp3');
 
       expect(cache.usedBytes, 400 * 1024,
-          reason: '这一次换歌不该重扫目录,账应当还是上一趟数出来的那份');
+          reason: '这一次换歌不该重扫目录，账应当还是上一趟数出来的那份');
     });
 
-    test('有新文件要落盘时,下一次换歌就把账对齐', () async {
+    test('有新文件要落盘时，下一次换歌就把账对齐', () async {
       final cache = await open();
       final gone = await seed(
         cache,
@@ -448,10 +448,10 @@ void main() {
       cache.fileFor(other, qualityId: 'medium', format: 'mp3');
       await cache.markPlaying(other, qualityId: 'medium', format: 'mp3');
 
-      expect(cache.usedBytes, 0, reason: '有新文件要写,这一次就该重扫对齐');
+      expect(cache.usedBytes, 0, reason: '有新文件要写，这一次就该重扫对齐');
     });
 
-    test('账面上已经超了上限时,换歌那一下照样淘汰', () async {
+    test('账面上已经超了上限时，换歌那一下照样淘汰', () async {
       final cache = await open();
       final now = DateTime.now();
       final oldest = await seed(
@@ -487,7 +487,7 @@ void main() {
     //   2. 更高档那份**完整落到本机之后**,同曲更低档那几份让位(见 markPlaying)。
     // 四条护栏逐条钉住:完整才动手 / 正在听的不删 / 半截的不碰 / 绝不向上删。
 
-    test('更高档完整在手边时,播放层拿到的是它', () async {
+    test('更高档完整在手边时，播放层拿到的是它', () async {
       final cache = await open();
       const candidates = [
         (qualityId: 'original', format: null),
@@ -505,7 +505,7 @@ void main() {
 
       final hit = cache.completeCopyAmong(song, candidates);
       expect(hit?.path, original);
-      expect(hit?.qualityId, 'original', reason: '按给的顺序取第一个命中的(从高到低)');
+      expect(hit?.qualityId, 'original', reason: '按给的顺序取第一个命中的（从高到低）');
     });
 
     test('半截的那一份不算「在手边」', () async {
@@ -524,7 +524,7 @@ void main() {
       expect(cache.completeCopyAmong(song, candidates), isNull);
     });
 
-    test('更高档完整落下之后,更低那份连 .mime 一起消失', () async {
+    test('更高档完整落下之后，更低那份连 .mime 一起消失', () async {
       final cache = await open();
       final low = await seed(
         cache,
@@ -559,7 +559,7 @@ void main() {
       expect(cache.fileCount, 1);
     });
 
-    test('更高那份还没落盘(只有 .part)时一个都不删', () async {
+    test('更高那份还没落盘（只有 .part）时一个都不删', () async {
       final cache = await open();
       final low = await seed(
         cache,
@@ -582,7 +582,7 @@ void main() {
       expect(
         File(low).existsSync(),
         isTrue,
-        reason: '高的那份还在下:这时候把低的删了,网络一断就两头落空',
+        reason: '高的那份还在下：这时候把低的删了，网络一断就两头落空',
       );
     });
 
@@ -638,7 +638,7 @@ void main() {
       expect(File(low).existsSync(), isTrue);
     });
 
-    test('低档那份还在写(半截)时不动它', () async {
+    test('低档那份还在写（半截）时不动它', () async {
       final cache = await open();
       final high = await seed(
         cache,
@@ -665,7 +665,7 @@ void main() {
   });
 
   group('档位定义', () {
-    test('认不出来的档位退回默认,而不是抛异常', () {
+    test('认不出来的档位退回默认，而不是抛异常', () {
       expect(CacheLimit.byId('1g'), CacheLimit.gb1);
       expect(CacheLimit.byId(null), CacheLimit.fallback);
       expect(CacheLimit.byId('nope'), CacheLimit.fallback);
@@ -678,7 +678,7 @@ void main() {
       expect(CacheLimit.all.first.isOff, isTrue);
     });
 
-    test('0 说的是「不缓存」,不是「0 MB」', () {
+    test('0 说的是「不缓存」，不是「0 MB」', () {
       expect(CacheLimit.off.label, '不缓存');
       expect(CacheLimit.gb1.label, '1 GB');
     });

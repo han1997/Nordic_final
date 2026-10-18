@@ -58,13 +58,13 @@ void main() {
       if (!busy) return;
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
-    fail('下载没在预期时间内完成:${manager.jobs.first.state}'
+    fail('下载没在预期时间内完成：${manager.jobs.first.state}'
         '${manager.jobs.first.error ?? ''}');
   }
 
-  test('下载一首真歌:音频字节真的落盘,索引记得住', () async {
+  test('下载一首真歌：音频字节真的落盘，索引记得住', () async {
     if (!await reachable()) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
 
@@ -74,7 +74,7 @@ void main() {
         .where((s) => (s.sizeBytes ?? 1 << 30) < 2 * 1024 * 1024)
         .toList();
     if (small.isEmpty) {
-      markTestSkipped('库里前 200 首没有小于 2 MB 的曲目,跳过');
+      markTestSkipped('库里前 200 首没有小于 2 MB 的曲目，跳过');
       return;
     }
     final song = small.first;
@@ -110,7 +110,7 @@ void main() {
         const ['fLaC', 'RIFF', 'OggS', 'ftyp'].contains(fourCC) ||
             fourCC.startsWith('ID3') ||
             head[0] == 0xFF;
-    expect(looksLikeAudio, isTrue, reason: '文件头应该像音频,实际=$fourCC');
+    expect(looksLikeAudio, isTrue, reason: '文件头应该像音频，实际=$fourCC');
 
     // 重开一次索引:重启之后这份下载还在,播放层还能查到它。
     final reopened = await DownloadStore.open(root: root);

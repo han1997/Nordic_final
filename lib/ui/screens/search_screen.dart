@@ -207,7 +207,7 @@ class _SearchScreenState extends State<SearchScreen> {
       // 与「空库」分开:这里是「搜了但没匹配」,配一句换词建议。
       return EmptyState(
         title: '没有匹配「$query」的内容',
-        detail: '换个关键词,或者到设置里重新扫描曲库。',
+        detail: '换个关键词，或者到设置里重新扫描曲库。',
       );
     }
 

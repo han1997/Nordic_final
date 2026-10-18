@@ -63,7 +63,7 @@ class _QueueSheet extends StatelessWidget {
                   // 随机开着时**不给拖动排序**:拖的是原始列表,和眼前这份
                   // 顺序对不上,拖完只会莫名其妙。说明一句,免得以为是坏了。
                   if (shuffled)
-                    const ListNote('随机播放中,这里按实际播放顺序列出(这一档不能拖动排序)。'),
+                    const ListNote('随机播放中，这里按实际播放顺序列出（这一档不能拖动排序）。'),
                   Flexible(
                     child: ReorderableListView.builder(
                       // 短队列按内容撑高(三个条目不该占满整屏),长的则**懒加载** ——

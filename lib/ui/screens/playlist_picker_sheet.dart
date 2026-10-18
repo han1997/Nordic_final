@@ -81,7 +81,7 @@ class _PickerBody extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(
           NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s6),
         child: Text(
-          ready ? '库里还没有歌单。到「音乐库 · 歌单」里新建一个。' : '曲库还在加载,稍等一下再试。',
+          ready ? '库里还没有歌单。到「音乐库 · 歌单」里新建一个。' : '曲库还在加载，稍等一下再试。',
           style: Theme.of(context)
               .textTheme
               .bodySmall

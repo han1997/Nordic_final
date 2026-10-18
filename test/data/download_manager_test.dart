@@ -107,7 +107,7 @@ void main() {
       if (!busy) return;
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
-    fail('下载没有在预期时间内收敛:'
+    fail('下载没有在预期时间内收敛：'
         '${manager.jobs.map((j) => '${j.request.name}=${j.state}').join(',')}');
   }
 
@@ -128,7 +128,7 @@ void main() {
       );
 
   group('下载', () {
-    test('曲目真的落到本机,登记后播放层查得到', () async {
+    test('曲目真的落到本机，登记后播放层查得到', () async {
       final manager = managerWith(fn: transfer(<Uri>[]));
 
       final job = await manager.enqueue(
@@ -166,7 +166,7 @@ void main() {
       expect(restored.tracks.map((t) => t.title), ['第一首', '第二首']);
     });
 
-    test('封面跟着一起下,并且界面按 coverArtId 问得到', () async {
+    test('封面跟着一起下，并且界面按 coverArtId 问得到', () async {
       final manager = managerWith(fn: transfer(<Uri>[]));
 
       await manager.enqueue(DownloadRequest.album(album, [song('s1')]));
@@ -193,7 +193,7 @@ void main() {
       expect(remote.queryParameters['size'], '128');
     });
 
-    test('下载一律取原文件,不吃转码档', () async {
+    test('下载一律取原文件，不吃转码档', () async {
       final calls = <Uri>[];
       final manager = managerWith(fn: transfer(calls));
 
@@ -206,7 +206,7 @@ void main() {
       expect(calls.single.queryParameters.containsKey('format'), isFalse);
     });
 
-    test('服务器没报体积时按曲目数报进度,不假装知道体积', () async {
+    test('服务器没报体积时按曲目数报进度，不假装知道体积', () async {
       late DownloadManager manager;
       String? midLine;
       manager = managerWith(
@@ -238,7 +238,7 @@ void main() {
       expect(job.record?.bytes, 4096);
     });
 
-    test('服务器报了体积就按体积算进度,而不是按曲目数', () async {
+    test('服务器报了体积就按体积算进度，而不是按曲目数', () async {
       late DownloadManager manager;
       final marks = <double>[];
       manager = managerWith(
@@ -271,7 +271,7 @@ void main() {
       expect(job.receivedBytes, 8192);
     });
 
-    test('进度播报有闸:差得太小、或来得太密,都不播', () async {
+    test('进度播报有闸：差得太小、或来得太密，都不播', () async {
       late DownloadManager manager;
       final seen = <double>[];
 
@@ -298,7 +298,7 @@ void main() {
 
       expect(seen[0], 0, reason: '0.1% 的差别不值得重建一次界面');
       expect(seen[1], closeTo(50, 1));
-      expect(seen[2], closeTo(50, 1), reason: '局域网上下得快,同一个 250ms 里不该连着播');
+      expect(seen[2], closeTo(50, 1), reason: '局域网上下得快，同一个 250ms 里不该连着播');
     });
 
     test('同一条任务不重复入队 —— 按钮点两下不该排出两条', () async {
@@ -327,7 +327,7 @@ void main() {
   });
 
   group('失败与重试', () {
-    test('失败要落到任务上,带上服务器给的原因', () async {
+    test('失败要落到任务上，带上服务器给的原因', () async {
       final manager = managerWith(
         fn: transfer(<Uri>[], failWith: (_) => '服务器拒绝了这次下载'),
       );
@@ -342,7 +342,7 @@ void main() {
       expect(job.statusLine, contains('失败'));
     });
 
-    test('重试跳过已经下好的曲子,只补没下完的那几首', () async {
+    test('重试跳过已经下好的曲子，只补没下完的那几首', () async {
       final calls = <Uri>[];
       var broken = 's2';
       final manager = managerWith(
@@ -402,7 +402,7 @@ void main() {
           network: true,
           // 只有局域网那条会失败 —— 换到外网就该成。
           failWith: (uri) =>
-              uri.host.startsWith('lan.') ? '连接失败,检查网络或线路' : null,
+              uri.host.startsWith('lan.') ? '连接失败，检查网络或线路' : null,
         ),
       );
 
@@ -437,7 +437,7 @@ void main() {
       );
     });
 
-    test('计费网络下不下,条件满足了会自己开始', () async {
+    test('计费网络下不下，条件满足了会自己开始', () async {
       await givenNetwork('metered');
       final calls = <Uri>[];
       final manager = managerWith(fn: transfer(calls), wifiOnly: true);
@@ -458,7 +458,7 @@ void main() {
       expect(calls, hasLength(1));
     });
 
-    test('关掉仅 Wi-Fi 后,计费网络下也照下', () async {
+    test('关掉仅 Wi-Fi 后，计费网络下也照下', () async {
       await givenNetwork('metered');
       final calls = <Uri>[];
       final manager = managerWith(fn: transfer(calls));
@@ -469,7 +469,7 @@ void main() {
       expect(job.state, DownloadState.done);
     });
 
-    test('没网时说「等待网络」,不说「等待 Wi-Fi」', () async {
+    test('没网时说「等待网络」，不说「等待 Wi-Fi」', () async {
       await givenNetwork('offline');
       final manager = managerWith(fn: transfer(<Uri>[]));
 
@@ -491,7 +491,7 @@ void main() {
     });
   });
 
-  group('真传输(dio)', () {
+  group('真传输（dio)', () {
     /// 假 Dio:回一个**流式**响应。dio 的 download 要的是 ResponseBody,
     /// 不能像别的用例那样回一个字符串。
     Dio streamingDio({
@@ -518,7 +518,7 @@ void main() {
       return dio;
     }
 
-    test('正常响应把字节落到磁盘,不留半截文件', () async {
+    test('正常响应把字节落到磁盘，不留半截文件', () async {
       final manager = managerWith(
         dio: streamingDio(
           status: 200,
@@ -537,7 +537,7 @@ void main() {
       expect(File('${file.path}.part').existsSync(), isFalse);
     });
 
-    test('服务器回 200 但内容是错误 JSON —— 判为失败,不当成下好了', () async {
+    test('服务器回 200 但内容是错误 JSON —— 判为失败，不当成下好了', () async {
       // Subsonic 出错时 HTTP 状态码是 200,错在响应体里。不当心的话
       // 一个几百字节的 JSON 会被当成音频存下来,「已完成」就是假的。
       final manager = managerWith(

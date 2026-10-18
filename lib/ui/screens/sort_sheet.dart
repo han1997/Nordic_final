@@ -71,7 +71,7 @@ Future<void> _pick(
     }
   } catch (e) {
     messenger?.showSnackBar(SnackBar(
-      content: Text('没能换排序:$e'),
+      content: Text('没能换排序：$e'),
       duration: const Duration(seconds: 3),
     ));
   }

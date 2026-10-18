@@ -188,7 +188,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('按住播放坞会亮一层底色,松手撤掉,抬手进播放页', (tester) async {
+  testWidgets('按住播放坞会亮一层底色，松手撤掉，抬手进播放页', (tester) async {
     await pumpShell(tester, playingController(playing));
 
     // 坞里的曲名 —— 限定在托盘里取:首页那张「正在播放」卡上也有同一个歌名。
@@ -221,7 +221,7 @@ void main() {
 
     await gesture.up();
     await tester.pump();
-    expect(fill().color, isNull, reason: '松手要撤掉,不能一直亮着');
+    expect(fill().color, isNull, reason: '松手要撤掉，不能一直亮着');
 
     // 抬手这一下就是「点了坞」—— 路由名收在一处,应该真的推到播放页。
     await tester.pump(const Duration(milliseconds: 400));

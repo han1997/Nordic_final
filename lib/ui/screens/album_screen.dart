@@ -150,7 +150,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
           const SliverToBoxAdapter(
             child: EmptyState(
               title: '这张专辑里还没有曲目',
-              detail: '服务器上有这张专辑的记录,但没有可播放的文件。',
+              detail: '服务器上有这张专辑的记录，但没有可播放的文件。',
               topPadding: 40,
             ),
           )
@@ -167,7 +167,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
         if (missing > 0)
           SliverToBoxAdapter(
             child: ListNote(
-              '服务器把这张专辑记为 ${album.songCount} 首,当前只取到 ${_songs.length} 首,'
+              '服务器把这张专辑记为 ${album.songCount} 首，当前只取到 ${_songs.length} 首，'
               '还有 $missing 首没有返回。',
             ),
           )

@@ -112,7 +112,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('歌曲缓存'), findsOneWidget);
-    expect(find.text('听过的歌留在本机,再听不用重新拉'), findsOneWidget);
+    expect(find.text('听过的歌留在本机，再听不用重新拉'), findsOneWidget);
     // 上限的档位名在行尾。
     expect(find.text('1 GB'), findsOneWidget);
     expect(find.text('占用 2 MB · 上限 1 GB'), findsOneWidget);
@@ -120,7 +120,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('还没缓存过东西时,行里说的是「还没有东西」,也不给清除按钮', (tester) async {
+  testWidgets('还没缓存过东西时，行里说的是「还没有东西」，也不给清除按钮', (tester) async {
     await pumpSettings(tester);
 
     await tester.dragUntilVisible(
@@ -135,7 +135,7 @@ void main() {
     expect(find.text('清除'), findsNothing);
   });
 
-  testWidgets('点开「歌曲缓存」是那张上限面板,当前档位打着勾', (tester) async {
+  testWidgets('点开「歌曲缓存」是那张上限面板，当前档位打着勾', (tester) async {
     await pumpSettings(tester);
 
     await tester.dragUntilVisible(
@@ -159,7 +159,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('清除先问一句,问的是「会少掉什么」而不是「确定吗」', (tester) async {
+  testWidgets('清除先问一句，问的是「会少掉什么」而不是「确定吗」', (tester) async {
     await tester.runAsync(seedCacheFile);
     await pumpSettings(tester);
 
@@ -174,7 +174,7 @@ void main() {
     await tester.tap(find.text('清除'));
     await tester.pumpAndSettle();
 
-    expect(find.text('清除歌曲缓存?'), findsOneWidget);
+    expect(find.text('清除歌曲缓存？'), findsOneWidget);
     expect(find.textContaining('断网时还能听的那些就听不到了'), findsOneWidget);
     expect(find.textContaining('点名下好的内容不受影响'), findsOneWidget);
 
@@ -184,7 +184,7 @@ void main() {
     expect(state.cacheUsedBytes, 2 * 1024 * 1024);
   });
 
-  test('换上限:落盘 + 当场淘汰到新额度之下', () async {
+  test('换上限：落盘 + 当场淘汰到新额度之下', () async {
     await seedCacheFile(bytes: 3 * 1024 * 1024);
     expect(state.cacheUsedBytes, 3 * 1024 * 1024);
 
@@ -201,7 +201,7 @@ void main() {
     expect(state.configStore.loadCacheLimit(), CacheLimit.mb256.id);
   });
 
-  test('关掉缓存:本机留着的音频全清掉', () async {
+  test('关掉缓存：本机留着的音频全清掉', () async {
     await seedCacheFile();
     expect(state.cacheUsedBytes, greaterThan(0));
 
@@ -211,7 +211,7 @@ void main() {
     expect(audioCache.enabled, isFalse);
   });
 
-  test('清除缓存报出释放了多少,而且不动下载', () async {
+  test('清除缓存报出释放了多少，而且不动下载', () async {
     await seedCacheFile(bytes: 5 * 1024 * 1024);
 
     // 下载目录里放一份「点名要的」东西 —— 清缓存绝不能碰它。
@@ -224,6 +224,6 @@ void main() {
 
     expect(freed, 5 * 1024 * 1024);
     expect(state.cacheUsedBytes, 0);
-    expect(kept.existsSync(), isTrue, reason: '下载是点名要的,清缓存不该动它');
+    expect(kept.existsSync(), isTrue, reason: '下载是点名要的，清缓存不该动它');
   });
 }

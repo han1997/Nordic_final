@@ -168,7 +168,7 @@ class _ServersScreenState extends State<ServersScreen> {
       if (!saved) {
         _formError = appState.error;
       } else {
-        _formSuccess = '连接成功,已读取 ${appState.library.totalSongs} 首曲目。';
+        _formSuccess = '连接成功，已读取 ${appState.library.totalSongs} 首曲目。';
         if (backToManage) _editing = false;
       }
     });
@@ -178,7 +178,7 @@ class _ServersScreenState extends State<ServersScreen> {
       // 保存是个主动动作,做完总得有个回执。
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         const SnackBar(
-          content: Text('已保存,正在用新配置读取曲库'),
+          content: Text('已保存，正在用新配置读取曲库'),
           duration: Duration(seconds: 2),
         ),
       );
@@ -254,10 +254,10 @@ class _ServersScreenState extends State<ServersScreen> {
                       ? (_creatingNew
                           ? (state.hasServer
                               // 说清代价:这一版一次只接一台,连上的是新的那台。
-                              ? '接一台新的。本版一次只连一台,连上会替换当前这台'
+                              ? '接一台新的。本版一次只连一台，连上会替换当前这台'
                               : '填上你自己的音乐服务器')
-                          : '改地址、账号或密码,保存后重连')
-                      : '一个账号,多个地址',
+                          : '改地址、账号或密码，保存后重连')
+                      : '一个账号，多个地址',
                   big: false,
                   leading: IconButtonRound(
                     icon: Icons.arrow_back,
@@ -304,8 +304,8 @@ class _ServersScreenState extends State<ServersScreen> {
           padding: const EdgeInsets.fromLTRB(
             NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s5),
           child: Text(
-            '支持 Navidrome、Subsonic / OpenSubsonic,以及飞牛音乐。'
-            '不确定的话选 Subsonic,大多数兼容服务器都能用它接进来。',
+            '支持 Navidrome、Subsonic / OpenSubsonic，以及飞牛音乐。'
+            '不确定的话选 Subsonic，大多数兼容服务器都能用它接进来。',
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
@@ -335,13 +335,13 @@ class _ServersScreenState extends State<ServersScreen> {
                 label: '显示名称',
                 child: NordicTextField(
                   controller: _nameController,
-                  hintText: '例如:客厅 Navidrome',
+                  hintText: '例如：客厅 Navidrome',
                 ),
               ),
               const SizedBox(height: NordicSpace.s4),
               NordicField(
                 label: '服务器地址',
-                hint: '支持 http / https,可以是域名、IP 或 IPv6。',
+                hint: '支持 http / https，可以是域名、IP 或 IPv6。',
                 child: NordicTextField(
                   controller: _urlController,
                   hintText: 'http://192.168.10.4:4533',
@@ -363,7 +363,7 @@ class _ServersScreenState extends State<ServersScreen> {
               const SizedBox(height: NordicSpace.s4),
               NordicField(
                 label: '密码',
-                hint: '密码只交给系统密钥库加密保存,登录时用它派生令牌,不保存明文。',
+                hint: '密码只交给系统密钥库加密保存，登录时用它派生令牌，不保存明文。',
                 child: NordicTextField(
                   controller: _passwordController,
                   hintText: '服务器密码',
@@ -649,8 +649,8 @@ class _ServersScreenState extends State<ServersScreen> {
           padding: const EdgeInsets.fromLTRB(
             NordicSpace.s5, NordicSpace.s6, NordicSpace.s5, 0),
           child: Text(
-            '一个账号可以配多条线路,客户端按延迟自动择优。内外网各留一条,'
-            '出门也能听。点一条线路就锁定它,再点一下解除、回到自动择优。',
+            '一个账号可以配多条线路，客户端按延迟自动择优。内外网各留一条，'
+            '出门也能听。点一条线路就锁定它，再点一下解除、回到自动择优。',
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
@@ -716,9 +716,9 @@ class _ServersScreenState extends State<ServersScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: context.nordic.glass3,
-        title: const Text('移除这台服务器?'),
+        title: const Text('移除这台服务器？'),
         content: Text(
-          '本机保存的地址与凭据会被清除。服务器上的音乐不受影响,'
+          '本机保存的地址与凭据会被清除。服务器上的音乐不受影响，'
           '以后可以重新添加。',
           style: Theme.of(dialogContext).textTheme.bodySmall,
         ),

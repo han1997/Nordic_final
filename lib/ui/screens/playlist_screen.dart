@@ -287,7 +287,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         if (_songs.isNotEmpty && playlist.songCount > _songs.length)
           SliverToBoxAdapter(
             child: ListNote(
-              '服务器把这张歌单记为 ${playlist.songCount} 首,'
+              '服务器把这张歌单记为 ${playlist.songCount} 首，'
               '这次取到 ${_songs.length} 首。',
             ),
           ),
@@ -381,7 +381,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           onTap: () => Navigator.of(sheetContext).pop(),
           child: NordicSheet(
             title: '重命名歌单',
-            subtitle: '原标题:${playlist.name}',
+            subtitle: '原标题：${playlist.name}',
             child: _RenameForm(
               controller: controller,
               original: playlist.name,
@@ -414,9 +414,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: dialogContext.nordic.glass3,
-        title: const Text('删除这个歌单?'),
+        title: const Text('删除这个歌单？'),
         content: Text(
-          '「${playlist.name}」会从服务器上删掉,里面的 ${playlist.songCount} 首曲子'
+          '「${playlist.name}」会从服务器上删掉，里面的 ${playlist.songCount} 首曲子'
           '本身不受影响。这一步不能撤销。',
           style: Theme.of(dialogContext).textTheme.bodySmall,
         ),
@@ -476,7 +476,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       _toast('已从歌单移除「${song.title}」');
     } catch (e) {
       if (!mounted) return;
-      _toast('没能移除:$e', duration: const Duration(seconds: 3));
+      _toast('没能移除：$e', duration: const Duration(seconds: 3));
     }
   }
 
@@ -521,7 +521,7 @@ class _RenameForm extends StatelessWidget {
                 label: '歌单名称',
                 child: NordicTextField(
                   controller: controller,
-                  hintText: '例如:深夜驾驶',
+                  hintText: '例如：深夜驾驶',
                   autofocus: true,
                 ),
               ),

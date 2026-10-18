@@ -52,7 +52,7 @@ void main() {
       songs.where((s) => s.created != null).toList();
 
   test('全量取回的曲目数不少于服务器报的首数', () async {
-    if (!await reachable()) return markTestSkipped('Navidrome 不可达,跳过');
+    if (!await reachable()) return markTestSkipped('Navidrome 不可达，跳过');
 
     // AppState 现在首屏取 1000 条(见 app_state 的 _songPageSize)。
     final songs = await repo.allSongs(size: 1000);
@@ -62,8 +62,8 @@ void main() {
     expect(unique.length, songs.length, reason: '同一首不该在结果里出现两次');
   });
 
-  test('「最近添加」取的是全量里最新的那几首,不是前 500 条里最新的那几首', () async {
-    if (!await reachable()) return markTestSkipped('Navidrome 不可达,跳过');
+  test('「最近添加」取的是全量里最新的那几首，不是前 500 条里最新的那几首', () async {
+    if (!await reachable()) return markTestSkipped('Navidrome 不可达，跳过');
 
     final all = dated(await repo.allSongs(size: 1000));
 
@@ -75,7 +75,7 @@ void main() {
       expect(
         newest[i].created!.isAfter(newest[i - 1].created!),
         isFalse,
-        reason: '第 $i 首比上一首还新,排序反了',
+        reason: '第 $i 首比上一首还新，排序反了',
       );
     }
 
@@ -95,7 +95,7 @@ void main() {
       expect(
         recentlyAddedSongsOf(firstPage).map((s) => s.id),
         isNot(contains(truth.first.id)),
-        reason: '前 500 条里本来就没有最新那首,不该凭空排出来',
+        reason: '前 500 条里本来就没有最新那首，不该凭空排出来',
       );
       expect(
         newest.first.id,
@@ -106,7 +106,7 @@ void main() {
   });
 
   test('页大小 1000 一次就能拿全常见规模的库', () async {
-    if (!await reachable()) return markTestSkipped('Navidrome 不可达,跳过');
+    if (!await reachable()) return markTestSkipped('Navidrome 不可达，跳过');
 
     final big = await repo.allSongs(size: 1000);
     final small = await repo.allSongs(size: 500);
@@ -118,6 +118,6 @@ void main() {
     // 若真库超过 1000 首,这组用例仍成立(只是 ③ 那条会走「让路」分支);
     // 但值得知道实际规模。
     // ignore: avoid_print
-    print('真库规模:500 档 ${small.length} 首,1000 档 ${big.length} 首');
+    print('真库规模：500 档 ${small.length} 首，1000 档 ${big.length} 首');
   });
 }

@@ -127,10 +127,10 @@ class _NewPlaylistScreenState extends State<NewPlaylistScreen> {
                     NordicSpace.s5, NordicSpace.s5, NordicSpace.s5, 0),
                   child: NordicField(
                     label: '歌单名称',
-                    hint: '创建后可以先加几首打底,以后随时从歌曲菜单里追加。',
+                    hint: '创建后可以先加几首打底，以后随时从歌曲菜单里追加。',
                     child: NordicTextField(
                       controller: _nameController,
-                      hintText: '例如:深夜驾驶',
+                      hintText: '例如：深夜驾驶',
                       autofocus: true,
                       onChanged: (_) => setState(() {}),
                     ),
@@ -169,7 +169,7 @@ class _NewPlaylistScreenState extends State<NewPlaylistScreen> {
                       ),
                       const SizedBox(height: NordicSpace.s3),
                       Text(
-                        '服务器不支持自定义歌单封面,这里选的是本机显示用的配色 —— '
+                        '服务器不支持自定义歌单封面，这里选的是本机显示用的配色 —— '
                         '同一账号在别的设备上看到的会是自动生成的封面。',
                         style: Theme.of(context)
                             .textTheme

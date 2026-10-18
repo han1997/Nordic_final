@@ -104,8 +104,15 @@ class _LyricsScreenState extends State<LyricsScreen> {
       playback.position.value,
       duration: _duration,
     );
-    if (next == _activeLine.value) return;
-    _activeLine.value = next; // 监听者负责滚动;每行自己负责重画
+    if (next != _activeLine.value) {
+      _activeLine.value = next; // 监听者负责滚动;每行自己负责重画
+      return;
+    }
+    // **没换行的时候也要再排一次。** 用户刚翻过歌词时那一滚会被让掉
+    // (见 [_scrollToLine] 的四秒宽限),而「让一次」不该变成「再也不回来」——
+    // 长句子、间奏里几十秒不换行是常态,那时唯一会把视线拉回去的机会就是
+    // 这几跳。[_scheduleScroll] 自己排重,所以重复调用不花钱。
+    _scheduleScroll(next);
   }
 
   /// 换行了 / 换屏高了 —— 把这一句带到框中央。
@@ -272,7 +279,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
         // 没有时间轴的歌词只能按整首的进度平均走 —— 那不是「跟着唱」,
         // 得如实说一句,否则用户会以为高亮坏了。
         if (!_lyrics.synced)
-          const ListNote('这份歌词没有时间轴,只能按整首的进度平均走 —— 高亮句不一定对得上。'),
+          const ListNote('这份歌词没有时间轴，只能按整首的进度平均走 —— 高亮句不一定对得上。'),
         Expanded(
           child: GestureDetector(
             onTap: () => Navigator.of(context).maybePop(),
@@ -281,6 +288,10 @@ class _LyricsScreenState extends State<LyricsScreen> {
               onNotification: (notification) {
                 if (notification.dragDetails != null) {
                   _userBrowsedAt = DateTime.now();
+                  // 用户接手了,就把「这一行已经滚过」的记账清掉 ——
+                  // 不清的话,宽限过去之后 [_onPosition] 再排也是白排
+                  // (同一行只会被记一次),那一屏就一直停在他松手的地方。
+                  _scheduledFor = -1;
                 }
                 return false;
               },
@@ -308,7 +319,11 @@ class _LyricsScreenState extends State<LyricsScreen> {
     // 刚被用户翻过就先让着他:想往后看几眼是常事,硬拉回来很难用。
     final browsed = _userBrowsedAt;
     if (browsed != null &&
-        DateTime.now().difference(browsed) < const Duration(seconds: 4)) {
+        DateTime.now().difference(browsed) < lyricBrowseGrace) {
+      // 让,但**别把这一行记成「已经滚过了」**:记了的话宽限一过也不会再试
+      // (同一行不会再有第二次「换行」),那一屏就一直停在用户松手的地方,
+      // 直到下一句歌词才归位。清回 -1,下一跳再试(见 [_onPosition])。
+      _scheduledFor = -1;
       return;
     }
 
@@ -453,6 +468,15 @@ int activeLyricIndex(
   return active;
 }
 
+/// 用户手动翻过歌词之后,**先让着他这么久**才恢复自动跟随。
+///
+/// 读着读着被拽走很烦,所以刚翻过就先不拉回来。但让一次不等于再也不回来 ——
+/// 见 [_LyricsScreenState._onPosition] 里那一句「没换行的时候也要再排一次」。
+///
+/// 可变是为了测试:这一条比的是**真实时钟**(`DateTime.now()`),
+/// 而 `testWidgets` 的假时钟推不动它(见 `lyrics_screen_test.dart`)。
+Duration lyricBrowseGrace = const Duration(seconds: 4);
+
 /// 点某一句歌词要跳到哪儿。**没有把握就返回 null** —— 界面据此不接这一下点击:
 /// 跳不到的地方不该装成跳了。
 ///
@@ -474,6 +498,10 @@ Duration? seekTargetForLine(
   if (index < 0 || index >= lyrics.lines.length) return null;
   final start = lyrics.lines[index].start;
   if (start != null) return start;
+  // 整份**带着时间轴**、偏偏这一句没有起点(部分行缺 `start` 的混合时间轴)——
+  // 那就是「没有把握」:按行数摊出来的那一刻与这一句真正的位置无关,跳过去
+  // 只会跳到别处,而用户以为是这句话的位置。
+  if (lyrics.synced) return null;
   if (duration.inMilliseconds <= 0) return null;
 
   final count = lyrics.lines.length;

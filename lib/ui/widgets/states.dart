@@ -226,7 +226,7 @@ class ErrorState extends StatelessWidget {
           if (isAuthFailure) ...[
             const SizedBox(height: NordicSpace.s4),
             Text(
-              '凭据存在本机的系统密钥库里,不会上传。到设置里改一次就能继续。',
+              '凭据存在本机的系统密钥库里，不会上传。到设置里改一次就能继续。',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.labelSmall,
             ),

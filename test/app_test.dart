@@ -148,7 +148,7 @@ void main() {
 
     setUp(() => pendingTab.value = null);
 
-    testWidgets('三颗 tab 都在;不属于任何 tab 的页面谁都不高亮', (tester) async {
+    testWidgets('三颗 tab 都在；不属于任何 tab 的页面谁都不高亮', (tester) async {
       // 专辑 / 艺人 / 服务器 / 歌单这几屏浮的就是这一颗(见 ImmersiveScaffold
       // 的 showNav),它们不属于任何一个 tab。
       //
@@ -172,7 +172,7 @@ void main() {
       expect(pendingTab.value, AppTab.home);
     });
 
-    testWidgets('搜索不再是 tab —— 它靠 push 进来,不依赖主壳在场', (tester) async {
+    testWidgets('搜索不再是 tab —— 它靠 push 进来，不依赖主壳在场', (tester) async {
       // 原先这条路是一个全局 ValueNotifier 通知主壳换 tab,而那条线**断过一次**
       // (有人发没人听,顶栏放大镜成了死按钮)。搜索能独立成页之后,
       // 「点它会不会有反应」不再取决于主壳在不在。
@@ -205,7 +205,7 @@ void main() {
       );
     });
 
-    test('时长未知时停在第一行,不假装知道进度', () {
+    test('时长未知时停在第一行，不假装知道进度', () {
       expect(
         averageIndexFor(
           position: const Duration(seconds: 30),
@@ -216,7 +216,7 @@ void main() {
       );
     });
 
-    test('一行都没有时给 -1(界面据此不高亮)', () {
+    test('一行都没有时给 -1（界面据此不高亮）', () {
       expect(
         averageIndexFor(
           position: Duration.zero,
@@ -249,7 +249,7 @@ void main() {
           duration: const Duration(seconds: 100),
         );
 
-    test('取最后一个已开始的句子,不是最近的那一句', () {
+    test('取最后一个已开始的句子，不是最近的那一句', () {
       final lyrics = synced([0, 10, 20, 30]);
       expect(at(lyrics, 0), 0);
       expect(at(lyrics, 9), 0);
@@ -259,7 +259,7 @@ void main() {
       expect(at(lyrics, 99), 3);
     });
 
-    test('同一句里位置怎么变,行号都不动 —— 这正是「不必重建」的判据', () {
+    test('同一句里位置怎么变，行号都不动 —— 这正是「不必重建」的判据', () {
       final lyrics = synced([0, 10, 20]);
       final a = at(lyrics, 12);
       final b = at(lyrics, 13);
@@ -274,7 +274,7 @@ void main() {
       expect(at(lyrics, 50), 5);
     });
 
-    test('一行都没有时给 -1(界面据此不高亮)', () {
+    test('一行都没有时给 -1（界面据此不高亮）', () {
       expect(at(const Lyrics(lines: []), 5), -1);
     });
   });
@@ -312,7 +312,7 @@ void main() {
       expect(target(lyrics, 3), isNot(const Duration(seconds: 30)));
     });
 
-    test('点一句 → 高亮必须落回同一行(与 activeLyricIndex 互为逆运算)', () {
+    test('点一句 → 高亮必须落回同一行（与 activeLyricIndex 互为逆运算）', () {
       // 这一条是这段逻辑真正的判据:两边都用「行数 / 时长」这一套比例,
       // 只要有一边改了取整方式,这里立刻翻面。
       final unsynced = Lyrics(
@@ -324,7 +324,7 @@ void main() {
           target(unsynced, i)!,
           duration: duration,
         );
-        expect(at, i, reason: '点第 $i 句,高亮却落在第 $at 句');
+        expect(at, i, reason: '点第 $i 句，高亮却落在第 $at 句');
       }
 
       final withAxis = synced([0, 10, 20, 30, 40]);
@@ -334,7 +334,7 @@ void main() {
           target(withAxis, i)!,
           duration: duration,
         );
-        expect(at, i, reason: '点第 $i 句,高亮却落在第 $at 句');
+        expect(at, i, reason: '点第 $i 句，高亮却落在第 $at 句');
       }
     });
 
@@ -355,10 +355,20 @@ void main() {
         const Duration(seconds: 10),
       );
     });
+
+    test('带着时间轴、可这一句没有起点 —— 不猜，给 null', () {
+      // 服务器给的是「部分行缺 start」的混合时间轴时,按行数摊出来的那一刻
+      // 与这一句真正的位置无关:跳过去只会跳到别处,而用户以为那是这句话的位置。
+      final mixed = synced([0, null, 20, 30]);
+
+      expect(target(mixed, 1), isNull, reason: '没有起点就是没有把握');
+      expect(target(mixed, 2), const Duration(seconds: 20),
+          reason: '有起点的那些照旧跳得动');
+    });
   });
 
   group('封面解码尺寸', () {
-    testWidgets('「无限宽」的封面按真实约束解码,不再一路算到 1024', (tester) async {
+    testWidgets('「无限宽」的封面按真实约束解码，不再一路算到 1024', (tester) async {
       // 网格里的封面就是这么传的(`width: double.infinity`)—— 声明尺寸算不出
       // 边长。修之前 `_displayEdge` 得到 Infinity,桶永远是 1024(下载到本机的
       // 那张封面就是 1024,于是每格都按原尺寸解码)。
@@ -392,7 +402,7 @@ void main() {
   group('页面过渡', () {
     /// 播放页 ↔ 歌词页是同一个播放对象的两面,切换要「直接变」。
     /// 这一条钉住它 —— 免得哪天顺手把它们也塞回统一的滑入里。
-    test('歌词页:直接换,不滑也不飞', () {
+    test('歌词页：直接换，不滑也不飞', () {
       final route =
           AppRoutes.generate(const RouteSettings(name: AppRoutes.lyrics));
 
@@ -400,7 +410,7 @@ void main() {
       final page = route! as PageRouteBuilder;
       expect(page.transitionDuration, Duration.zero);
       expect(page.reverseTransitionDuration, Duration.zero,
-          reason: '点歌词回封面也要一样直接,不然来路去路手感不一致');
+          reason: '点歌词回封面也要一样直接，不然来路去路手感不一致');
     });
 
     test('专辑 / 艺人 / 歌单仍是滑入 —— 它们不是「翻面」而是进另一个页面', () {
@@ -420,7 +430,7 @@ void main() {
     /// 整屏不透明度会把子树关进一个离屏合成层,而沉浸页里有 62px 的氛围模糊
     /// 和播放坞玻璃的 `BackdropFilter` —— 那样每帧都要在新缓冲里重做这两样,
     /// 就是真机反馈的「切页面 / 返回卡顿」。这一条把「别再顺手加回来」钉死。
-    testWidgets('滑入只有位移,没有整页淡入', (tester) async {
+    testWidgets('滑入只有位移，没有整页淡入', (tester) async {
       late BuildContext ctx;
       await tester.pumpWidget(MaterialApp(
         home: Builder(builder: (c) {
@@ -440,7 +450,7 @@ void main() {
 
       expect(widget, isA<SlideTransition>());
       expect(widget, isNot(isA<FadeTransition>()),
-          reason: '淡入是那层离屏合成的来源,位置只能靠位移给');
+          reason: '淡入是那层离屏合成的来源，位置只能靠位移给');
     });
   });
 
@@ -502,7 +512,7 @@ void main() {
       expect(barriers, isEmpty, reason: '框架那层黑与蒙板叠起来是 84% 黑');
     });
 
-    testWidgets('蒙板铺满整屏,而不是只盖下半屏', (tester) async {
+    testWidgets('蒙板铺满整屏，而不是只盖下半屏', (tester) async {
       await openSheet(tester);
 
       // 不写 `isScrollControlled: true` 时框架只给内容盒子屏幕高度的 9/16,
@@ -516,7 +526,7 @@ void main() {
     // 真机:歌在放,进度条却是 0(左端 0:00、右端 --:--、滑块还拖不动)。
     // 根因是时长没送到(`state.duration`),这里钉住界面在那种情况下该怎么画。
 
-    test('时长未知时滑块停最左,但左端写真实位置', () {
+    test('时长未知时滑块停最左，但左端写真实位置', () {
       final frame = scrubberFrame(
         position: const Duration(seconds: 35),
         duration: Duration.zero,
@@ -529,7 +539,7 @@ void main() {
       expect(frame.remaining, Duration.zero);
     });
 
-    test('时长已知时按位置算,越界夹回', () {
+    test('时长已知时按位置算，越界夹回', () {
       final frame = scrubberFrame(
         position: const Duration(seconds: 30),
         duration: const Duration(seconds: 60),
@@ -555,6 +565,20 @@ void main() {
       );
       expect(frame.value, 45000);
       expect(frame.shownPosition, const Duration(seconds: 45));
+    });
+
+    test('拖动中换到更短的一首：那个值也要夹回量程里', () {
+      // 「松手之后停在手指放开的地方」那一份值会一直留着,而拖动途中自动接到
+      // 下一首时它可能比新曲的时长还大 —— 原样交给 Slider 就是
+      // `value <= max` 的断言失败(debug 直接崩)。
+      final frame = scrubberFrame(
+        position: const Duration(seconds: 10),
+        duration: const Duration(seconds: 30),
+        dragValue: 180000,
+      );
+      expect(frame.value, 30000);
+      expect(frame.value, lessThanOrEqualTo(frame.max));
+      expect(frame.remaining, Duration.zero);
     });
 
     // ---- 缓冲带画到哪儿(见 scrubberFrame 的头一段口径) ----
@@ -588,7 +612,7 @@ void main() {
       expect(frame.bufferedRatio, isNull);
     });
 
-    test('时长未知时不画,越界的缓冲夹回量程', () {
+    test('时长未知时不画，越界的缓冲夹回量程', () {
       final unknown = scrubberFrame(
         position: const Duration(seconds: 5),
         duration: Duration.zero,
@@ -661,7 +685,7 @@ void main() {
     // 连点三下就是三条横幅 —— 已按用户要求移除。状态从那以后只剩图标与底色,
     // 这一组钉住「两态分得开」:列表循环与顺序播放**共用一个图标**,
     // 少了那层底色这两个状态在屏幕上就是同一张脸。
-    test('顺序播放不亮;列表循环图标不变但必须亮;单曲循环换成带 1 的圈', () {
+    test('顺序播放不亮；列表循环图标不变但必须亮；单曲循环换成带 1 的圈', () {
       expect(
         repeatKeyAppearance(PlaybackRepeat.off),
         (icon: Icons.repeat, on: false),
@@ -669,7 +693,7 @@ void main() {
       expect(
         repeatKeyAppearance(PlaybackRepeat.all),
         (icon: Icons.repeat, on: true),
-        reason: '与顺序播放同图标,不亮就等于这两个状态看一样',
+        reason: '与顺序播放同图标，不亮就等于这两个状态看一样',
       );
       expect(
         repeatKeyAppearance(PlaybackRepeat.one),
@@ -677,7 +701,7 @@ void main() {
       );
     });
 
-    testWidgets('按下就有回执,抬手回弹 —— 别等到状态变了才让人知道点着了', (tester) async {
+    testWidgets('按下就有回执，抬手回弹 —— 别等到状态变了才让人知道点着了', (tester) async {
       var taps = 0;
       await tester.pumpWidget(
         MaterialApp(
@@ -724,7 +748,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('歌曲行:长标题 + 长艺人专辑,行要跟着长高而不是裁掉文字', (tester) async {
+    testWidgets('歌曲行：长标题 + 长艺人专辑，行要跟着长高而不是裁掉文字', (tester) async {
       await pumpAt(
         tester,
         const NordicRow(
@@ -739,7 +763,7 @@ void main() {
       expect(tester.getSize(find.byType(NordicRow)).height, greaterThan(64));
     });
 
-    testWidgets('胶囊 / 按钮:文字放大后不溢出', (tester) async {
+    testWidgets('胶囊 / 按钮：文字放大后不溢出', (tester) async {
       await pumpAt(
         tester,
         Center(

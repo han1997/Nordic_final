@@ -110,7 +110,7 @@ class HomeScreen extends StatelessWidget {
     if (!view.hasServer) {
       return EmptyState(
         title: '还没有连接服务器',
-        detail: '填上服务器地址与账号,最近在听的会显示在这里。',
+        detail: '填上服务器地址与账号，最近在听的会显示在这里。',
         topPadding: 80,
         // 空态说的是「这儿没有」,那就顺手给出**怎么让它有** ——
         // 只写一句「到设置里填」等于把活交给用户去找。
@@ -136,7 +136,7 @@ class HomeScreen extends StatelessWidget {
           isAuthFailure: view.errorIsAuth,
           onRetry: () => state.loadLibrary(),
           onOpenSettings: () => AppRoutes.openServers(context),
-          hint: offlineReady ? '本机已下载的音乐还在,去「下载管理」就能离线听。' : null,
+          hint: offlineReady ? '本机已下载的音乐还在，去「下载管理」就能离线听。' : null,
           onHintTap:
               offlineReady ? () => AppRoutes.openDownloads(context) : null,
         );
@@ -204,7 +204,7 @@ class HomeScreen extends StatelessWidget {
             const SliverToBoxAdapter(
               child: EmptyState(
                 title: '这个库里还没有内容',
-                detail: '如果服务器上确实有歌,到设置里重新扫描一次曲库,或下拉刷新。',
+                detail: '如果服务器上确实有歌，到设置里重新扫描一次曲库，或下拉刷新。',
                 topPadding: 40,
               ),
             ),
@@ -297,7 +297,7 @@ class _NowPlayingCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '随机放一首,或者从下面挑一张专辑。',
+                          '随机放一首，或者从下面挑一张专辑。',
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall

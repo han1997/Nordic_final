@@ -29,7 +29,7 @@ void main() {
         ),
       );
 
-  test('同一张封面问两次,给的是同一条地址', () {
+  test('同一张封面问两次，给的是同一条地址', () {
     final repo = SubsonicRepository(clientWith(const [lan]));
 
     // 没有备忘录的话这两条 URL 的 `s`(盐)不一样 —— 同一次会话里为同一张图
@@ -49,7 +49,7 @@ void main() {
     expect(big.queryParameters['size'], '512');
   });
 
-  test('同一首歌同一个档位,给的是同一条流地址', () {
+  test('同一首歌同一个档位，给的是同一条流地址', () {
     final repo = SubsonicRepository(clientWith(const [lan]));
 
     expect(repo.streamUri('s1', maxBitRate: 320, format: 'mp3'),
@@ -59,7 +59,7 @@ void main() {
         isNot(repo.streamUri('s1')));
   });
 
-  test('线路的地址改了,地址跟着换 —— 不能把旧主机一直喂回去', () {
+  test('线路的地址改了，地址跟着换 —— 不能把旧主机一直喂回去', () {
     final client = clientWith(const [lan]);
     final repo = SubsonicRepository(client);
     expect(repo.streamUri('s1').host, 'lan.example.com');
@@ -74,7 +74,7 @@ void main() {
     expect(repo.coverUri('cover-1').host, 'nas.example.com');
   });
 
-  test('本机下过的封面直接给本机文件,而且不记进备忘录', () {
+  test('本机下过的封面直接给本机文件，而且不记进备忘录', () {
     // 下载状态是会变的(刚下好的那张封面,下一次问就该有了),
     // 所以本机那一支必须每次现问。
     var local = <String, String>{};

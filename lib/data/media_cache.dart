@@ -38,7 +38,7 @@ class CacheLimit {
   static const off = CacheLimit(
     id: 'off',
     name: '不缓存',
-    description: '听过的歌每次都从服务器拉,本机不留音频',
+    description: '听过的歌每次都从服务器拉，本机不留音频',
     megabytes: 0,
   );
 
