@@ -135,28 +135,42 @@ class _ServersScreenState extends State<ServersScreen> {
       _formSuccess = null;
     });
 
-    await appState.connect(
-      name: _nameController.text,
-      kind: _kind,
-      username: _userController.text,
-      password: _passwordController.text,
-      // 改现有那台:表单里这条地址**替换掉第一条线路**,其余几条原样留着;
-      // 新接一台:就一条线路。
-      //
-      // 早先这里无条件提交一条 `route-1`:用户只想改个密码,内外网那两条线路
-      // 就被抹掉了,活下来的那条还被强制锁定(于是「自动择优」也一起停了)——
-      // 而这条路是这一轮才开的入口,所以以前碰不到。
-      routes: _creatingNew
-          ? [_routeFor(url)]
-          : mergeEditedRoute(appState.server?.routes ?? const [], _routeFor(url)),
-    );
+    try {
+      await appState.connect(
+        name: _nameController.text,
+        kind: _kind,
+        username: _userController.text,
+        password: _passwordController.text,
+        // 改现有那台:表单里这条地址**替换掉第一条线路**,其余几条原样留着;
+        // 新接一台:就一条线路。
+        //
+        // 早先这里无条件提交一条 `route-1`:用户只想改个密码,内外网那两条线路
+        // 就被抹掉了,活下来的那条还被强制锁定(于是「自动择优」也一起停了)——
+        // 而这条路是这一轮才开的入口,所以以前碰不到。
+        routes: _creatingNew
+            ? [_routeFor(url)]
+            : mergeEditedRoute(appState.server?.routes ?? const [], _routeFor(url)),
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    // 连上之后立刻拉一次库 —— 让用户在这里就看到「成没成」,
-    // 而不是跳到音乐库再看一片空白。
-    await appState.loadLibrary();
-    if (!mounted) return;
+      // 连上之后立刻拉一次库 —— 让用户在这里就看到「成没成」,
+      // 而不是跳到音乐库再看一片空白。
+      await appState.loadLibrary();
+      if (!mounted) return;
+    } catch (e) {
+      // **兜住**:`connect` 的第一步是把密码写进系统密钥库,而那是个裸 await ——
+      // 存不下时(web 上没有 secure context 时,flutter_secure_storage_web 直接
+      // 抛 `UnsupportedError`,**是 Error 不是 Exception**)异常会一路穿出去,
+      // 于是下面那句 `_busy = false` 永远走不到:按钮一直转圈,配置一个字都没存。
+      // 这里退回去并说清是哪一步,别让用户对着一个转不完的圈猜。
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _formError = _connectFailureText(e);
+      });
+      return;
+    }
 
     final saved = appState.phase != LoadPhase.failed;
     // 从管理页进来改配置的,存完回到管理页 —— 那一页上的名字、线路、
@@ -186,6 +200,21 @@ class _ServersScreenState extends State<ServersScreen> {
   }
 
   /// 补全协议头。用户常只填 `192.168.10.4:4533`,直接拼 URL 会解析失败。
+  /// 连不上时给用户看的那句话。
+  ///
+  /// [UnsupportedError] 单独认一下:从局域网的 http 地址打开 Web 时,
+  /// `flutter_secure_storage_web` 因为没有 `window.isSecureContext` 直接抛它,
+  /// 而那时**配置一个字都没存下来**。把它翻译成「该怎么改」,而不是把一行英文
+  /// 丢给用户。
+  ///
+  /// 注意这是让它**响亮地失败**,不是让它能用:`http://` 局域网下系统密码存储
+  /// 本来就是关着的,凭据存不住 —— 就算放过去也会「连上、一刷新就没」,
+  /// 那比连不上更让人糊涂。
+  static String _connectFailureText(Object e) => switch (e) {
+        UnsupportedError() => '这个页面存不下密码 —— 用 https 或 localhost 打开再连。',
+        _ => '连不上：$e',
+      };
+
   static String? _normalizeUrl(String raw) {
     var value = raw.trim();
     if (value.isEmpty) return null;
