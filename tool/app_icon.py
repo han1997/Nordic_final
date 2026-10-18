@@ -20,12 +20,33 @@
   android/app/src/main/res/mipmap-*/ic_launcher_monochrome.png   主题图标单色层
   android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml     自适应图标
   android/app/src/main/res/values/colors.xml                     图标底与启动底共用
+  web/favicon.png                      浏览器标签(32 —— 16 下那七根柱必然糊)
+  web/icons/Icon-{192,512}.png         装到主屏时那张(满幅,启动器不遮罩)
+  web/icons/Icon-maskable-{192,512}.png   同一张,但给启动器遮罩留了边距(见下)
+  windows/runner/resources/app_icon.ico   16/32/48/256 四档,打进 exe
 
 用法(Git Bash,仓库根):
-  py -3 tool/app_icon.py --emit-prototype        # 只出原型片段(给设计板看)
-  py -3 tool/app_icon.py --freeze m03            # 定稿:m03 写进 FINAL 并重出全部产物
-  py -3 tool/app_icon.py --verify                # 校验已落盘 PNG 的尺寸与安全区
-  py -3 tool/app_icon.py --out <dir> --android   # 落到别处(自检用,不碰 android/)
+  py -3 tool/app_icon.py                         # 只出 prototype/icon.js(与以前一致)
+  py -3 tool/app_icon.py --emit-prototype        # 显式只出原型片段(给设计板看)
+  py -3 tool/app_icon.py --freeze m03            # 把 m03 写成定稿(**只改 FINAL**;
+                                                 #   要出产物另加 --targets)
+  py -3 tool/app_icon.py --targets web,windows   # 只重出点名的目标
+  py -3 tool/app_icon.py --targets android,web,windows
+  py -3 tool/app_icon.py --verify                # 校验已落盘的产物(缺省全部三个目标)
+  py -3 tool/app_icon.py --verify --targets web  # 只校验点名的目标
+  py -3 tool/app_icon.py --out <树根> --targets android,web,windows
+                                                 # 落到别处(自检用,不碰仓库)
+
+**为什么要有 `--targets`**:重出产物是要写盘的,而 android/ 那 17 个文件与某一轮改的
+东西往往毫无关系 —— 一次全量重出会塞进一份不可 review 的二进制 diff。点名目标就只写
+点名的那些。**没点名任何目标时不写任何像素产物**,只出原型片段(这条等于这个脚本以前
+的行为,旧命令的含义一个都没变)。
+
+**maskable 的边距与 Android 的不是一回事** —— 这块最容易抄错。Android 自适应保证的是
+中央 72×72 的**方块**(画布 108 空间),图形在角上可以到 50.9;而 web 的 maskable 规范
+保证的是一个**居中的、直径 80% 的圆**,半径只有 43.2,角上严得多。定稿 m05 的硬墨迹
+角点离中心 47.96,所以要缩到 43.2/47.96 = 0.9008 以内才安全,取 0.88 留一点抗锯齿余量。
+代价要认下来:会遮罩的启动器里,maskable 那份看着比不遮罩平台上那份略小。
 
 **画布**:108 单位 = 自适应图标的 108dp。中央 72(即 18..90)是**任何遮罩都保证
 显示**的安全区;四边各 18 是出血。每个母题都**直接在安全区里作画** —— 所以自适应
@@ -57,9 +78,13 @@ MID = '#8BD8FF'             # 三停渐变的中间那一档
 
 # 出图模式的缩放(以画布中心为基准)。母题本来就画在安全区里,所以自适应是 1.0;
 # 旧版图标(API 24–25 的启动器**不遮罩**)留一圈近黑地面反而显小,放大一档更饱满。
+#
+# maskable(web 的 PWA 图标)要**缩**回安全圆里 —— 与 adaptive 的边距不是一回事:
+# 见文件头那段。0.88 是从 43.2/47.96 = 0.9008 往下留的抗锯齿余量。
 SCALES = {
     'adaptive': 1.00,
     'legacy': 1.14,
+    'maskable': 0.88,
 }
 
 # 候选表。`motif` 指向下面 MOTIFS 里的画法,其余键是那个画法自己的参数。
@@ -360,8 +385,10 @@ def art_markup(variant: dict, mode: str, solid: str | None = None) -> str:
 
 
 def ground_markup() -> str:
-    """满幅深色地面。**只给 legacy** —— 自适应图标的底色来自 Android 的颜色资源
-    (辉光要一块干净的底才读得出来,任何渐变都会跟它打架)。"""
+    """满幅深色地面。**给 legacy 与 maskable** —— 两者都是「启动器自己不怎么管背景」
+    的情形:legacy 那档 API 24–25 的启动器不遮罩,而 web 的 PWA 图标自带底色。
+    自适应图标**不给** —— 它的底色来自 Android 的颜色资源(辉光要一块干净的底才读得
+    出来,任何渐变都会跟它打架);单色层也不给(系统自己上色、自己铺背景)。"""
     return f'<rect x="0" y="0" width="108" height="108" fill="{GROUND}"/>'
 
 
@@ -369,7 +396,7 @@ def svg_markup(variant: dict, mode: str, px: float, solid: str | None = None,
                uid: str = '', mask_shape: str | None = None) -> str:
     """一份完整的 <svg>。渲染与原型片段都走这一个函数 —— 不存第二份实现。"""
     art = art_markup(variant, mode, solid=solid).replace('__UID__', uid)
-    ground = ground_markup() if (mode == 'legacy' and not solid) else ''
+    ground = ground_markup() if (mode in ('legacy', 'maskable') and not solid) else ''
     if mask_shape:
         art = (f'<defs><clipPath id="{uid}m">{mask_shape}</clipPath></defs>'
                f'<g clip-path="url(#{uid}m)">{ground}{art}</g>')
@@ -389,6 +416,29 @@ def by_id(variant_id: str) -> dict:
 
 DENSITIES = [('mdpi', 1.0), ('hdpi', 1.5), ('xhdpi', 2.0),
              ('xxhdpi', 3.0), ('xxxhdpi', 4.0)]
+
+# Web 的 PWA 图标。**通道照模板对齐**:非 maskable 那两张是 RGB(legacy 本来就满幅
+# 不透明,丢 alpha 无损、文件还小),maskable 那两张是 RGBA。
+#
+# favicon 出 32 而不是模板的 16:与原型 ICON_FAVICON 那个 data URI 对齐,而 16px 下
+# 那七根柱必然糊 —— `<link rel="icon">` 没有 sizes 属性,浏览器自己会缩。
+WEB_ICONS = [
+    ('favicon.png', 'legacy', 32, 'RGBA'),
+    ('icons/Icon-192.png', 'legacy', 192, 'RGB'),
+    ('icons/Icon-512.png', 'legacy', 512, 'RGB'),
+    ('icons/Icon-maskable-192.png', 'maskable', 192, 'RGBA'),
+    ('icons/Icon-maskable-512.png', 'maskable', 512, 'RGBA'),
+]
+
+# exe 里那份图标含哪几档 —— 与 Flutter 模板那份一致(小列表 / 任务栏 100% / 中等图标
+# 与 150% / 超大图标)。再补 24/64/128 会更锐,但那也偏离了「与一份 stock Flutter
+# 应用同档」的口径。
+ICO_SIZES = (16, 32, 48, 256)
+
+# 目标的落点(相对「树根」)。`--out` 给的就是这个树根 —— 三个目标各落各的子路径,
+# 所以不能像以前那样让 `--out` 直接当 Android 的 res 根。
+ANDROID_RES = ('android', 'app', 'src', 'main', 'res')
+ALL_TARGETS = ('android', 'web', 'windows')
 
 SCRATCH = ROOT / '.tmp-shots' / 'icon-render'
 OVERSAMPLE = 4          # 放大倍数取样 —— 靠 CSS 尺寸,不靠 --force-device-scale-factor
@@ -609,6 +659,64 @@ def emit_android(variant: dict, out_root: Path, chrome: str) -> list[Path]:
     return written
 
 
+# ---------------------------------------------------------------- Web 与 Windows
+
+def _drop_alpha(path: Path) -> None:
+    """把落好的 RGBA 改存成 RGB。地面是满幅的,所以丢 alpha 无损 —— 只是照模板那份
+    对齐,顺带小一点。"""
+    from PIL import Image
+
+    Image.open(path).convert('RGB').save(path, optimize=True)
+
+
+def emit_web(variant: dict, tree: Path, chrome: str) -> list[Path]:
+    """`web/` 下那 5 张。**文件名与 manifest.json 里的图标 src 一个字符都不动**,
+    所以清单的 icons 数组不用跟着改。"""
+    written: list[Path] = []
+    for rel, mode, px, channels in WEB_ICONS:
+        dst = tree / 'web' / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        render_png(chrome, variant, mode, px, dst)
+        if channels == 'RGB':
+            _drop_alpha(dst)
+        written.append(dst)
+    return written
+
+
+def emit_windows(variant: dict, tree: Path, chrome: str) -> list[Path]:
+    """把四档渲染结果打进一个 `.ico`。
+
+    **每一档都作为 provided image 递进去,不让 PIL 自己缩。** 它只在一档没有同尺寸
+    provided image 时才 thumbnail,而且是在**未 premultiply 的 RGBA** 上缩 —— 那正是
+    `downscale()` 花力气避开的事(透明边缘会出黑边/彩边)。递进去的图尺寸必须与
+    `sizes` 项逐一相等,否则那一档会被静默 thumbnail 掉。
+
+    **不用 `bitmap_format='bmp'`**:它是全局开关,会把 256 那帧也写成 DIB,文件涨到
+    几百 KB,而且**仍然**与模板那份不一样。模板是「256 用 PNG + 48/32/16 各三种色深
+    的 BMP」,我们这份**每帧都是 PNG** —— Win10/11 都正常,旧系统没验过,别写成已验。
+    """
+    from PIL import Image
+
+    frames: dict[int, Image.Image] = {}
+    for size in ICO_SIZES:
+        # 暂存名各自不同(`ico-16` / `ico-256`…),别与 android 那几档共用 ——
+        # 共用的话将来一出问题要先在暂存目录里猜是哪一次渲染。
+        tmp = SCRATCH / f'ico-{size}.png'
+        render_png(chrome, variant, 'legacy', size, tmp)
+        frames[size] = Image.open(tmp).convert('RGBA')
+
+    dst = tree / 'windows' / 'runner' / 'resources' / 'app_icon.ico'
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    biggest = max(ICO_SIZES)
+    frames[biggest].save(
+        dst,
+        format='ICO',
+        sizes=[(s, s) for s in ICO_SIZES],
+        append_images=[frames[s] for s in ICO_SIZES if s != biggest],
+    )
+    return [dst]
+
+
 # ---------------------------------------------------------------- 校验
 
 def _hard_bbox(im, mode: str):
@@ -656,80 +764,133 @@ def _expected_box(variant: dict, mode: str) -> tuple:
     return (to_canvas(x0), to_canvas(y0), to_canvas(x1), to_canvas(y1))
 
 
-def verify(out_root: Path) -> int:
-    """尺寸 / 图形落在规格算出来的位置上 / 四角干净 / 非空白。
+def _check_one(path: Path, px: int, mode: str, variant: dict, channels: str,
+               bad: list[str], tol: float) -> None:
+    """一张图:尺寸 / 通道 / 四角 / **硬墨迹落在规格算出来的位置上** / 非空白。
 
-    **只认已经落盘的产物** —— 校验与出图分开,「手机上的那几张到底合不合规」
-    于是随时能复查一次。"""
+    「量出来的必须落在算出来的位置上」比「不许越界」有力得多:它同时挡住「图形缩小了、
+    跑偏了、压根没画上」这几类错。`channels` 只用来查「这份该不该带 alpha」——
+    传 'RGB' 时带了就报;'RGBA' 不查(android 那几张本来就落成 RGBA)。"""
     from PIL import Image
 
-    # 量出来的与算出来的差多少算过:抗锯齿、渐变两端、alpha 阈值都会带来半个
-    # 到一单位的偏移,再给一点余量。
-    tol = 2.0
+    if not path.exists():
+        bad.append(f'缺文件:{path}')
+        return
+    name = path.name
+    im = Image.open(path)
+    if channels == 'RGB' and (im.mode != 'RGB' or 'transparency' in im.info):
+        bad.append(f'{name} 应当是 RGB(不带 alpha),实际是 {im.mode}')
+    im = im.convert('RGBA')
+
+    if im.size != (px, px):
+        bad.append(f'{name} 尺寸 {im.size},应为 {(px, px)}')
+    if im.getbbox() is None:
+        bad.append(f'{name} 是空白的')
+        return
+    corners = ((0, 0), (px - 1, 0), (0, px - 1), (px - 1, px - 1))
+    if mode == 'adaptive':
+        # 四角必须透明 —— 否则自适应图标会露出一块方角
+        for corner in corners:
+            if im.getpixel(corner)[3] != 0:
+                bad.append(f'{name} 的角不透明:{corner}')
+    else:
+        # legacy 与 maskable 的地面都是满幅的:四角必须是地面色(差一点是辉光洇上去的)
+        g = tuple(int(GROUND[i:i + 2], 16) for i in (1, 3, 5))
+        for corner in corners:
+            got = im.getpixel(corner)[:3]
+            if max(abs(got[i] - g[i]) for i in range(3)) > 14:
+                bad.append(f'{name} 的角不是地面色:{corner} → {got},地面 {g}')
+    box = _hard_bbox(im, mode)
+    if box is None:
+        bad.append(f'{name} 没有硬墨迹(只剩一层柔光?)')
+        return
+    want = _expected_box(variant, mode)
+    drift = [abs(box[i] - want[i]) for i in range(4)]
+    if max(drift) > tol:
+        bad.append(
+            f'{name} 的图形与规格对不上:量到 '
+            f'({box[0]:.1f}, {box[1]:.1f}, {box[2]:.1f}, {box[3]:.1f}),'
+            f'规格是 ({want[0]:.1f}, {want[1]:.1f}, {want[2]:.1f}, '
+            f'{want[3]:.1f}),最大差 {max(drift):.1f} 画布单位')
+
+
+def _check_ico(path: Path, bad: list[str]) -> None:
+    """`.ico` 的档位集合,以及 16×16 那帧不是一整块地面(图标确实画上去了)。
+
+    **只看这个文件本身** —— 「图标进了 exe」是另一件事,那只有人能在资源管理器 /
+    任务栏里看(MSBuild 不把 `.ico` 当 `Runner.rc` 的依赖,清了 build 才保险)。"""
+    from PIL import Image
+
+    if not path.exists():
+        bad.append(f'缺文件:{path}')
+        return
+    im = Image.open(path)
+    want = {(s, s) for s in ICO_SIZES}
+    got = set(im.info.get('sizes') or ())
+    if got != want:
+        bad.append(f'{path.name} 的档位 {sorted(got)},应为 {sorted(want)}')
+        return
+    frame = im.ico.getimage((16, 16)).convert('RGB')
+    g = tuple(int(GROUND[i:i + 2], 16) for i in (1, 3, 5))
+    diff = max(abs(frame.getpixel((x, y))[i] - g[i])
+               for x in range(16) for y in range(16) for i in range(3))
+    if diff <= 14:
+        bad.append(f'{path.name} 的 16×16 那帧整幅都是地面色 —— 图标没画上?')
+
+
+def verify(tree: Path, targets: set[str]) -> int:
+    """尺寸 / 通道 / 图形落在规格算出来的位置上 / 四角干净 / 非空白。
+
+    **只认已经落盘的产物** —— 校验与出图分开,「手机 / 浏览器 / exe 里那几张到底合不合规」
+    于是随时能复查一次。**不叫 chromium**(只用 PIL),所以在没装 Chrome 的机器上也跑得动。
+
+    只校**文件**,不校 exe:「图标有没有真的进 nordic.exe」仍然只有人能在资源管理器 /
+    任务栏里看。"""
+    tol = 2.0                       # 抗锯齿与渐变两端会带来半到一个单位的偏移
     variant = by_id(FINAL)
     bad: list[str] = []
+    done: list[str] = []
 
-    for name, scale in DENSITIES:
-        d = out_root / f'mipmap-{name}'
-        checks = [
-            (d / 'ic_launcher.png', round(48 * scale), 'legacy'),
-            (d / 'ic_launcher_foreground.png', round(108 * scale), 'adaptive'),
-            (d / 'ic_launcher_monochrome.png', round(108 * scale), 'adaptive'),
-        ]
-        for path, px, mode in checks:
-            if not path.exists():
-                bad.append(f'缺文件:{path}')
-                continue
-            im = Image.open(path).convert('RGBA')
-            if im.size != (px, px):
-                bad.append(f'{path.name} 尺寸 {im.size},应为 {(px, px)}')
-            if im.getbbox() is None:
-                bad.append(f'{path.name} 是空白的')
-                continue
-            if mode == 'adaptive':
-                # 四角必须透明 —— 否则自适应图标会露出一块方角
-                for corner in ((0, 0), (px - 1, 0), (0, px - 1), (px - 1, px - 1)):
-                    if im.getpixel(corner)[3] != 0:
-                        bad.append(f'{path.name} 的角不透明:{corner}')
-            else:
-                # 旧版图标的地面是满幅的:四角必须是地面色(差一点点是辉光洇上去的)
-                g = tuple(int(GROUND[i:i + 2], 16) for i in (1, 3, 5))
-                for corner in ((0, 0), (px - 1, 0), (0, px - 1), (px - 1, px - 1)):
-                    got = im.getpixel(corner)[:3]
-                    if max(abs(got[i] - g[i]) for i in range(3)) > 14:
-                        bad.append(f'{path.name} 的角不是地面色:{corner} → {got},'
-                                   f'地面 {g}')
-            box = _hard_bbox(im, mode)
-            if box is None:
-                bad.append(f'{path.name} 没有硬墨迹(只剩一层柔光?)')
-                continue
-            want = _expected_box(variant, mode)
-            drift = [abs(box[i] - want[i]) for i in range(4)]
-            if max(drift) > tol:
-                bad.append(
-                    f'{path.name} 的图形与规格对不上:量到 '
-                    f'({box[0]:.1f}, {box[1]:.1f}, {box[2]:.1f}, {box[3]:.1f}),'
-                    f'规格是 ({want[0]:.1f}, {want[1]:.1f}, {want[2]:.1f}, '
-                    f'{want[3]:.1f}),最大差 {max(drift):.1f} 画布单位')
+    if 'android' in targets:
+        out_root = tree / Path(*ANDROID_RES)
+        for name, scale in DENSITIES:
+            d = out_root / f'mipmap-{name}'
+            for fname, mode, px in (
+                ('ic_launcher.png', 'legacy', round(48 * scale)),
+                ('ic_launcher_foreground.png', 'adaptive', round(108 * scale)),
+                ('ic_launcher_monochrome.png', 'adaptive', round(108 * scale)),
+            ):
+                _check_one(d / fname, px, mode, variant, 'RGBA', bad, tol)
 
-    for extra in ('mipmap-anydpi-v26/ic_launcher.xml', 'values/colors.xml'):
-        if not (out_root / extra).exists():
-            bad.append(f'缺文件:{out_root / extra}')
+        for extra in ('mipmap-anydpi-v26/ic_launcher.xml', 'values/colors.xml'):
+            if not (out_root / extra).exists():
+                bad.append(f'缺文件:{out_root / extra}')
 
-    # XML 注释里不许出现 `--`,AAPT 直接判死(踩过一次:注释里写了「--bg」这种
-    # 记号,一路走到 packageReleaseResources 才炸)。这儿拦下来,别等打包。
-    for path in sorted(out_root.rglob('*.xml')):
-        for body in re.findall(r'<!--(.*?)-->', path.read_text(encoding='utf-8'),
-                               re.S):
-            if '--' in body:
-                bad.append(f'{path.name} 的注释里有 `--`,AAPT 会拒绝')
+        # XML 注释里不许出现 `--`,AAPT 直接判死(踩过一次:注释里写了「--bg」这种
+        # 记号,一路走到 packageReleaseResources 才炸)。这儿拦下来,别等打包。
+        # **只在 Android 的 res 根下扫** —— tree 是整棵树的根,扫它会一路摸到 web/。
+        for path in sorted(out_root.rglob('*.xml')):
+            for body in re.findall(r'<!--(.*?)-->', path.read_text(encoding='utf-8'),
+                                   re.S):
+                if '--' in body:
+                    bad.append(f'{path.name} 的注释里有 `--`,AAPT 会拒绝')
+        done.append(f'android {len(DENSITIES)} 档 × 3 张 + 自适应 XML + colors.xml')
+
+    if 'web' in targets:
+        for rel, mode, px, channels in WEB_ICONS:
+            _check_one(tree / 'web' / rel, px, mode, variant, channels, bad, tol)
+        done.append(f'web {len(WEB_ICONS)} 张')
+
+    if 'windows' in targets:
+        _check_ico(tree / 'windows' / 'runner' / 'resources' / 'app_icon.ico', bad)
+        done.append('windows 1 个 .ico')
 
     if bad:
         print('校验没过:')
         for line in bad:
             print('  -', line)
         return 1
-    print(f'校验通过({FINAL}):{len(DENSITIES)} 档 × 3 张 + 自适应 XML + colors.xml')
+    print(f'校验通过({FINAL}):' + ' · '.join(done))
     return 0
 
 
@@ -752,32 +913,70 @@ def freeze(variant_id: str) -> None:
         print(f'定稿:{variant_id}(已写回 tool/app_icon.py 的 FINAL)')
 
 
+def parse_targets(raw: str | None) -> list[str]:
+    """`--targets android,web,windows` 拆开并校验。认不出来就当场退。"""
+    if not raw:
+        return []
+    names = [t.strip() for t in raw.split(',') if t.strip()]
+    unknown = [t for t in names if t not in ALL_TARGETS]
+    if unknown:
+        raise SystemExit('没有这个目标:' + ','.join(unknown)
+                         + '(可选 ' + ','.join(ALL_TARGETS) + ')')
+    return list(dict.fromkeys(names))       # 去重,但不改用户给的顺序
+
+
 def main() -> int:
+    opts = ','.join(ALL_TARGETS)
     ap = argparse.ArgumentParser(description='Nordic 应用图标:生成器')
     ap.add_argument('--emit-prototype', action='store_true', help='只出 prototype/icon.js')
-    ap.add_argument('--android', action='store_true', help='出 Android 资源')
-    ap.add_argument('--freeze', metavar='ID', help='把某个候选写成定稿')
-    ap.add_argument('--verify', action='store_true', help='校验已落盘的产物')
-    ap.add_argument('--out', help='Android 资源的落点(自检用,不碰仓库里的 android/)')
+    ap.add_argument('--targets', metavar='LIST',
+                    help=f'要重出的目标,逗号分隔({opts});不给就不写任何像素产物')
+    ap.add_argument('--android', action='store_true',
+                    help='等价于 --targets android(旧写法,保留)')
+    ap.add_argument('--freeze', metavar='ID', help='把某个候选写成定稿(只改 FINAL)')
+    ap.add_argument('--verify', action='store_true',
+                    help='校验已落盘的产物(不给 --targets 就校验全部)')
+    ap.add_argument('--out', metavar='TREE',
+                    help='要落到的那棵树的根(自检用,不碰仓库)')
     ap.add_argument('--chrome', help='chromium 可执行文件的路径')
     args = ap.parse_args()
 
-    out_root = Path(args.out).resolve() if args.out else \
-        ROOT / 'android' / 'app' / 'src' / 'main' / 'res'
+    # `--out` 说的是**树根**,不是 Android 的 res 根 —— 三个目标各落各的子路径,没法给
+    # 每个目标各配一个开关。(旧写法 `--out <android res 根> --android` 现在会落到
+    # `<根>/android/app/src/main/res/` 下,这是唯一一处语义变更。)
+    tree = Path(args.out).resolve() if args.out else ROOT
+
+    targets = parse_targets(args.targets)
+    if args.android and 'android' not in targets:
+        targets.append('android')
 
     if args.freeze:
         freeze(args.freeze)
 
-    if args.emit_prototype or not (args.android or args.verify):
+    # 没点名任何像素目标、也不是在校验时 → 只出原型片段,一个像素产物都不写。
+    # **这条等于这个脚本以前的行为**(`--emit-prototype`、或者什么都不给),
+    # 所以旧命令的含义一个都没变。
+    if args.emit_prototype or not (targets or args.verify):
         out = emit_prototype()
         print(f'原型片段:{out.relative_to(ROOT)}(定稿 {FINAL})')
 
-    if args.android:
-        written = emit_android(by_id(FINAL), out_root, find_chrome(args.chrome))
-        print(f'Android 资源:{len(written)} 个文件 → {out_root}')
+    if targets:
+        variant = by_id(FINAL)
+        chrome = find_chrome(args.chrome)
+        if 'android' in targets:
+            dest = tree / Path(*ANDROID_RES)
+            written = emit_android(variant, dest, chrome)
+            print(f'Android 资源:{len(written)} 个文件 → {dest}')
+        if 'web' in targets:
+            written = emit_web(variant, tree, chrome)
+            print(f'Web 图标:{len(written)} 个文件 → {tree / "web"}')
+        if 'windows' in targets:
+            written = emit_windows(variant, tree, chrome)
+            print(f'Windows 图标:{len(written)} 个文件 → {written[0]}')
 
     if args.verify:
-        return verify(out_root)
+        # 没点名目标就全部校验 —— 「那些产物合不合规」不该只在特意点名时才查。
+        return verify(tree, set(targets) if targets else set(ALL_TARGETS))
     return 0
 
 
