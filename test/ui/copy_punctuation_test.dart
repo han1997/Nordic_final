@@ -49,7 +49,7 @@ void main() {
               if (!isHan(prev) && !isHan(next)) continue;
               offenders.add(
                 '${file.path}:${i + 1}  '
-                '"${ch}" → "${fullWidth.elementAt(halfWidth.toList().indexOf(ch))}"'
+                '"$ch" → "${fullWidth.elementAt(halfWidth.toList().indexOf(ch))}"'
                 '   …${body.substring(k < 16 ? 0 : k - 16, k + 16 > body.length ? body.length : k + 16)}…',
               );
             }
