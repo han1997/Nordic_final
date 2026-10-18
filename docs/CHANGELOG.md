@@ -429,6 +429,14 @@ Windows —— 这台开发机**唯一能真正构建并运行**的目标:`flutt
   `windows/` 模板的地方**,所以那几行里写清了「升级 Flutter / VS 或这个插件时回来
   看一眼」—— 尤其第二条是「暂时压住」,不是修好。
 
+- **还差一个 VS 组件:ATL**(`flutter_secure_storage_windows` 要 `atlstr.h`)。这是
+  **环境前置,不是仓库问题** —— 本机原先没装,构建停在
+  `error C1083: 无法打开包括文件: "atlstr.h"`。装上「C++ ATL for latest v143
+  Build Tools」之后构建一次通过:产物 `Nordic-1.0.34+35-windows-x64.zip`(13 MB,
+  顶层就是 exe + dll + `data/`,不用再解一层),`just_audio_windows_plugin.dll`
+  确在产物里 —— 那是「音频后端真编译进来了」最直接的证据。README 的「构建」一节
+  记了这条前置。
+
 版本 `1.0.33+34` → `1.0.34+35`(在代码那一个提交里 +1)。
 
 **桌面外壳的两处待办**(这一轮 `windows/` 一个字节没改,好与模板逐字节对照):
@@ -436,18 +444,37 @@ Windows —— 这台开发机**唯一能真正构建并运行**的目标:`flutt
 图标是模板自带那张 Flutter 默认图。两处都要单独做,图标还得先让 `tool/app_icon.py`
 多产出一个 `.ico`(本机没有 PIL,走 ICO 容器直接内嵌 PNG 那种写法,不引新依赖)。
 
-**这一轮没在本机跑过的**:
+- **README 的「构建」一节补了 Windows 的两条系统前置**(开开发者模式、装 ATL 组件),
+  两条都会**直接拦停构建**。另外 `windows/CMakeLists.txt` 里那几行是本仓库唯一一处
+  偏离模板的改动(治 `just_audio_windows` 在新工具链下的两个报错,见下),
+  所以在那儿写明了「升级 Flutter / VS 或这个插件时回来看看还需不需要」。
 
-1. **Windows 的完整构建与产物** —— 仍然没成:开发者模式开了、`just_audio_windows`
-   那两条也治好了,但 `flutter_secure_storage_windows` 要 `atlstr.h`(VS 安装器里的
-   **ATL 组件**),而这台机器上没装 —— 构建最终停在
-   `error C1083: 无法打开包括文件: "atlstr.h"`。所以 `tool/build.sh windows` 的 zip
-   **这一轮还是没生成过**。装上那个组件才能接着往下走(README 的「构建」一节记了
-   这条前置)。
-2. **iOS / macOS 上这个修复是否奏效** —— 依据是源码(`path_provider_foundation` 同样
-   没有 `getExternalStoragePath`),但本机没有 Xcode 工具链,一次都没跑过。
-3. **`audio_service` 在 Windows 上真的是 NoOp** —— 读源码得出的;实跑时看启动是否
-   秒开、控制台是否出现「后台播放服务启动超时」即可判定。
-4. **桌面窗口下的布局观感**(手机版布局第一次上 1280×720)—— 只看不改。
-5. **交付的 zip 在干净机器上能不能跑** —— 模板默认 `/MD`,依赖
-   `vcruntime140.dll` / `msvcp140.dll`。
+**已在本机跑通并验到的**:Windows release 构建一次通过,产物落成
+`build/dist/Nordic-1.0.34+35-windows-x64.zip`(exe 里的版本与 pubspec 一致 ——
+`standardize_windows` 那条校验也真跑过了);直接运行 exe,进程稳定存活 20 秒
+(之后是我手动结束的,不是崩的),而且它在 `%APPDATA%\fun.han1997\nordic\` 下
+**建出了完整的目录树**:
+
+```
+Nordic/Music/        ← 下载根。**这就是 `download_store` 那个修复的现场判据**
+cache/audio/         ← 听过的歌那份缓存
+nordic-covers.json   ← 封面磁盘缓存(桌面走 Json 仓储,不用 sqflite)
+shared_preferences.json
+flutter_secure_storage.dat
+```
+
+修复前这一段是走不到这儿的:`getExternalStorageDirectory()` 抛的
+`UnimplementedError` 会把整块下载判成不可用,`Nordic/Music` 根本不会被建出来。
+
+**仍然只能人工看的**(我没法验):窗口里那 21 屏长什么样、连上服务器后**能不能真
+出声**、布局在 1280×720 下的观感。release 包的启动日志是空的(没有 debug 输出),
+所以「启动秒开 / 后台播放服务有没有干等 8 秒」这条也只能看界面出现得快不快。
+`tool/build.sh run -d windows` 跑的开发构建会把那两句 `debugPrint` 打出来 ——
+控制台里不该出现「后台播放服务启动超时」与「后台播放服务启动失败」。
+
+另外两条仍然没验:
+
+- **iOS / macOS 上这个修复是否奏效** —— 依据是源码(`path_provider_foundation` 同样
+  没有 `getExternalStoragePath`),但本机没有 Xcode 工具链,**一次都没跑过**。
+- **交付的 zip 在别人的干净机器上能不能跑** —— 模板默认 `/MD`,依赖
+  `vcruntime140.dll` / `msvcp140.dll`;换台机器要装 VC++ 2015-2022 运行库。
