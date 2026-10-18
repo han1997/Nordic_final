@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/server_url.dart';
 import '../../data/subsonic_client.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
@@ -31,17 +32,12 @@ class _AddRouteScreenState extends State<AddRouteScreen> {
     super.dispose();
   }
 
-  /// 补全协议头并校验。返回规范化后的地址,不合法时返回 null。
-  String? get _normalized {
-    var value = _urlController.text.trim();
-    if (value.isEmpty) return null;
-    if (!value.startsWith('http://') && !value.startsWith('https://')) {
-      value = 'http://$value';
-    }
-    final uri = Uri.tryParse(value);
-    if (uri == null || uri.host.isEmpty) return null;
-    return value.replaceAll(RegExp(r'/+$'), '');
-  }
+  /// 规范化地址,不合法时返回 null。
+  ///
+  /// 实现与校验口径都在 `server_url.dart` —— 原先这一屏与
+  /// `servers_screen.dart` 各写了一份**逐字相同**的,扫码同步的载荷解码还要用
+  /// 第三份,所以收成了一处。
+  String? get _normalized => normalizeServerUrl(_urlController.text);
 
   bool get _typed => _urlController.text.trim().isNotEmpty;
 

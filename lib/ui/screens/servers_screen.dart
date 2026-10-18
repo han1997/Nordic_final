@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/server_config.dart';
+import '../../data/server_url.dart';
 import '../../data/subsonic_client.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
@@ -122,7 +123,7 @@ class _ServersScreenState extends State<ServersScreen> {
 
   Future<void> _connect() async {
     final appState = context.read<AppState>();
-    final url = _normalizeUrl(_urlController.text);
+    final url = normalizeServerUrl(_urlController.text);
 
     if (url == null) {
       setState(() => _formError = '地址要以 http:// 或 https:// 开头。');
@@ -199,7 +200,6 @@ class _ServersScreenState extends State<ServersScreen> {
     }
   }
 
-  /// 补全协议头。用户常只填 `192.168.10.4:4533`,直接拼 URL 会解析失败。
   /// 连不上时给用户看的那句话。
   ///
   /// [UnsupportedError] 单独认一下:从局域网的 http 地址打开 Web 时,
@@ -215,50 +215,16 @@ class _ServersScreenState extends State<ServersScreen> {
         _ => '连不上：$e',
       };
 
-  static String? _normalizeUrl(String raw) {
-    var value = raw.trim();
-    if (value.isEmpty) return null;
-    if (!value.startsWith('http://') && !value.startsWith('https://')) {
-      value = 'http://$value';
-    }
-    final uri = Uri.tryParse(value);
-    if (uri == null || uri.host.isEmpty) return null;
-    return value.replaceAll(RegExp(r'/+$'), '');
-  }
-
-  /// 从地址里起个线路名 —— 内网地址标「内网」,其余标「公网」。
-  static String _routeNameFor(String url) {
-    final host = Uri.tryParse(url)?.host ?? url;
-    if (_looksLocal(host)) return '局域网直连';
-    return host;
-  }
-
   /// 表单里那条「地址」拼成一条线路(名字与标记都从地址推)。
+  ///
+  /// 规范化 / 起名 / 推标记原先在**这个文件**与 `add_route_screen.dart` 里各写了
+  /// 一份,现在收在 `server_url.dart`(扫码同步的载荷解码还要用第三份)。
   static ServerRoute _routeFor(String url) => ServerRoute(
         id: 'route-1',
-        name: _routeNameFor(url),
+        name: routeNameFor(url),
         url: url,
-        tag: _tagFor(url),
+        tag: tagFor(url),
       );
-
-  static RouteTag _tagFor(String url) {
-    final host = Uri.tryParse(url)?.host ?? url;
-    return _looksLocal(host) ? RouteTag.lan : RouteTag.wan;
-  }
-
-  /// 私有网段判定 —— 只为给线路起个像样的名字,不做任何安全判断。
-  static bool _looksLocal(String host) {
-    if (host == 'localhost' || host.startsWith('127.')) return true;
-    final parts = host.split('.');
-    if (parts.length != 4) return false;
-    final first = int.tryParse(parts[0]);
-    final second = int.tryParse(parts[1]);
-    if (first == null || second == null) return false;
-    if (first == 10) return true;
-    if (first == 192 && second == 168) return true;
-    if (first == 172 && second >= 16 && second <= 31) return true;
-    return false;
-  }
 
   @override
   Widget build(BuildContext context) {
