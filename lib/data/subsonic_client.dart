@@ -58,6 +58,32 @@ class ServerRoute {
       );
 }
 
+/// 改现有服务器时,把表单里那条地址合回线路表。
+///
+/// 表单上只有**一个**地址框 —— 它对应的是第一条线路。所以:
+///   - 原来一条都没有:就用 [edited] 自己(表单第一次填的时候);
+///   - 原来有几条:**替换第一条**,其余几条连 id 与锁定状态一起原样留着。
+///
+/// 为什么不能整表换掉:那些 id 是测速结果与「当前走哪条」的键,也是「锁定」
+/// 挂靠的地方 —— 用户只想改个密码,不该把内外网那两条线路抹掉,也不该
+/// 顺手把唯一剩下的一条锁死(锁上之后自动择优就停了)。
+///
+/// [edited] 的 id 在这里**被忽略**(合入时沿用原来那条的 id)。
+List<ServerRoute> mergeEditedRoute(
+  List<ServerRoute> existing,
+  ServerRoute edited,
+) {
+  if (existing.isEmpty) return [edited];
+  return [
+    existing.first.copyWith(
+      name: edited.name,
+      url: edited.url,
+      tag: edited.tag,
+    ),
+    ...existing.skip(1),
+  ];
+}
+
 /// 线路标记 —— 原型「添加线路」页的三档。
 enum RouteTag {
   lan('内网'),

@@ -53,11 +53,22 @@ class _ServersScreenState extends State<ServersScreen> {
   /// 没配置过的话表单本来就是这一屏的正文。
   late bool _editing = widget.startInForm;
 
+  /// 这张表单是**给另一台服务器**填的(设置页那颗「添加服务器」),不是改现有
+  /// 那台。两处区别:
+  ///
+  ///   - 不预填现有配置 —— 用户说的是「另一台」,填上旧的会让他以为在改旧的;
+  ///   - 保存时不把现有那几条线路合回来(那是另一台机器的事)。
+  ///
+  /// 从管理页点「服务器设置」进来的是**改现有那台**,这条路要预填、也要保住
+  /// 其余线路(见 [_mergeIntoExisting])。
+  bool _creatingNew = false;
+
   @override
   void initState() {
     super.initState();
-    // 已配置过的话把现有值填回表单,「改一处」比「重填一遍」友好。
-    unawaited(_prefillFrom(context.read<AppState>()));
+    // 已经配过服务器、而且是来**改配置**的,就把现有值填回表单。
+    _creatingNew = !context.read<AppState>().hasServer ? true : widget.startInForm;
+    if (!_creatingNew) unawaited(_prefillFrom(context.read<AppState>()));
   }
 
   /// 把已配置的值填回表单 —— 进表单时、以及**按「取消」时**都要用。
@@ -129,15 +140,15 @@ class _ServersScreenState extends State<ServersScreen> {
       kind: _kind,
       username: _userController.text,
       password: _passwordController.text,
-      routes: [
-        ServerRoute(
-          id: 'route-1',
-          name: _routeNameFor(url),
-          url: url,
-          tag: _tagFor(url),
-          selected: true,
-        ),
-      ],
+      // 改现有那台:表单里这条地址**替换掉第一条线路**,其余几条原样留着;
+      // 新接一台:就一条线路。
+      //
+      // 早先这里无条件提交一条 `route-1`:用户只想改个密码,内外网那两条线路
+      // 就被抹掉了,活下来的那条还被强制锁定(于是「自动择优」也一起停了)——
+      // 而这条路是这一轮才开的入口,所以以前碰不到。
+      routes: _creatingNew
+          ? [_routeFor(url)]
+          : mergeEditedRoute(appState.server?.routes ?? const [], _routeFor(url)),
     );
 
     if (!mounted) return;
@@ -193,6 +204,14 @@ class _ServersScreenState extends State<ServersScreen> {
     return host;
   }
 
+  /// 表单里那条「地址」拼成一条线路(名字与标记都从地址推)。
+  static ServerRoute _routeFor(String url) => ServerRoute(
+        id: 'route-1',
+        name: _routeNameFor(url),
+        url: url,
+        tag: _tagFor(url),
+      );
+
   static RouteTag _tagFor(String url) {
     final host = Uri.tryParse(url)?.host ?? url;
     return _looksLocal(host) ? RouteTag.lan : RouteTag.wan;
@@ -229,10 +248,15 @@ class _ServersScreenState extends State<ServersScreen> {
               children: [
                 NordicAppBar(
                   title: showForm && state.hasServer
-                      ? '服务器设置'
+                      ? (_creatingNew ? '添加服务器' : '服务器设置')
                       : (state.hasServer ? '服务器与线路' : '连接服务器'),
                   subtitle: showForm
-                      ? (state.hasServer ? '改地址、账号或密码,保存后重连' : '填上你自己的音乐服务器')
+                      ? (_creatingNew
+                          ? (state.hasServer
+                              // 说清代价:这一版一次只接一台,连上的是新的那台。
+                              ? '接一台新的。本版一次只连一台,连上会替换当前这台'
+                              : '填上你自己的音乐服务器')
+                          : '改地址、账号或密码,保存后重连')
                       : '一个账号,多个地址',
                   big: false,
                   leading: IconButtonRound(
@@ -264,10 +288,12 @@ class _ServersScreenState extends State<ServersScreen> {
 
   Widget _formBody(AppState state) {
     final t = context.nordic;
-    // 「改现有服务器」还是「第一次连」—— 一处算好,下面五处都用它
-    // (按钮的字、图标、取消按钮、加载文案)。散着写容易改漏一处,
-    // 那种时候按钮说「连接」而做的事是覆盖,用户看不出自己按错了。
-    final editingExisting = _editing && state.hasServer;
+    // 这张表单在**改现有那台**吗 —— 决定按钮的字,以及保存时要不要把现有
+    // 那几条线路合回来。
+    final editingExisting = _editing && !_creatingNew && state.hasServer;
+    // 「取消」是「退回管理页」,与新填 / 改配置无关:表单叠在管理页上时都得有
+    // 这条路(否则只能按返回箭头退出整屏)。
+    final overManagePage = _editing && state.hasServer;
 
     return ListView(
       padding: EdgeInsets.only(
@@ -375,7 +401,7 @@ class _ServersScreenState extends State<ServersScreen> {
                     : (editingExisting ? Icons.check : Icons.link),
                 onPressed: _canSubmit ? _connect : null,
               ),
-              if (editingExisting) ...[
+              if (overManagePage) ...[
                 const SizedBox(height: NordicSpace.s3),
                 GhostButton(
                   label: '取消',
@@ -386,6 +412,9 @@ class _ServersScreenState extends State<ServersScreen> {
                             _formError = null;
                             _formSuccess = null;
                             _editing = false;
+                            // 取消之后这张表单回到「改现有那台」的样子 ——
+                            // 下次从「服务器设置」进来时别再当成新填一台。
+                            _creatingNew = false;
                           });
                           // 扔掉的那半份改动也**从输入框里清掉**(见 [_prefillFrom])。
                           await _prefillFrom(state);
@@ -602,11 +631,18 @@ class _ServersScreenState extends State<ServersScreen> {
           child: GhostButton(
             label: '服务器设置',
             icon: Icons.tune,
-            onPressed: () => setState(() {
-              _formError = null;
-              _formSuccess = null;
-              _editing = true;
-            }),
+            onPressed: () async {
+              setState(() {
+                _formError = null;
+                _formSuccess = null;
+                _editing = true;
+                // 这条路是**改现有那台** —— 之前那张表单可能是「添加服务器」
+                // 那条路留下的标记,不清掉的话进来会是一张空白表单。
+                _creatingNew = false;
+              });
+              // 填回现有的值(上一次可能是新填一台上半途退出来的)。
+              await _prefillFrom(state);
+            },
           ),
         ),
         Padding(

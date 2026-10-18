@@ -172,6 +172,24 @@ void main() {
     expect(find.text('添加线路地址'), findsNothing);
   });
 
+  testWidgets('「添加服务器」给的是一张**空**表单,不是现有那台的配置', (tester) async {
+    // 用户点的是「用另一个账号或另一台机器」,预填上现有那台会让他以为在改
+    // 现有那台 —— 而按下去确实会把它换掉。原型那条路(`screenAddServer`)
+    // 也是空表单 + 先选接入类型。
+    await pumpServers(tester, startInForm: true);
+
+    expect(find.text('添加服务器'), findsOneWidget);
+    expect(find.text('服务器设置'), findsNothing);
+    expect(
+      find.widgetWithText(TextField, '客厅 Navidrome'),
+      findsNothing,
+      reason: '不该预填现有服务器的名字',
+    );
+    expect(find.widgetWithText(TextField, 'http://nas.example.com'), findsNothing);
+    expect(find.text('连接'), findsOneWidget);
+    expect(find.text('保存并重新连接'), findsNothing);
+  });
+
   testWidgets('还没配置过时表单就是正文,没有多余的「取消」', (tester) async {
     final fresh = AppState(
       configStore: await ConfigStore.open(),

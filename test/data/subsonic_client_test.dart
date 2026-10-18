@@ -216,4 +216,74 @@ void main() {
       expect(restored.routes[1].selected, isTrue);
     });
   });
+
+  group('改服务器设置时的线路表', () {
+    // 表单上只有一个地址框 —— 它对应第一条线路。这一组钉住「改一处」的边界:
+    // 改的是那一条,其余几条不该陪葬。
+
+    test('三条线路改地址,只换第一条,其余原样', () {
+      const existing = [
+        ServerRoute(id: 'lan', name: '局域网', url: 'http://lan.example.com'),
+        ServerRoute(
+          id: 'wan',
+          name: '外网',
+          url: 'https://wan.example.com',
+          tag: RouteTag.wan,
+        ),
+        ServerRoute(
+          id: 'relay',
+          name: '中继',
+          url: 'https://relay.example.com',
+          tag: RouteTag.relay,
+        ),
+      ];
+
+      final merged = mergeEditedRoute(
+        existing,
+        const ServerRoute(
+          // 这个 id 会被忽略 —— 换掉 id 等于把测速结果与「当前走哪条」的键作废。
+          id: 'route-1',
+          name: '外网直连',
+          url: 'http://lan2.example.com',
+          tag: RouteTag.lan,
+        ),
+      );
+
+      expect(merged.map((r) => r.id), ['lan', 'wan', 'relay']);
+      expect(merged.first.url, 'http://lan2.example.com');
+      expect(merged.first.name, '外网直连');
+      expect(merged[1].url, 'https://wan.example.com', reason: '其余几条一个都不许动');
+      expect(merged[2].tag, RouteTag.relay);
+    });
+
+    test('原来那条是锁定的 —— 改完还是锁定的,不额外加锁', () {
+      const existing = [
+        ServerRoute(
+          id: 'lan',
+          name: '局域网',
+          url: 'http://lan.example.com',
+          selected: true,
+        ),
+        ServerRoute(id: 'wan', name: '外网', url: 'https://wan.example.com'),
+      ];
+
+      final merged = mergeEditedRoute(
+        existing,
+        const ServerRoute(id: 'route-1', name: '局域网', url: 'http://lan2.example.com'),
+      );
+
+      expect(merged.first.selected, isTrue, reason: '用户点的锁定不该被这一次保存抹掉');
+      expect(merged.last.selected, isFalse, reason: '也不该顺手把别的线路锁上');
+    });
+
+    test('一条都没有时就用表单里那条(第一次填)', () {
+      final merged = mergeEditedRoute(
+        const [],
+        const ServerRoute(id: 'route-1', name: '局域网直连', url: 'http://lan.example.com'),
+      );
+
+      expect(merged.length, 1);
+      expect(merged.single.id, 'route-1');
+    });
+  });
 }
