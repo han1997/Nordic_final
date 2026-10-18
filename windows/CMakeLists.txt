@@ -57,6 +57,28 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# **本仓库唯一一处对 windows/ 模板的改动**(其余逐字节与模板一致,好对照)。
+#
+# just_audio_windows 撞上了 VS 2026 的工具链,两处都在**插件自己的 C++** 里;
+# 这里不动它的源码,只在自己的工程里把编译器摆正:
+#
+#  1) 它的 `uri_utils.hpp` 注释里有一个 U+2192(`→`),而文件没有 BOM —— MSVC 按
+#     代码页 936 去读就成了 C4819,插件自己又开了 `/WX`(警告即错误)。那个文件
+#     本来就是 UTF-8,告诉编译器一声就好。
+#  2) 它链接的 C++/WinRT 2.0.210806 用的是 `<experimental/coroutine>`,而 MSVC
+#     14.51 已经把它判成「即将移除」的硬错误(C2338 / STL1011)。下面那个宏是
+#     微软在那条报错里自己给的开关。
+#
+# 两处都不是我们改得动的东西(一处是上游源码的编码,一处是上游依赖的版本),
+# 也都不影响别的平台 —— 所以只挂在这个 target 上。
+# **升级 Flutter / VS 或这个插件时回头看一眼这两行还需不需要**:尤其第 2 条是
+# 「暂时压住」,不是修好。
+if (TARGET just_audio_windows_plugin)
+  target_compile_options(just_audio_windows_plugin PRIVATE /utf-8)
+  target_compile_definitions(just_audio_windows_plugin PRIVATE
+    _SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+endif()
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can

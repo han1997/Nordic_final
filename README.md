@@ -135,10 +135,14 @@ Windows 侧同理:`tool/build.sh windows` 落成
 所以整目录打包、解压出来就能双击;脚本同样校验 exe 里的版本与 pubspec 一致
 (Windows 没有签名那一套,不假装有)。
 
-**Windows 构建要先开系统的开发者模式**:Flutter 给插件建符号链接需要它,不然
-`flutter build windows` 会直接停在 `Building with plugins requires symlink support`
-(设置 → 隐私和安全性 → 开发者选项 → 开发人员模式)。这是这台机器上唯一一条
-Windows 构建的前置条件。
+**Windows 构建有两条系统前置**(都不是仓库能替你解决的):
+
+1. **开开发者模式** —— Flutter 给插件建符号链接要它,不然 `flutter build windows`
+   会直接停在 `Building with plugins requires symlink support`
+   (设置 → 隐私和安全性 → 开发者选项 → 开发人员模式)。
+2. **装 ATL 组件** —— `flutter_secure_storage_windows`(存服务器密码用的那个)要
+   `atlstr.h`,它属于 VS 安装器里的「C++ ATL for latest v143 Build Tools (x86 & x64)」。
+   没装就在这里报 `error C1083: 无法打开包括文件: "atlstr.h"`。
 
 **改名为什么在脚本里而不是 Gradle 里**:AGP 9 把 `VariantOutput.outputFileName`
 从公开 API 拿掉了(只剩 `versionCode` / `versionName`),照旧写法编译不过,

@@ -418,6 +418,17 @@ Windows —— 这台开发机**唯一能真正构建并运行**的目标:`flutt
   `read_version()`。**版本串两种呈现都认**(`1.0.34+35` 与 `1.0.34.35`)——
   实测过 `FileVersion` 是自由格式字符串。
 
+- **开发者模式开了之后第一次真构建,暴露出两个跟仓库无关的 C++ 问题** —— 都在
+  `just_audio_windows` 自己的源码 / 依赖里:
+  ① 它的 `uri_utils.hpp` 注释里有个 U+2192(`→`),文件没有 BOM,MSVC 按代码页 936
+  去读就报 `C4819` —— 而插件自己开了 `/WX`,警告即错误;
+  ② 它链接的 C++/WinRT `2.0.210806` 用的是 `<experimental/coroutine>`,而 MSVC
+  14.51 已经把它判成「即将移除」的硬错误(`C2338` / `STL1011`)。
+  治法只动我们自己的 `windows/CMakeLists.txt`:给那**一个** target 加 `/utf-8` 与
+  微软自己在报错里给的那个静默宏。改完重跑,两条都消失。**这是本仓库唯一一处偏离
+  `windows/` 模板的地方**,所以那几行里写清了「升级 Flutter / VS 或这个插件时回来
+  看一眼」—— 尤其第二条是「暂时压住」,不是修好。
+
 版本 `1.0.33+34` → `1.0.34+35`(在代码那一个提交里 +1)。
 
 **桌面外壳的两处待办**(这一轮 `windows/` 一个字节没改,好与模板逐字节对照):
@@ -427,10 +438,12 @@ Windows —— 这台开发机**唯一能真正构建并运行**的目标:`flutt
 
 **这一轮没在本机跑过的**:
 
-1. **Windows 构建本身** —— 被一个前置条件挡住:Flutter 给插件建符号链接要求系统开着
-   **开发者模式**,而本机没开(`flutter build windows` 停在 `Building with plugins
-   requires symlink support`)。所以 `tool/build.sh windows` 的产物这一轮**没有真正
-   生成过**,只验了 `bash -n` 与读版本那条机制。
+1. **Windows 的完整构建与产物** —— 仍然没成:开发者模式开了、`just_audio_windows`
+   那两条也治好了,但 `flutter_secure_storage_windows` 要 `atlstr.h`(VS 安装器里的
+   **ATL 组件**),而这台机器上没装 —— 构建最终停在
+   `error C1083: 无法打开包括文件: "atlstr.h"`。所以 `tool/build.sh windows` 的 zip
+   **这一轮还是没生成过**。装上那个组件才能接着往下走(README 的「构建」一节记了
+   这条前置)。
 2. **iOS / macOS 上这个修复是否奏效** —— 依据是源码(`path_provider_foundation` 同样
    没有 `getExternalStoragePath`),但本机没有 Xcode 工具链,一次都没跑过。
 3. **`audio_service` 在 Windows 上真的是 NoOp** —— 读源码得出的;实跑时看启动是否
