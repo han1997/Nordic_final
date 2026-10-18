@@ -128,7 +128,20 @@ class MediaCache extends ChangeNotifier {
   /// 「数完目录之后又有文件可能落盘了」。播放层每拼一个走网络的播放源就会
   /// 置一次([fileFor] 拿到空位就说明 just_audio 接下来会往那儿写),
   /// 数目录那一趟负责清掉它。
+  ///
+  /// 删掉几份低档缓存之后也会置起来:那一笔是**相对**减账,而刚写下的文件
+  /// 本来就没进过账([_delete] 减到底会被夹在 0),于是数字要靠下一趟重数
+  /// 才对得回来。
   bool _needsRescan = true;
+
+  /// 「盘上一份缓存都没有」这条快路能不能走。
+  ///
+  /// **光看 `_usedBytes == 0` 不够**:它是**上一次数目录**的结果,而
+  /// [fileFor] 刚一发出缓存位、或者刚删掉几份,它就已经旧了(前者还没进账,
+  /// 后者把账减穿了)。这类窗口里按「没有缓存」判,会放过一份真在盘上的文件,
+  /// 于是同一首又从网络拉一遍 —— 正是这一轮要治的那件事。
+  /// `_needsRescan` 正是「数完之后又可能有新文件落盘」那笔账,一起看。
+  bool get _maybeEmpty => _usedBytes == 0 && !_needsRescan;
 
   /// 换歌那一下的淘汰,两次真扫之间至少隔这么久。
   /// 每换一首歌就把整个缓存目录 stat 一遍,在几百份文件上是可观的同步 I/O ——
@@ -241,8 +254,9 @@ class MediaCache extends ChangeNotifier {
     required String qualityId,
     String? format,
   }) {
-    // 一个文件都没有就不必碰盘 —— 冷启动时绝大多数曲目都落在这一支上。
-    if (!enabled || _usedBytes == 0) return null;
+    // 一个文件都没有就不必碰盘 —— 冷启动时绝大多数曲目都落在这一支上
+    // (判据见 [_maybeEmpty]:不是「账上是 0」,而是「账是 0 而且没欠着重数」)。
+    if (!enabled || _maybeEmpty) return null;
     final file = _slotFor(song, qualityId: qualityId, format: format);
     return file.existsSync() ? file.path : null;
   }
@@ -274,8 +288,9 @@ class MediaCache extends ChangeNotifier {
     Song song,
     List<({String qualityId, String? format})> candidates,
   ) {
-    // 一个文件都没有就不必碰盘(与 [cachedPathFor] 同一条快路)。
-    if (!enabled || _usedBytes == 0) return null;
+    // 一个文件都没有就不必碰盘(与 [cachedPathFor] 同一条快路,
+    // 判据见 [_maybeEmpty])。
+    if (!enabled || _maybeEmpty) return null;
     for (final candidate in candidates) {
       final file = _slotFor(
         song,
@@ -321,9 +336,14 @@ class MediaCache extends ChangeNotifier {
     final playing = File(playingPath ?? slot.path);
     _playingPath = playing.path;
 
-    if (playing.existsSync()) {
+    if (playing.existsSync() && _isInCache(playing)) {
       // 命中就刷新 mtime —— LRU 的「最近听过」就是文件时间,不刷的话
       // 一首天天听的歌会因为它当初落盘的时刻早而被先扔掉。
+      //
+      // **只对缓存目录里的文件做**:播放层会把下载来的那一份也报过来
+      // (下过的直接播本机,不走缓存)。那份在 `Nordic/Music` 里,是用户
+      // 看得见的东西 —— 文件管理器按日期排、他自己记的日子,拿缓存这套
+      // 规则去动它等于悄悄改了别人的文件。
       try {
         await playing.setLastModified(DateTime.now());
       } catch (_) {
@@ -357,6 +377,7 @@ class MediaCache extends ChangeNotifier {
     if (lowerTiers.isEmpty) return;
     if (!_isCompleteFile(File(playingPath))) return;
 
+    var dropped = false;
     for (final lower in lowerTiers) {
       final slot = _slotFor(
         song,
@@ -365,9 +386,16 @@ class MediaCache extends ChangeNotifier {
       );
       if (slot.path == playingPath) continue;
       if (!_isCompleteFile(slot)) continue;
-      // 连同 `.mime` 旁注一起删,并对好占用账(见 [_delete])。
-      await _delete(slot);
+      // 连同 `.mime` 旁注一起删。**不逐份播报**:一次切歌最多丢掉三档,
+      // 每份各播报一次等于让全应用跟着重建两三遍(见 [_delete] 的 notify,
+      // 与 [markPlaying] 排在后面的那一趟淘汰同一个道理 —— 那一趟会重新
+      // 数一遍目录,数字对了才播报)。
+      await _delete(slot, notify: false);
+      dropped = true;
     }
+    // 减账是**相对**的,而刚写下的那份本来就不在账上(见 [_needsRescan])——
+    // 置起来,紧跟其后的那趟淘汰会把目录重新数一遍,占用与文件数就归位了。
+    if (dropped) _needsRescan = true;
   }
 
   // ---------------- 占用与淘汰 ----------------
@@ -436,6 +464,19 @@ class MediaCache extends ChangeNotifier {
   /// 要算两次 SHA-1(一次看有没有缓存、一次看能不能写缓存位)。
   static const _slotMemoLimit = 4096;
   final Map<String, File> _slotMemo = {};
+
+  /// 这个路径是不是**缓存目录里的**文件。
+  ///
+  /// 播放层报过来的「正在听的那一份」有可能不是缓存:下过的曲子直接播
+  /// `Nordic/Music` 里那份,不写缓存(见 [markPlaying] 的 [playingPath])。
+  /// 那种文件不该按缓存这套规则去动(mtime 就是缓存自己的 LRU 记账)。
+  bool _isInCache(File file) {
+    final root = _root;
+    if (root == null) return false;
+    return file.path.startsWith(
+      '${root.path}${Platform.pathSeparator}',
+    );
+  }
 
   /// 缓存文件的位置。**纯算**:曲目 id + 档位 → 路径,不必问索引。
   ///

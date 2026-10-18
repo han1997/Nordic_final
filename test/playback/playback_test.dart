@@ -664,6 +664,23 @@ void main() {
       );
     });
 
+    test('所选档自己也有缓存时,更高档那份照样接管', () async {
+      // 「先按均衡听过」(于是均衡那份落了盘)、「后来原音那份也完整了」——
+      // 这是最容易漏的一种顺序。早先只在**所选档没有**缓存时才去找更高档,
+      // 于是这一刻会一直播着均衡那份,而原音那份躺在盘上吃灰。
+      final medium = QualityOption.medium;
+      final original = await write('original');
+      await write(medium.id, format: medium.format);
+
+      await handler.setQueue(const [song], index: 0);
+
+      expect(
+        (player.loaded.first as ProgressiveAudioSource).uri.toFilePath(),
+        original,
+        reason: '手上有更好的那一份,就不该再拿低档的播',
+      );
+    });
+
     test('更高档那份完整之后,同曲更低档那几份让位', () async {
       final original = await write('original');
       final low = await write('low', format: 'mp3');

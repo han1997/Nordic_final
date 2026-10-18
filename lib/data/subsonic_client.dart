@@ -235,11 +235,17 @@ class SubsonicClient {
 
   /// 候选线路顺序:当前生效的排第一,其余按延迟升序兜底。
   ///
-  /// 手动锁定模式下只有一条候选 —— 故障切换是「自动择优」的一部分,
-  /// 关掉之后换线路这件事就该停下来。
+  /// **用户手动锁定了一条,就只有那一条**。锁定这件事的含义在原型与线路面板里
+  /// 都写着同一句「手动锁定后不再自动切换」—— 而故障切换正是「自动择优」的
+  /// 一部分。锁定之后还偷偷换到别条去,界面上「当前走 X 线」会与实际用的线路
+  /// 对不上(换过去的那条与 [activeRoute] 报的不是同一个),用户更没法解释。
+  ///
+  /// 判据是 [ServerRoute.selected] 本身,不是那个全局开关:用户点了锁定,
+  /// 「自动择优」这个开关多半还开着。
   List<ServerRoute> _candidateOrder() {
     final active = activeRoute;
     if (active == null) return const [];
+    if (active.selected) return [active];
     if (!autoRoute) return [active];
     final rest = _routes.where((r) => r.id != active.id).toList()
       ..sort((a, b) =>

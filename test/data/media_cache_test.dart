@@ -138,6 +138,25 @@ void main() {
 
       expect(cache.cachedPathFor(other, qualityId: 'medium', format: 'mp3'), isNull);
     });
+
+    test('账还没数到,但盘上已经有了的那一份照样答得出来', () async {
+      // 冷启动走的是 `open(scan: false)`:占用要等首帧之后才数一遍。这中间的
+      // 账是 0,而盘上可能刚落下文件(边听边缓存就是边写边播)。只看「账是 0」
+      // 会答「没缓存」—— 同一首于是又拉一遍网络、又写一份,正是要治的那件事。
+      final cache = await MediaCache.open(
+        limitBytes: 1024 * 1024,
+        root: root,
+        scan: false,
+      );
+      final file = cache.fileFor(song, qualityId: 'medium', format: 'mp3')!;
+      await file.writeAsBytes(List<int>.filled(64, 1));
+
+      expect(cache.usedBytes, 0, reason: '这一趟还没数过目录');
+      expect(
+        cache.cachedPathFor(song, qualityId: 'medium', format: 'mp3'),
+        file.path,
+      );
+    });
   });
 
   group('上限与淘汰', () {
@@ -230,6 +249,33 @@ void main() {
       await cache.prune();
 
       expect(File(replayed).existsSync(), isTrue, reason: '刚听过的那一份不该先走');
+    });
+
+    test('正在听的是下载来的那一份 —— 不碰它的时间戳', () async {
+      // 下过的曲子直接播 `Nordic/Music` 里那一份(不走缓存)。那是用户**看得见**
+      // 的文件:文件管理器按日期排、他自己记的日子 —— 缓存这套「刷 mtime 当
+      // LRU」的规则不该动它。
+      final cache = await open();
+      final downloads = await Directory.systemTemp.createTemp('nordic-downloads');
+      final file = File('${downloads.path}${Platform.pathSeparator}可能.mp3');
+      await file.writeAsBytes(List<int>.filled(64, 3));
+      await file.setLastModified(DateTime.utc(2026, 1, 1));
+      final before = (await file.stat()).modified;
+
+      await cache.markPlaying(
+        song,
+        qualityId: 'medium',
+        format: 'mp3',
+        playingPath: file.path,
+      );
+
+      expect(
+        (await file.stat()).modified,
+        before,
+        reason: '下载的那份归用户,不归缓存的 LRU 记账',
+      );
+
+      if (downloads.existsSync()) await downloads.delete(recursive: true);
     });
 
     test('调小上限当场淘汰到额度之下', () async {

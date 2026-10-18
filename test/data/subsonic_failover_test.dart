@@ -203,6 +203,42 @@ void main() {
       // 只碰了锁定的那条 —— 悄悄换一条是用户关掉这个开关时最不想要的。
       expect(hits, ['http://lan.invalid']);
     });
+
+    test('锁定之后,「自动择优」开着也不换线', () async {
+      // 判据不能只看那个全局开关:用户点了锁定,开关多半还开着。换过去的话,
+      // 线路面板上那句「当前走 X」与实际发请求的那条就不是同一条了 ——
+      // 而锁定这件事的含义,原型与面板上写的都是「不再自动切换」。
+      final hits = <String>[];
+      final client = SubsonicClient(
+        auth: SubsonicAuth(username: 'u', password: 'p'),
+        routes: const [
+          // 用户锁的是这条走不通的 —— 换到另一条正是「自动切换」。
+          ServerRoute(
+            id: 'lan',
+            name: '局域网',
+            url: 'http://lan.invalid',
+            selected: true,
+          ),
+          ServerRoute(id: 'wan', name: '外网', url: 'http://wan.example.com'),
+        ],
+        dio: recordingDio(
+          hits,
+          handler: (base) {
+            if (base.contains('lan.invalid')) {
+              throw const SubsonicException('局域网 无法连接');
+            }
+            return {'subsonic-response': {'status': 'ok', 'version': '1.16.1'}};
+          },
+        ),
+      );
+
+      await expectLater(
+        client.call('ping'),
+        throwsA(isA<SubsonicException>()),
+      );
+      expect(hits, ['http://lan.invalid'], reason: '锁定之后不再自动切换');
+      expect(client.activeRoute?.id, 'lan');
+    });
   });
 
   group('换线路表', () {

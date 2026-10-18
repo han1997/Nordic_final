@@ -737,16 +737,22 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     // 本机要是有**更高**一档的完整缓存,直接拿它播:白拿的音质,而且不花流量
     // (与「已经留着的照旧读本机」同一条口径)。命中时这一首根本不会再写一份
     // 缓存 —— 同一首两台并存的那件事,从源头上就不发生了。
-    final better = cached == null
-        ? _cache?.completeCopyAmong(song, _tierSpecs(betterTiersThan(quality)))
-        : null;
+    //
+    // **与所选档自己有没有缓存无关**:低档那份只是「当初那样听过」留下的痕迹,
+    // 手上有更好的就不该再拿它播,更不该让两份长期并存。早先这一句只在
+    // `cached == null` 时才去找更高档 —— 于是「先按高档听过、后来又有了原音档」
+    // 这种曲子会一直播着低档那份,而更高档的原音躺在盘上吃灰,正是要治的那件事。
+    final better =
+        _cache?.completeCopyAmong(song, _tierSpecs(betterTiersThan(quality)));
     // 实际用的是哪一档 —— 下面要按它记账(见 [_localLoaded])。
     final resolved = better == null ? quality : QualityOption.byId(better.qualityId);
 
     final origin = playbackOriginFor(
       song,
       localPath: _downloads?.localPathFor(song.id),
-      cachedPath: cached ?? better?.path,
+      // 更高档那一份**优先**:两份都在盘上时(先按高档听过、又落了原音档),
+      // 播的该是更好的那一份。
+      cachedPath: better?.path ?? cached,
       remote: () {
         final repo = _repo;
         if (repo == null) {
@@ -897,15 +903,22 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   /// 封面一律用专辑封面:Subsonic 里单曲通常没有独立的图。
+  ///
+  /// **下过的那一首优先用本机封面** —— 离线时通知栏不该只剩一块灰。判据收在
+  /// 这里一处:发 mediaItem 的地方有好几处(拼播放源、装载队列、自动切歌),
+  /// 只有拼播放源那一处记得传 [localCover] 的话,同一首歌的封面就会时有时无。
   MediaItem _mediaItemFor(Song song, {String? localCover}) {
     final repo = _repo;
+    // 表查询,不必碰盘(见 `DownloadStore.coverPathForArt`)—— 整条队列装进来
+    // 时这里会被叫上千次,不能是个线性扫描。
+    final local = localCover ?? _downloads?.coverPathForArt(song.coverArtId);
     return MediaItem(
       id: song.id,
       title: song.title,
       artist: song.artist,
       album: song.album,
       duration: song.duration,
-      artUri: switch ((localCover, song.hasCover, repo)) {
+      artUri: switch ((local, song.hasCover, repo)) {
         (final String path, _, _) => Uri.file(path),
         (_, true, final SubsonicRepository r) =>
           r.coverUri(song.coverArtId!, size: 512),
