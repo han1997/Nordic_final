@@ -1,8 +1,17 @@
 import 'json_list.dart';
 import 'models.dart';
+import 'sorting.dart';
 import 'subsonic_client.dart';
 import 'subsonic_mapper.dart';
 import 'subsonic_payload.dart';
+
+// 专辑排序口径 [AlbumSort] 搬去了 `sorting.dart`(它是排序口径,不是协议)。
+// 这里再导出一次,让原先从本文件拿它的地方零改动。
+// **用 `show` 收窄** —— 不然整个 `sorting.dart`(SongSort / sortSongs /
+// mergeSongPage…)都会透传出去,原先直连那些名字的文件会突然多出一条
+// `unnecessary_import`。只透出真正从这里被拿走的那个。
+// (`export` 不把名字带进本文件的 scope,所以上面那句 import 不能省。)
+export 'sorting.dart' show AlbumSort;
 
 /// 音乐库的门面:界面只跟它对话。
 ///
@@ -459,27 +468,6 @@ class SubsonicRepository {
     await client.call('deletePlaylist', {'id': playlistId});
     invalidateDetail('playlist', playlistId);
   }
-}
-
-/// 专辑列表的排序口径,对应 `getAlbumList2` 的 `type`。
-enum AlbumSort {
-  alphabeticalByName('alphabeticalByName', '名称'),
-  alphabeticalByArtist('alphabeticalByArtist', '艺人'),
-  newest('newest', '最近添加'),
-  recent('recent', '最近播放'),
-  frequent('frequent', '常听'),
-  random('random', '随机');
-
-  const AlbumSort(this.wireName, this.label);
-
-  final String wireName;
-  final String label;
-
-  /// 存的是**名字**而不是序号(见 ConfigStore.saveAlbumSort)。
-  static AlbumSort byName(String? name) => values.firstWhere(
-        (s) => s.name == name,
-        orElse: () => AlbumSort.alphabeticalByArtist,
-      );
 }
 
 int _playCount(Map<String, dynamic> songJson) {

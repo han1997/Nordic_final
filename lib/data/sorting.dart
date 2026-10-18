@@ -2,7 +2,7 @@ import 'models.dart';
 
 /// 歌曲的排序口径。
 ///
-/// 与 [AlbumSort](见 `subsonic_repository.dart`)不同,这一组**全在本地做**:
+/// 与 [AlbumSort] 不同,这一组**全在本地做**:
 /// 服务器没有「按标题给我排一版歌」这种端点,而曲子本来就是一次拉回来的
 /// (见 `allSongs`),本地排一遍比再打一轮请求快得多。
 ///
@@ -22,6 +22,35 @@ enum SongSort {
   /// 存的是**名字**而不是序号:枚举增删时序号会错位,名字不会。
   static SongSort byName(String? name) =>
       values.where((s) => s.name == name).firstOrNull ?? SongSort.title;
+}
+
+/// 专辑列表的排序口径,对应 `getAlbumList2` 的 `type`。
+///
+/// 与 [SongSort] 不同,这一组**是服务器在做**:「最近添加 / 最近播放 /
+/// 常听」本地算不出来(要全库的播放记录),所以这里存的是要发给服务器的
+/// 那个 `type` 串([wireName])。
+///
+/// 从 `subsonic_repository.dart` 搬来这儿 —— 它是**排序口径**,不是 Subsonic
+/// 协议的一部分,而音源接口(`music_source.dart`)的签名要用到它。
+/// `subsonic_repository.dart` 会再导出一次,原来的 import 点零改动。
+enum AlbumSort {
+  alphabeticalByName('alphabeticalByName', '名称'),
+  alphabeticalByArtist('alphabeticalByArtist', '艺人'),
+  newest('newest', '最近添加'),
+  recent('recent', '最近播放'),
+  frequent('frequent', '常听'),
+  random('random', '随机');
+
+  const AlbumSort(this.wireName, this.label);
+
+  final String wireName;
+  final String label;
+
+  /// 存的是**名字**而不是序号(见 ConfigStore.saveAlbumSort)。
+  static AlbumSort byName(String? name) => values.firstWhere(
+        (s) => s.name == name,
+        orElse: () => AlbumSort.alphabeticalByArtist,
+      );
 }
 
 /// 按 [sort] 排一份曲子列表。返回**新列表** —— 传进来的那份可能别处还在用。

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/sorting.dart';
-import '../../data/subsonic_repository.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';

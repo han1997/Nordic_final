@@ -11,7 +11,6 @@ import 'package:nordic/data/server_config.dart';
 import 'package:nordic/data/subsonic_client.dart';
 import 'package:nordic/data/sorting.dart';
 import 'package:nordic/data/subsonic_payload.dart';
-import 'package:nordic/data/subsonic_repository.dart';
 import 'package:nordic/playback/quality.dart';
 import 'package:nordic/state/app_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
