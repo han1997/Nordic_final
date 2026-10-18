@@ -81,7 +81,7 @@ tool/build.sh 是构建入口 —— 它设好引擎产物镜像再调 flutter
 | M0 | HTML 原型 + 仓库初始化 |
 | M1 | Flutter 工程骨架、分层架构、音源抽象层 |
 | M2 | Android MVP(浏览 / 搜索 / 播放 / 转码 / 收藏 / 歌单读写 / 歌词 / 下载 / 离线播放) |
-| **M3** | iOS / 桌面 / Web 铺开,接入飞牛音乐 ← 当前(先做 Windows 桌面) |
+| **M3** | iOS / 桌面 / Web 铺开,接入飞牛音乐 ← 当前(Windows 桌面已通 · Web 第一版 · 飞牛音乐未接) |
 
 M2 收口时留下的、**只剩真机走查**的几条:
 
@@ -112,6 +112,7 @@ M2 收口时留下的、**只剩真机走查**的几条:
 tool/build.sh            # debug APK
 tool/build.sh release    # release APK
 tool/build.sh windows    # Windows release(整目录打成标准名的 zip)
+tool/build.sh web        # Web release(整目录打成标准名的 zip)
 tool/build.sh run        # 在设备上跑
 ```
 
@@ -143,6 +144,20 @@ Windows 侧同理:`tool/build.sh windows` 落成
 2. **装 ATL 组件** —— `flutter_secure_storage_windows`(存服务器密码用的那个)要
    `atlstr.h`,它属于 VS 安装器里的「C++ ATL for latest v143 Build Tools (x86 & x64)」。
    没装就在这里报 `error C1083: 无法打开包括文件: "atlstr.h"`。
+
+Web 侧:`tool/build.sh web` 落成 `build/dist/Nordic-<版本>-web.zip`(同样整目录打包),
+脚本会校验入口文件齐不齐、**产物里的 `version.json` 与 pubspec 是否一致**,以及
+「CanvasKit 是不是从 CDN 拿的」。最后那条不是洁癖 —— **web 目标的默认是让页面在运行时
+去 `www.gstatic.com` 取 CanvasKit(渲染器本体)**,取不到的表现是**停在加载动画上、
+不报错也不超时**。所以 `build web` 与 `run -d chrome` 都必须带
+`--no-web-resources-cdn`(`run` 分支已经按设备 id 自动补),让 CanvasKit 从产物自己的
+`build/web/canvaskit/` 取。注意 `FLUTTER_STORAGE_BASE_URL` 那个镜像**管不到这一跳** ——
+它只管构建期的引擎产物下载,而这是个运行时的地址。
+
+Web 产物还有两条部署约束:**必须从根提供**(`index.html` 里是 `<base href="/">`,
+丢进子目录会 404);静态服务器要会用 `application/wasm` 发 `.wasm`
+(Python 的 `http.server` 会发成 octet-stream,浏览器打一句 warning 后仍能用,
+但正式部署该交给 nginx 这类)。
 
 **改名为什么在脚本里而不是 Gradle 里**:AGP 9 把 `VariantOutput.outputFileName`
 从公开 API 拿掉了(只剩 `versionCode` / `versionName`),照旧写法编译不过,

@@ -369,8 +369,11 @@ Nordic 每一轮改动的原始记录。**从早到晚往下排**(第三轮在�
 M2 收口后的下一格是 M3(iOS / 桌面 / Web 铺开,接入飞牛音乐)。先落**桌面**,而且是
 Windows —— 这台开发机**唯一能真正构建并运行**的目标:`flutter doctor` 里
 `[✓] Visual Studio - develop Windows apps`,`flutter devices` 里已经列出
-`Windows (desktop)`。iOS / macOS 在这台机器上根本构建不了;Web 要先把 8 个文件的
-`dart:io` 全部条件化,规模大得多,这一轮不碰。
+`Windows (desktop)`。iOS / macOS 在这台机器上根本构建不了;Web 当时记的理由是
+「要先把那 8 个文件的 `dart:io` 全部条件化,规模大得多」—— **那句是错的,第十一轮
+纠正了**:`dart:io` 在 web 目标上**可以编译**(SDK 的 `libraries.json` 里 `io` 在
+vm / dart2js / dartdevc / wasm 四处都有定义,只是运行期抛 `UnsupportedError`),
+真正要处理的是别的东西(CanvasKit 那一跳)。
 
 - **补上 `windows/` 脚手架**。整个目录原先不存在,是
   `flutter create --platforms=windows` 生成的 —— 但**没在仓库目录里跑它**:那条命令
@@ -478,3 +481,78 @@ flutter_secure_storage.dat
   没有 `getExternalStoragePath`),但本机没有 Xcode 工具链,**一次都没跑过**。
 - **交付的 zip 在别人的干净机器上能不能跑** —— 模板默认 `/MD`,依赖
   `vcruntime140.dll` / `msvcp140.dll`;换台机器要装 VC++ 2015-2022 运行库。
+
+## 第十一轮(2026-10-18):Web 铺开
+
+M3 的「铺开」里,Web 是本机还能真跑起来的最后一个目标(iOS 没有 Xcode、Linux 本机
+构建不了,而且它连「零下载」的音频后端都没现成的)。这一轮把它铺起来。
+
+- **纠正第十轮的一个错误判断**。那轮把 Web 记成「要先把 8 个文件的 `dart:io` 全部
+  条件化」,**不成立**:`dart:io` 在 web 目标上是**可编译的** —— SDK 的
+  `libraries.json` 里 `io` 在 `vm_common` / `_dart2js_common` / `dartdevc` /
+  `wasm_common` 四处都有定义,各带一个 patch(编译期合法,运行期才抛
+  `UnsupportedError`)。所以**一行条件导入都不用写**。
+- **这一轮真正的坑:web 目标默认让页面在运行时去 `www.gstatic.com` 取 CanvasKit**
+  (渲染器本体)。三处证据:`kWebResourcesCdnFlag` 的 `defaultsTo: true`;装载器
+  `flutter_web_sdk/flutter_js/src/utils.js` 的 `getCanvaskitBaseUrl()` 在
+  `engineRevision && !useLocalCanvasKit` 时返回那个 CDN 地址;`web.dart` 还把同一个
+  URL 硬编码进 dart-define。**失败形态是页面停在加载动画上,不报错也不超时**
+  (装载器卡在 `main.dart.js` 之前)—— 最难查的一种,所以 `build web` 与
+  `run -d chrome` 都带 `--no-web-resources-cdn`,并把这条写进了
+  `standardize_web()` 的校验(防有人绕过脚本手打 `flutter build web`)。
+  顺带澄清一句容易再踩的:**`FLUTTER_STORAGE_BASE_URL` 管不到这一跳** —— 它只管构建期
+  的引擎产物下载,而那个 CDN 地址是运行时用的。
+- **`lib/` 这一轮一个字节没改。** 唯一候选是「给几处 `_defaultRoot` 加 `kIsWeb` 早退」,
+  逐个核下来**不需要**:三块存储的 `open()` 都有兜底 → `isAvailable == false` → 各处
+  早退;`audio_handler` 的本机路径恒 null → 自动落到 `ProgressiveAudioSource`
+  (`LockCachingAudioSource` 那个在 web 上会炸的东西根本不会被构造);`cover.dart` 的
+  `file://` 判断恒假 → 自动走网络封面。唯一的副作用是 `DownloadStore.open()` 那行
+  `debugPrint` 打一次 —— 而它说的正是实话。加 `kIsWeb` 反而更窄:现有 catch 管的是
+  「这块存储在这台设备上建不出来」这个一般命题,`kIsWeb` 只覆盖其中一条,而且会成为
+  第五个平台的无人验证分支。**全量用例数与改动前一字不差(305/16/0)**,坐实了这一点。
+- **CORS 事先验过了**(不是猜):这台 Navidrome 带 `Origin` 的 GET 回
+  `Access-Control-Allow-Origin: *`,预检 `OPTIONS` 回 `Access-Control-Allow-Methods: GET`
+  + `ACAO: *`。而 `SubsonicClient` 只有一个 `_dio` 调用点、协议本身全是 GET 查询参数,
+  **当前没有会被预检拦下的调用**(哪天把写入改成 POST,这里要重新看)。
+- **`web/` 脚手架照第十轮补 `windows/` 的办法**:临时目录生成、只搬 `web/`、
+  手补 `.metadata` —— 直接在仓库里跑 `flutter create` 会把 `android` / `windows`
+  那两组 revision 抹掉。搬进来 7 个文件,`web/` 一个字节没改。
+- **`tool/build.sh web` 的产物校验四条**,并说清每条为什么能真查出东西:六个入口文件齐;
+  `useLocalCanvasKit` 在产物里;**版本对齐**(读 `build/web/version.json` —— 那是
+  **构建系统**在构建那一刻从当次的 pubspec 写进去的,所以「改了版本忘了重建」必被抓);
+  以及**没有签名那套,不假装有**(web 产物既没有签名,也没有 Android 那种包名身份可校)。
+
+版本 `1.0.34+35` → `1.0.35+36`。
+
+**已在本机跑通并验到的**:`tool/build.sh web` **50.7 秒一次过**,产物
+`build/dist/Nordic-1.0.35+36-web.zip`(14 MB,顶层直接是 `index.html` / `assets/` /
+`canvaskit/`,不多套一层);`version.json` 是
+`{"version":"1.0.35","build_number":"36",…}`,与 pubspec 逐字对上;
+`grep useLocalCanvasKit build/web/flutter_bootstrap.js` 命中(说明走的是本地那份);
+`build/web/canvaskit/` 里 `canvaskit.js` 与 `canvaskit.wasm` 都在。
+
+**明确砍掉的**(浏览器里没有对应物,靠现有降级路径自然关掉,不是靠 `kIsWeb` 判断):
+下载、断点续传、听过的歌那份音频缓存、库快照的离线冷启动、歌词落盘。
+**保留**:浏览、搜索、歌词(内存)、收藏、歌单、播放、循环 / 随机、队列。
+
+**这一轮没验到的(只有人能看)**:
+
+1. **真出声**,尤其**「没转码过的那一首」**。`just_audio_web` 的 `loadUri` 在设完
+   `src` 后会 await 一个 duration Completer,而它**只在 `<audio>` 的 `durationchange`
+   或 `error` 事件里完成** —— 若某个浏览器对 chunked 响应两个都不触发,
+   `setAudioSource` 会一直挂着:界面停在加载态、不出声、不报错。这是这一轮最大的悬念。
+2. **Chrome 媒体面板**(`audio_service_web` 走 Media Session API,不建 `<audio>` 元素;
+   关掉标签页就没了,那是浏览器语义不是缺陷)。
+3. Chrome 里那 21 屏在桌面视口下的观感。
+
+**记下的待办**(都不是这一轮该做的):
+
+1. **Web 外壳**:浏览器标签标题是模板渲染的小写 `nordic`、favicon 与 PWA 图标是模板
+   自带那张 —— 与第十轮 Windows 那两条待办对称。
+2. **非 secure context 上 `connect()` 会卡死**:`flutter_secure_storage_web` 在没有
+   `window.isSecureContext` 时抛 `UnsupportedError`(**是 `Error`,不是 `Exception`**),
+   而 `app_state.dart` 里 `savePassword` 是裸 await、`servers_screen` 进来时已经
+   `_busy = true` —— 异常冒出去,按钮**永远转圈**,配置一个字都没存。只在「从局域网
+   http 地址打开页面」时发生(`localhost` / `127.0.0.1` 是 potentially trustworthy
+   origin,不受影响),所以开发期碰不到。修它要动 `lib/state/`,那是另一个决定。
+3. Web 上的下载入口该长什么样(这一轮已定「不拦,点了给一句人话错误」)。
