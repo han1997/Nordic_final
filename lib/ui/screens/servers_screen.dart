@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -55,18 +57,28 @@ class _ServersScreenState extends State<ServersScreen> {
   void initState() {
     super.initState();
     // 已配置过的话把现有值填回表单,「改一处」比「重填一遍」友好。
-    final server = context.read<AppState>().server;
-    if (server != null) {
-      _nameController.text = server.name;
-      _userController.text = server.username;
-      _kind = server.kind;
+    unawaited(_prefillFrom(context.read<AppState>()));
+  }
+
+  /// 把已配置的值填回表单 —— 进表单时、以及**按「取消」时**都要用。
+  ///
+  /// 「取消」也要填回来:只把 `_editing` 翻回去的话,扔掉的改动还留在输入框里,
+  /// 下一次进表单看到的还是那半份 —— 那时一次误点就把它存下去了。
+  Future<void> _prefillFrom(AppState appState) async {
+    final server = appState.server;
+    if (server == null) return;
+    _nameController.text = server.name;
+    _userController.text = server.username;
+    _kind = server.kind;
+    if (!mounted) return;
+    setState(() {
       if (server.routes.isNotEmpty) {
         _urlController.text = server.routes.first.url;
       }
-      // 密码在系统密钥库里,表单自己拿不到 —— 但也得填上:
-      // 只想改个地址却要重打一遍密码,那种「改一处」没人愿意做。
-      _prefillPassword();
-    }
+    });
+    // 密码在系统密钥库里,表单自己拿不到 —— 但也得填上:
+    // 只想改个地址却要重打一遍密码,那种「改一处」没人愿意做。
+    await _prefillPassword();
   }
 
   /// 把已存的密码读进表单。失败(密钥库读不出来 / 本机没存)就留空,
@@ -252,6 +264,10 @@ class _ServersScreenState extends State<ServersScreen> {
 
   Widget _formBody(AppState state) {
     final t = context.nordic;
+    // 「改现有服务器」还是「第一次连」—— 一处算好,下面五处都用它
+    // (按钮的字、图标、取消按钮、加载文案)。散着写容易改漏一处,
+    // 那种时候按钮说「连接」而做的事是覆盖,用户看不出自己按错了。
+    final editingExisting = _editing && state.hasServer;
 
     return ListView(
       padding: EdgeInsets.only(
@@ -352,24 +368,28 @@ class _ServersScreenState extends State<ServersScreen> {
               PrimaryButton(
                 // 从管理页进来的是**改**不是**连** —— 按钮上得说对这件事。
                 label: _busy
-                    ? (_editing && state.hasServer ? '正在保存' : '正在连接')
-                    : (_editing && state.hasServer ? '保存并重新连接' : '连接'),
+                    ? (editingExisting ? '正在保存' : '正在连接')
+                    : (editingExisting ? '保存并重新连接' : '连接'),
                 icon: _busy
                     ? null
-                    : (_editing && state.hasServer ? Icons.check : Icons.link),
+                    : (editingExisting ? Icons.check : Icons.link),
                 onPressed: _canSubmit ? _connect : null,
               ),
-              if (_editing && state.hasServer) ...[
+              if (editingExisting) ...[
                 const SizedBox(height: NordicSpace.s3),
                 GhostButton(
                   label: '取消',
                   onPressed: _busy
                       ? null
-                      : () => setState(() {
+                      : () async {
+                          setState(() {
                             _formError = null;
                             _formSuccess = null;
                             _editing = false;
-                          }),
+                          });
+                          // 扔掉的那半份改动也**从输入框里清掉**(见 [_prefillFrom])。
+                          await _prefillFrom(state);
+                        },
                 ),
               ],
             ],
@@ -379,7 +399,7 @@ class _ServersScreenState extends State<ServersScreen> {
           Padding(
             padding: const EdgeInsets.only(top: NordicSpace.s2),
             child: LoadingState(
-              message: _editing && state.hasServer ? '正在保存并重连' : '正在验证凭据并读取曲库',
+              message: editingExisting ? '正在保存并重连' : '正在验证凭据并读取曲库',
               topPadding: 0,
             ),
           ),

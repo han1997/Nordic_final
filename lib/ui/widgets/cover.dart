@@ -109,13 +109,6 @@ class Cover extends StatelessWidget {
               blurRadius: 38,
               offset: const Offset(0, 18),
             ),
-          // 上缘内描边,给封面一道边。
-          BoxShadow(
-            color: t.rim,
-            blurRadius: 0,
-            offset: const Offset(0, 1),
-            spreadRadius: -0.5,
-          ),
         ],
       ),
       child: ClipRRect(
@@ -153,6 +146,21 @@ class Cover extends StatelessWidget {
                     colors: [t.hi, t.hi2, Colors.transparent],
                     stops: const [0.0, 0.4, 0.6],
                   ),
+                ),
+              ),
+            ),
+            // 上缘内描边 —— 给封面一道边。
+            //
+            // 原先这里(与 [ArtistPlate] 那里)写成 `BoxShadow(offset: (0, 1))`,
+            // 但 BoxShadow **没有 inset 语义**:画出来是往盒子外面投的一道影,
+            // 再被上面那层不透明的封面盖住 —— 等于从来没出现过。
+            // `glass.dart` 上缘那道光早就改成了贴边的 1px 实线,这里是同一件事。
+            IgnorePointer(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  height: 1,
+                  child: ColoredBox(color: t.rim),
                 ),
               ),
             ),
@@ -369,14 +377,6 @@ class ArtistPlate extends StatelessWidget {
           end: const Alignment(0.7, 1),
           colors: [accent.c1, accent.c2],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: t.rim,
-            blurRadius: 0,
-            offset: const Offset(0, 1),
-            spreadRadius: -0.5,
-          ),
-        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(r),
@@ -405,6 +405,17 @@ class ArtistPlate extends StatelessWidget {
               ),
             ),
             const GrainOverlay(opacity: 0.16),
+            // 上缘内描边 —— 与 [Cover] 同一处坑(BoxShadow 没有 inset 语义),
+            // 改成贴顶边的 1px 实线。
+            IgnorePointer(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  height: 1,
+                  child: ColoredBox(color: t.rim),
+                ),
+              ),
+            ),
           ],
         ),
       ),

@@ -256,7 +256,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             itemCount: _songs.length,
             itemBuilder: (context, i) => SongRow(
               song: _songs[i],
-              coverUri: (id) => repo!.coverUri(id, size: 128),
+              coverUri: (id) => _coverUri(repo, id, size: 128),
               playing: _songs[i].id == currentId && playable.state.playing,
               onTap: () => playable.playAll(_songs, index: i),
               trailing: playlist.readonly
@@ -298,10 +298,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
   }
 
-  Uri? _coverUri(SubsonicRepository? repo, String? artId) {
+  /// 拼封面地址。**仓库可为空** —— 服务器在浏览途中被移除时这一屏还在栈上,
+/// 那时给一个空地址(封面走渐变兜底),而不是拿 `repo!` 崩掉整张列表。
+  /// 早先曲子那一行是直接 `repo!.coverUri(...)` 的,同一屏里两处口径不一致。
+  Uri? _coverUri(SubsonicRepository? repo, String? artId, {int size = 512}) {
     if (repo == null || artId == null) return null;
     try {
-      return repo.coverUri(artId, size: 512);
+      return repo.coverUri(artId, size: size);
     } on SubsonicException {
       return null;
     }

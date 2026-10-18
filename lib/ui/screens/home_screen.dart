@@ -153,6 +153,10 @@ class HomeScreen extends StatelessWidget {
       backgroundColor: context.nordic.glass3,
       onRefresh: () => state.loadLibrary(silent: true),
       child: CustomScrollView(
+        // 内容装得下时也要能下拉:那句「或下拉刷新」的空态正好出现在
+        // **内容最短**的时候,而不可滚动的 scroll view 不发滚动通知,
+        // RefreshIndicator 于是永远等不到那一下。
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           const SliverToBoxAdapter(child: _NowPlayingHeader()),
           SliverToBoxAdapter(child: _NowPlayingCard(playable: playable)),
@@ -182,11 +186,13 @@ class HomeScreen extends StatelessWidget {
             title: '最近播放',
             albums: library.recentlyPlayed,
             repo: view.repository,
+            heroPrefix: 'cover-rail-recent',
           ),
           _Shelf(
             title: '最常播放',
             albums: library.mostPlayed,
             repo: view.repository,
+            heroPrefix: 'cover-rail-frequent',
           ),
           if (library.recentlyAddedSongs.isEmpty &&
               library.recentlyPlayed.isEmpty &&
@@ -483,13 +489,22 @@ class _NowPlayingCard extends StatelessWidget {
 
 /// 一条横滑货架。**没内容就整条不出现** —— 空标题挂一行「暂无」只是噪音。
 class _Shelf extends StatelessWidget {
-  const _Shelf({required this.title, required this.albums, required this.repo});
+  const _Shelf({
+    required this.title,
+    required this.albums,
+    required this.repo,
+    required this.heroPrefix,
+  });
 
   final String title;
   final List<Album> albums;
 
   /// 只取「仓库」这一件(拼封面地址用),不订阅整个 [AppState]。
   final SubsonicRepository? repo;
+
+  /// 货架之间**唯一**的共享元素前缀 —— 见 [AlbumRail.heroPrefix]:
+  /// 首页摆了两条专辑货架,而同一张专辑常常两条都在,写死同一个 tag 会崩。
+  final String heroPrefix;
 
   @override
   Widget build(BuildContext context) {
@@ -500,7 +515,7 @@ class _Shelf extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SectionHeader(title: title),
-          AlbumRail(albums: albums, repo: repo),
+          AlbumRail(albums: albums, repo: repo, heroPrefix: heroPrefix),
         ],
       ),
     );

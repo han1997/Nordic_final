@@ -142,11 +142,26 @@ void main() {
     await tester.tap(find.text('服务器设置'));
     await tester.pumpAndSettle();
 
+    // 改一处再取消 —— 扔掉的那半份不该留在输入框里:再进表单看到它、
+    // 又一次误点「保存并重新连接」,那半份就真存下去了。
+    await tester.enterText(
+      find.widgetWithText(TextField, '客厅 Navidrome'),
+      '改了一半的名字',
+    );
+    await tester.pump();
+
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
 
     expect(find.text('添加线路地址'), findsOneWidget);
     expect(state.server!.name, '客厅 Navidrome');
+
+    // 再进来一次:填的还是现有配置,不是刚才那半份。
+    await tester.tap(find.text('服务器设置'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('改了一半的名字'), findsNothing, reason: '取消要把输入框也还原');
+    expect(find.widgetWithText(TextField, '客厅 Navidrome'), findsOneWidget);
   });
 
   testWidgets('startInForm(设置页的「添加服务器」)一进来就在表单上', (tester) async {

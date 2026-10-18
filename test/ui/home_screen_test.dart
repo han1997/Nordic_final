@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -49,11 +50,11 @@ void main() {
         }
       };
 
-  Map<String, dynamic> albumsPayload(String label) => ok({
+  Map<String, dynamic> albumsPayload(String label, {String? id}) => ok({
         'albumList2': {
           'album': [
             {
-              'id': 'al-$label',
+              'id': id ?? 'al-$label',
               'name': label,
               'artist': '艺人',
               'artistId': 'ar-1',
@@ -99,11 +100,16 @@ void main() {
         final endpoint = options.uri.pathSegments.last.replaceAll('.view', '');
         final type = options.uri.queryParameters['type'];
         final payload = switch (endpoint) {
-          'getAlbumList2' => albumsPayload(switch (type) {
-              'recent' => '刚听过的',
-              'frequent' => '听得最多的',
-              _ => '刚加进来的',
-            }),
+          // 「最近播放」与「最常播放」**给同一张专辑** —— 真机上这两条榜单
+          // 本来就常常有重合,而两条货架的封面各自挂着一个共享元素。
+          'getAlbumList2' => albumsPayload(
+              switch (type) {
+                'recent' => '刚听过的',
+                'frequent' => '听得最多的',
+                _ => '刚加进来的',
+              },
+              id: type == 'recent' || type == 'frequent' ? 'al-hot' : null,
+            ),
           'search3' => songsPayload(),
           _ => ok(const {}),
         };
@@ -198,6 +204,33 @@ void main() {
 
     expect(find.text('最常播放'), findsOneWidget);
     expect(find.text('听得最多的'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('同一张专辑同时在两条货架上 —— 共享元素的 tag 不能撞', (tester) async {
+    // 上面那份假载荷让「最近播放」与「最常播放」给的是**同一张专辑**(真机
+    // 常态)。框架按 tag 在整条来源路由里找共享元素的起点(`heroes.dart` 的
+    // `_allHeroesFor`),同一个 tag 出现两次直接断言失败 —— 症状是「从首页点进
+    // 任何一页都崩」。早先两条货架用的是同一个前缀,测试没抓到只是因为夹具
+    // 让两条榜单恰好不重合。
+    await loadLibrary(tester);
+    await pumpHome(tester);
+
+    final tags = tester
+        .widgetList<Hero>(find.byType(Hero))
+        .map((h) => h.tag)
+        .toList();
+    expect(tags, isNotEmpty);
+    expect(tags.toSet().length, tags.length, reason: '同一条路由里 tag 不能重复');
+
+    // 真走一次过渡:重复的 tag 会在这里被框架抛出来。
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(navigator.push(MaterialPageRoute<void>(
+      builder: (_) => const Scaffold(),
+    )));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
     expect(tester.takeException(), isNull);
   });
 

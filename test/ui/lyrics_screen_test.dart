@@ -216,6 +216,29 @@ void main() {
     expect(find.byType(LyricsScreen), findsOneWidget, reason: '点句子是跳转,不是返回');
   });
 
+  testWidgets('句子上下那截行距也算点这一句', (tester) async {
+    // 一行 = 文字框 + 上下各 11px 行距。看着还在这一行里,但默认的
+    // `HitTestBehavior.deferToChild` 只命中文字本身 —— 那半截会漏给外层
+    // 「点空白回封面」,症状是「点歌词没反应,还把歌词页关了」。
+    final playable = await pumpLyrics(tester);
+
+    // 一行 = 文字 + 上下各 11px 行距;那层行距属于**这一行**(Opacity 那块
+    // 就是整行的盒子),但不属于文字。取行顶那 2px —— 一定在行距里。
+    final text = tester.getRect(find.text('第 1 句'));
+    final row = tester.getRect(
+      find.ancestor(of: find.text('第 1 句'), matching: find.byType(Opacity)).first,
+    );
+    expect(row.top, lessThan(text.top), reason: '行比文字高,上面那截就是行距');
+
+    await tester.tapAt(Offset(row.center.dx, row.top + 2));
+    await tester.pumpAndSettle();
+
+    expect(playable.seeks, [const Duration(seconds: 10)],
+        reason: '行距上那半截也要算「点了这一句」');
+    expect(find.byType(LyricsScreen), findsOneWidget,
+        reason: '不能漏给外层,那一下会把歌词页关掉');
+  });
+
   testWidgets('点行以外的空白仍是回封面', (tester) async {
     await pumpLyrics(tester);
     final list = tester.getRect(find.byType(SingleChildScrollView));

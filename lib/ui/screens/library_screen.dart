@@ -288,7 +288,11 @@ class _AlbumsTab extends StatelessWidget {
     );
 
     // 整栏走 sliver:网格必须**真的懒**(见 [_AlbumGridSliver])。
+    // 下拉刷新挂在整屏外面(见本文件上方的 `RefreshIndicator`),
+    // 而不够长的一栏**本来不可滚**,不发滚动通知 —— 那句「或下拉刷新」的空态
+    // 正好出现在这种时候,所以四栏都要 [AlwaysScrollableScrollPhysics]。
     return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
           child: SectionHeader(
@@ -424,6 +428,8 @@ class _ArtistsTab extends StatelessWidget {
     final t = context.nordic;
 
     return CustomScrollView(
+      // 同 [_AlbumsTab]:不够长也要能下拉刷新。
+      physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
           child: SectionHeader(
@@ -540,6 +546,8 @@ class _SongsTab extends StatelessWidget {
         return false;
       },
       child: ListView.builder(
+        // 同 [_AlbumsTab]:不够长也要能下拉刷新。
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(
           bottom: BottomStack.listInset(context),
         ),
@@ -669,6 +677,8 @@ class _PlaylistsTab extends StatelessWidget {
 
     // 歌单一般不多,但口径与其它两栏统一:一屏一屏地建。
     return ListView.builder(
+      // 同 [_AlbumsTab]:不够长也要能下拉刷新。
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.only(
         bottom: BottomStack.listInset(context),
       ),

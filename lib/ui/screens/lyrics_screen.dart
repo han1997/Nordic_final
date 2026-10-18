@@ -276,8 +276,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
         Expanded(
           child: GestureDetector(
             onTap: () => Navigator.of(context).maybePop(),
-            behavior: HitTestBehavior.opaque,
-            child: NotificationListener<ScrollStartNotification>(
+                  child: NotificationListener<ScrollStartNotification>(
               // 手指拖动才算「用户在翻」:`ensureVisible` 自己发的通知没有 dragDetails。
               onNotification: (notification) {
                 if (notification.dragDetails != null) {
@@ -567,6 +566,10 @@ class _LyricLineState extends State<_LyricLine> {
 
     return GestureDetector(
       onTap: widget.onTap,
+      behavior: HitTestBehavior.opaque,
+      // **opaque**:整行(含上下各 11px 的行距)都算命中。
+      // 默认的 `deferToChild` 只命中文字本身那一小条 —— 行距上那半截会漏给
+      // 外层那层「点空白退出」的手势上,于是「点歌词没反应,还把歌词页关了」。
       // 按下压一档 —— 原型的 `.lyric-line:active { opacity: .6 }`。
       // 没有这一下,「点了半句没反应」时用户分不出是没点中还是播放器没动。
       onTapDown: (_) => setState(() => _pressed = true),
