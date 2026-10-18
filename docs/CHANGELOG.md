@@ -901,3 +901,74 @@ _formError。存储那一步的 UnsupportedError 单独翻译成人话(说清该
 5. **ICO 在旧版 Windows 上的表现** —— 我们那份每帧都是 PNG,模板是混合编码。Win10/11 正常。
 
 **上一轮还挂着的**:Web 上音频到底出不出声;Windows 那 21 屏在 1280×720 下的观感。
+
+## 第十四轮(2026-10-18):播放页进出改用切 tab 那套淡入
+
+用户原话:「进出音乐播放页的动画卡顿,尝试使用 tab 切换的动画我看看效果」。
+一次**试**出来的改动 —— 结论要真机上给。原型先行,应用跟上,两边都验过。
+
+### 一、原型:播放页进出从滑动改成淡入(顺带对齐一处不一致)
+
+`prototype/app.js` 的 `renderStage` 里加了一层 `navKind(nav, entering, leaving)`:
+进 / 出 `player`(以及 `lyrics`)走 `fade-in` / `fade-out`,其余二级页仍是 `push` / `back`
+那套整屏滑动。方向与用途照旧靠 `<html data-nav>` 分辨。
+
+`prototype/styles.css` 里新增 `vt-fade-in` / `vt-fade-out`,各 0.22s / `--ease`
+——**与切 tab 的 `screen-in` 是同一个数**。实现上是交叉淡出:旧那一格原地不动,
+新那一格从透明淡上来(View Transition 的新快照本来就压在旧快照之上,不用像返回那样翻 z-index)。
+
+顺带修掉一处**原型与应用不一致**:播放页 ↔ 歌词页在应用里一直是「直接换」
+(`AppRoutes.flip`,时长 0),原型却在滑动 —— 这一段的注释早就写着该是「翻面」,
+代码没跟上。现在 `navKind` 把这一对判成 `flip`,CSS 里整条 `animation: none !important`
+停掉,两边对上了。
+
+**验证**:新脚本 `.tmp-shots/vtfade.cjs`(照 `vtcheck.cjs` 那套写)。判据三样:
+`data-nav` 的值、过渡期间挂在伪元素上的动画名与时长、`#phone-slot` 的位置动没动。
+结果:坞 → 播放页、歌曲行 → 播放页都是 `vt-fade-in @ ::view-transition-new(phone) 220ms`
+且 `dx = 0`(原地不动);返回是 `vt-fade-out @ old(phone)`;播放页 ↔ 歌词页那两次
+**一条整格动画都没有**;回归项「专辑格 → 专辑页」仍是 `vt-slide-in-right 320ms`;
+控制台无报错。
+
+> 踩到两个坑,记这儿免下次重踩:① 播放计时每秒 `render()` 一次,而 `render()` 会给
+> `.screen` 重挂 `screen-in`(220ms),所以**不能**拿「有没有 screen-in」当判据,只认挂在
+> 伪元素上的那几条;② 播放页 ↔ 歌词页来回翻过之后,历史里是 `[library, player, lyrics]`,
+> 这时按返回是回**歌词页**而不是列表 —— 脚本的预期一开始按「回列表」写,红了一次。
+
+### 二、应用:播放页路由换成 `AppRoutes.fade`
+
+新增 `AppRoutes.fade`(`routes.dart`),`player` 那一路从 `slide` 换过去:
+
+- 时长与缓动是 `NordicMotion.screenFade`(新增,220ms)加 `NordicMotion.ease`
+  —— **与 `shell.dart` 切 tab 那个 `AnimationController` 读的是同一个常量**。
+  shell 里原先是个字面量 220ms,现在两边一处真值。
+- `transitionsBuilder` 只给 `FadeTransition`:**不叠位移、不叠缩放**。淡入那层里垫一层
+  `RepaintBoundary` —— 整屏不透明度会把子树关进离屏合成层,少了这道边界,那 62px 氛围模糊
+  与玻璃 `BackdropFilter` 每帧都要在新缓冲里重做(与 `shell.dart` 切 tab 那处同一个理由)。
+- 其余二级页(专辑 / 艺人 / 歌单 / 服务器…)**仍是滑入**,歌词页仍是 `flip`。
+
+### 三、护栏两条(两边合起来才说明「同一套」)
+
+- `app_test.dart`「页面过渡」:播放页路由两头时长 == `NordicMotion.screenFade`、
+  过渡件是 `FadeTransition` 而不是 `SlideTransition`、缓动值 == `ease.transform(0.5)`。
+- `shell_test.dart`:主壳那层 `FadeTransition` 背后的 controller,时长与曲线**就是**
+  那两个常量 —— 哪一边漂开,至少有一条会红。
+
+### 版本与提交
+
+版本 1.0.37+38 → 1.0.38+39(这一轮只 +1 一次)。三个提交:
+
+1. 原型:播放页进出改用与切 tab 同一套的淡入;
+2. 界面:播放页进出改用切 tab 那套淡入;
+3. 文档:第十四轮记录 + 版本号。
+
+release 包已出:`build/dist/Nordic-1.0.38+39-release.apk`(签名有效、包名 fun.han1997.nordic)。
+
+### 这一轮没验到的(只有人或真机能看)
+
+1. **顿挫到底有没有了** —— 这是用户提的现场,只有真机能判。原型那边验的是「动的是哪一格、
+   动的是什么」,验不出手机的帧率。
+2. **淡入的手感要不要调** —— 220ms 是否偏快(整屏换一次比切 tab 的位移量大)、
+   返回要不要单独一个时长,都得看着真机定。
+3. 顺带一句:真机上如果还是顿,瓶颈大概率不在过渡方式上,而在**推入那几帧里建整棵
+   播放页**的活儿(氛围模糊 + 大封面)。下一步该拿 DevTools 的 timeline 量一下,
+   别再换第四种过渡猜。
