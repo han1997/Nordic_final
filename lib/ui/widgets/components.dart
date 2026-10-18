@@ -210,7 +210,7 @@ class GhostButton extends StatelessWidget {
           children: [
             if (icon != null) ...[
               Icon(icon, size: 18, color: t.fg2),
-              const SizedBox(width: 8),
+              const SizedBox(width: 9),
             ],
             Text(
               label,
@@ -267,7 +267,7 @@ class PillButton extends StatelessWidget {
             children: [
               if (icon != null) ...[
                 Icon(icon, size: 15, color: solid ? t.bg : t.fg2),
-                const SizedBox(width: 6),
+                const SizedBox(width: 7),
               ],
               Text(
                 label,
@@ -406,27 +406,41 @@ class SectionHeader extends StatelessWidget {
             NordicSpace.s5,
             NordicSpace.s3,
           ),
+      // 外层**按中线对齐**。右侧动作(测速胶囊 / 排序键)不是文字,不该跟着基线
+      // 走 —— 原型里这两条规则写得很清楚:`.section { align-items: baseline }`
+      // 管文字,`.section .chip, .section .pill-btn { align-self: center }` 与
+      // `.sort-btn { align-self: center }` 把非文字的右侧动作摘出去。
+      //
+      // 摘不出去会怎样:基线行按 `maxBaselineDistance - childBaseline` 摆子节点,
+      // 而嵌套 flex 报回来的基线**不含它子节点的居中偏移** —— 30px 的胶囊于是
+      // 报一个靠上的浅基线,整颗被压到标题下面几像素(真机上报的那一版)。
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
         children: [
-          Text(
-            title,
-            style: Theme.of(context)
-                .textTheme
-                .headlineSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
+          // 标题与计数是一对**文字**,它俩之间才要基线对齐。
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              if (count != null) ...[
+                const SizedBox(width: 10),
+                Text(
+                  count!,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: t.fg4, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ],
           ),
-          if (count != null) ...[
-            const SizedBox(width: 10),
-            Text(
-              count!,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: t.fg4, fontWeight: FontWeight.w600),
-            ),
-          ],
           const Spacer(),
           ?trailing,
         ],
@@ -558,23 +572,32 @@ class NordicChip extends StatelessWidget {
         child: NordicGlass(
           panel: NordicGlassPanel.thin,
           borderRadius: BorderRadius.circular(NordicRadius.full),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 15),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 15, color: t.fg3),
-                  const SizedBox(width: 6),
+          // **必须显式居中**。玻璃底是个 `Stack`,它默认 `alignment` 是
+          // `topStart`、`fit` 是 `loose` —— 子节点按**顶对齐**摆。而定高 30 的
+          // 盒子里内容只有 ~15 高,不居中就会贴在上沿(真机上报的
+          // 「测速两个字没对齐」)。选中态走的是不透明的定高 `Container`,
+          // 那种盒子会把内容撑满、天然居中 —— 两边不一致的话,点一下
+          // 「测速」→「测速中」字会往下跳一截。
+          // 原型 `.chip { display:inline-flex; align-items:center }` 说的就是这件事。
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 15),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 15, color: t.fg3),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(
+                    label,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontWeight: FontWeight.w600, color: t.fg2),
+                  ),
                 ],
-                Text(
-                  label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(fontWeight: FontWeight.w600, color: t.fg2),
-                ),
-              ],
+              ),
             ),
           ),
         ),

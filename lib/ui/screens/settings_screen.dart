@@ -213,7 +213,7 @@ class _CacheSection extends StatelessWidget {
                     ?.copyWith(color: context.nordic.fg2),
               ),
               const SizedBox(width: 4),
-              Icon(Icons.chevron_right, size: 17, color: context.nordic.fg3),
+              Icon(Icons.chevron_right, size: 18, color: context.nordic.fg3),
             ],
           ),
           onTap: () => showCacheSheet(context),

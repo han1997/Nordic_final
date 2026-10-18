@@ -151,8 +151,10 @@ class _QueueRow extends StatelessWidget {
     return Pressable(
       onTap: onTap,
       pressedDecoration: BoxDecoration(color: t.fill1),
-      child: SizedBox(
-        height: 64,
+      // **不写死高度**:用 `minHeight` —— 标题 + 艺人在大字号下要 ~70,
+      // 定高会连着裁字(与 `rows.dart` 里 NordicRow 同一条口径)。
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 64),
         child: Row(
             children: [
               // 拖动把手。原型的队列也支持长按拖动,这里用显式把手 ——
