@@ -109,7 +109,7 @@ List<QualityOption> lowerTiersThan(QualityOption base) {
 /// 直接拿它播」用(见 `NordicAudioHandler._sourceFor`)。
 ///
 /// 白拿的音质:那一份已经在磁盘上了,用它既不花流量、也不会再写第二份缓存 ——
-/// 与 README 里「已经留着的照旧读本机」同一条口径。
+/// 与 `docs/performance.md` 里「已经留着的照旧读本机」同一条口径。
 List<QualityOption> betterTiersThan(QualityOption base) {
   final index = QualityOption.all.indexOf(base);
   return index <= 0 ? const [] : QualityOption.all.sublist(0, index);

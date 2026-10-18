@@ -118,7 +118,7 @@ class _PlayerDock extends StatelessWidget {
 
     // 整条坞按下去**亮一层底色**,与所有列表行同一套(`pressedDecoration`)。
     // 原先这里是裸 `GestureDetector`:按下去屏幕上什么都不动 —— 而坞是一整条
-    // 大块面,手感上就读成「这机器慢」(README 的「性能姿态」记过这条)。
+    // 大块面,手感上就读成「这机器慢」(见 `docs/performance.md` 的「可点元素一律走 Pressable」)。
     // 跳转走 [AppRoutes.openPlayer],路由名只留一处。
     return Pressable(
       onTap: () => AppRoutes.openPlayer(context),

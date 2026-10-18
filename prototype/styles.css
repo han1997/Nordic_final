@@ -1009,7 +1009,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   cursor: pointer;
 }
 /* 整条坞按下去亮一层。原先漏了这条,于是按下去屏幕上什么都不动 ——
-   README 里已经记过:可点元素没有按下反馈时,手感上就是「这机器慢」,
+   docs/performance.md 里已经记过:可点元素没有按下反馈时,手感上就是「这机器慢」,
    而坞正好是一整条大块面。token 与 .row:hover 同一套;圆角由 .tray 的
    overflow: hidden 裁,这里不必再写。 */
 .dock:hover, .dock:active { background: var(--fill-1); }
