@@ -1,3 +1,4 @@
+import 'json_list.dart';
 import 'models.dart';
 import 'subsonic_client.dart';
 import 'subsonic_mapper.dart';
@@ -34,6 +35,12 @@ class SubsonicRepository {
 
   final Map<String, ({Object value, DateTime at})> _detailCache = {};
 
+  /// 详情缓存最多留这么多份。
+  ///
+  /// 过期的仅仅在「被再次问到」时才清 —— 一路逛下去(每张专辑都点开看一眼、
+  /// 再也不回头)就会一直堆着,而每一份都是几十上百行曲目。
+  static const _detailCacheLimit = 48;
+
   T? _cachedDetail<T>(String key) {
     final entry = _detailCache[key];
     if (entry == null) return null;
@@ -45,6 +52,15 @@ class SubsonicRepository {
   }
 
   void _rememberDetail(String key, Object value) {
+    if (_detailCache.length >= _detailCacheLimit) {
+      // 先把过期的清掉;还满就把最早放进来的那一份挤出去
+      // (详情这一层不需要更精细的 LRU —— 它只是「刚看过的还留着」)。
+      final now = DateTime.now();
+      _detailCache.removeWhere((_, e) => now.difference(e.at) > _detailTtl);
+      if (_detailCache.length >= _detailCacheLimit) {
+        _detailCache.remove(_detailCache.keys.first);
+      }
+    }
     _detailCache[key] = (value: value, at: DateTime.now());
   }
 
@@ -64,17 +80,12 @@ class SubsonicRepository {
 
   /// 专辑列表。[sort] 决定排序口径,默认按艺人字母序 ——
   /// 与原型「全部专辑」网格的读法一致。
-  Future<List<Album>> albums({AlbumSort sort = AlbumSort.alphabeticalByArtist}) async {
-    final body = await client.call('getAlbumList2', {
-      'type': sort.wireName,
-      'size': '500',
-    });
-    return SubsonicMapper.albums(SubsonicPayload.albums(body));
-  }
-
-  /// 最近添加。用于首页的「最近添加」货架。
-  Future<List<Album>> recentlyAdded({int size = 20}) =>
-      albumList(AlbumSort.newest, size: size);
+  ///
+  /// 就是 [albumList] 里「整库浏览」那一档:**同一套端点、同一套映射**,
+  /// 差别只在要多少(网格要 500 条,货架只要一屏)。早先这里是一份照着写的
+  /// 副本,两边得手工保持同步。
+  Future<List<Album>> albums({AlbumSort sort = AlbumSort.alphabeticalByArtist}) =>
+      albumList(sort, size: 500);
 
   /// 按口径拉一小版专辑 —— 首页那几条货架(最近添加 / 最近播放 / 常听)。
   ///
@@ -97,7 +108,7 @@ class SubsonicRepository {
     final json = SubsonicPayload.album(body);
     final detail = (
       album: SubsonicMapper.album(json),
-      songs: SubsonicMapper.songs(_mapList(json['song'])),
+      songs: SubsonicMapper.songs(mapList(json['song'])),
     );
     _rememberDetail('album:$albumId', detail);
     return detail;
@@ -115,19 +126,21 @@ class SubsonicRepository {
 
     final body = await client.call('getArtist', {'id': artistId});
     final json = SubsonicPayload.artist(body);
-    final albums = SubsonicMapper.albums(_mapList(json['album']));
+    final albums = SubsonicMapper.albums(mapList(json['album']));
 
     // 排序在映射**之前**做 —— playCount 不在域模型里(界面上不显示它),
     // 为了排序把它抬进 [Song] 的公共接口不值得。
     // 缺 playCount 的服务器上所有值都是 0,排序稳定,保持服务器原序。
-    // 注意复制一份再排:_mapList 返回的是不可变列表,原地 sort 会抛。
-    final songJson = _mapList(json['song']).toList()
+    // 注意复制一份再排:mapList 返回的是不可变列表,原地 sort 会抛。
+    final songJson = mapList(json['song']).toList()
       ..sort((a, b) => _playCount(b).compareTo(_playCount(a)));
 
     final detail = (
       artist: SubsonicMapper.artist(json),
       albums: albums,
-      topSongs: SubsonicMapper.songs(songJson).take(5).toList(),
+      // **排序之后只映射前五首**:一位大艺人可能有几百首曲子,全映射一遍
+      // 就为了留五首,是每次打开艺人页都要付的一笔白账。
+      topSongs: SubsonicMapper.songs(songJson.take(5).toList()),
     );
     _rememberDetail('artist:$artistId', detail);
     return detail;
@@ -198,7 +211,7 @@ class SubsonicRepository {
     final json = SubsonicPayload.playlist(body);
     final detail = (
       playlist: SubsonicMapper.playlist(json),
-      songs: SubsonicMapper.songs(_mapList(json['entry'])),
+      songs: SubsonicMapper.songs(mapList(json['entry'])),
     );
     _rememberDetail('playlist:$playlistId', detail);
     return detail;
@@ -275,9 +288,9 @@ class SubsonicRepository {
     final body = await client.call('getStarred2');
     final json = SubsonicPayload.starred(body);
     return SearchHits(
-      songs: SubsonicMapper.songs(_mapList(json['song'])),
-      albums: SubsonicMapper.albums(_mapList(json['album'])),
-      artists: SubsonicMapper.artists(_mapList(json['artist'])),
+      songs: SubsonicMapper.songs(mapList(json['song'])),
+      albums: SubsonicMapper.albums(mapList(json['album'])),
+      artists: SubsonicMapper.artists(mapList(json['artist'])),
     );
   }
 
@@ -371,17 +384,6 @@ class SubsonicRepository {
     return route;
   }
 
-  /// 收藏状态查询要按 id 找 —— Subsonic 没有「这首歌收藏了吗」的单点查询,
-  /// 只能拉全量收藏名单在本地比对。
-  Future<Set<String>> starredSongIds() async =>
-      (await starred()).songs.map((s) => s.id).toSet();
-
-  Future<Set<String>> starredAlbumIds() async =>
-      (await starred()).albums.map((a) => a.id).toSet();
-
-  Future<Set<String>> starredArtistIds() async =>
-      (await starred()).artists.map((a) => a.id).toSet();
-
   // ---------------- 歌单写操作 ----------------
 
   /// 建一个空歌单。返回新建的歌单。
@@ -471,7 +473,3 @@ int _playCount(Map<String, dynamic> songJson) {
   return count is num ? count.toInt() : 0;
 }
 
-List<Map<String, dynamic>> _mapList(Object? value) {
-  if (value is! List) return const [];
-  return value.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
-}

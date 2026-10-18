@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import 'screens/add_route_screen.dart';
 import 'screens/album_screen.dart';
@@ -166,12 +164,4 @@ abstract final class AppRoutes {
   /// 谁点谁 push,不依赖主壳是否在场。
   static Future<void> openSearch(BuildContext context) =>
       Navigator.of(context).pushNamed(search);
-}
-
-/// 进入页面时若尚未加载过曲库,顺手拉一次。
-Future<void> ensureLibrary(BuildContext context) async {
-  final state = context.read<AppState>();
-  if (state.hasServer && state.phase == LoadPhase.idle) {
-    await state.loadLibrary();
-  }
 }

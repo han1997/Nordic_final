@@ -84,6 +84,23 @@ List<ServerRoute> mergeEditedRoute(
   ];
 }
 
+/// 点一条线路 —— 锁定它;**再点锁定中的那条就是解锁**(回到自动择优)。
+///
+/// 「锁定」是单选语义:留两条 `selected` 会让 [SubsonicClient.activeRoute]
+/// 的取值不确定(它取第一条锁定的)。所以锁一条就取消其余,而只有**已经锁着
+/// 的那条**能解 —— 先前只有「锁」没有「解」,点错了就再也回不去自动择优,
+/// 真机上卡在过这一处。
+///
+/// 线路面板与服务器管理页两个入口原先各写了一份一模一样的实现:改一处忘
+/// 另一处,两边的行为就会不一样。
+List<ServerRoute> toggleRouteLock(List<ServerRoute> routes, ServerRoute route) {
+  final unlocking = route.selected;
+  return [
+    for (final r in routes)
+      r.copyWith(selected: unlocking ? false : r.id == route.id),
+  ];
+}
+
 /// 线路标记 —— 原型「添加线路」页的三档。
 enum RouteTag {
   lan('内网'),

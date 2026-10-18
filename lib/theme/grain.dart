@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -22,14 +21,22 @@ class GrainTexture {
   static ui.Image? get image => _image;
 
   /// 生成(或等待正在进行的生成)。幂等。
+  ///
+  /// **失败也要把 `_pending` 放掉**:留着那个已经失败的 future,后面每一次
+  /// `ensure()` 都会立刻拿回同一个错误 —— 颗粒层这一整场会话就再也没有了,
+  /// 而且一次都不会重试。放掉之后下一次调用重新生成一次(生成本身很便宜)。
   static Future<ui.Image> ensure() {
     final ready = _image;
     if (ready != null) return Future.value(ready);
-    return _pending ??= _generate().then((image) {
+    final pending = _pending;
+    if (pending != null) return pending;
+
+    final run = _generate();
+    _pending = run;
+    return run.then((image) {
       _image = image;
-      _pending = null;
       return image;
-    });
+    }).whenComplete(() => _pending = null);
   }
 
   static Future<ui.Image> _generate() async {
@@ -53,10 +60,6 @@ class GrainTexture {
     picture.dispose();
     return image;
   }
-
-  /// 缩放后的小图(部分设备上直接平铺原分辨率会显得太细)。
-  static Uint8List? _bytes;
-  static Uint8List? get bytes => _bytes;
 }
 
 /// 颗粒叠加层。颗粒图就绪后自动重绘一次。

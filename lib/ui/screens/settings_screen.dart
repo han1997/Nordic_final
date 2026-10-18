@@ -221,11 +221,15 @@ class _CacheSection extends StatelessWidget {
         _SettingRow(
           icon: Icons.album_outlined,
           title: '已用空间',
-          // 关掉缓存之后占用是 0,但那是「没有」而不是「用完了」——
-          // 两句话说清两种没有,别让用户以为哪儿还能挤出空间来。
-          subtitle: used == 0 || limit.isOff
-              ? '缓存里还没有东西'
-              : '占用 ${formatBytes(used)} · 上限 ${limit.label}',
+          // 关掉缓存那一刻占用会被清成 0,但**账还没数到**的窗口里可能还有数 ——
+          // 那种时候说「缓存里还没有东西」,而右边却挂着一颗「清除」,两句话
+          // 自相矛盾。所以:占用非 0 就如实报数,上限只在缓存开着时才提。
+          subtitle: switch ((used > 0, limit.isOff)) {
+            (false, true) => '缓存已关闭,本机没有留下东西',
+            (false, false) => '缓存里还没有东西',
+            (true, true) => '占用 ${formatBytes(used)} · 缓存已关闭',
+            (true, false) => '占用 ${formatBytes(used)} · 上限 ${limit.label}',
+          },
           trailing: used == 0
               ? null
               : SizedBox(

@@ -146,7 +146,11 @@ class HomeScreen extends StatelessWidget {
     }
 
     final library = view.library;
-    final playable = context.watch<PlaybackController>();
+    // **只在需要的那一块订阅播放状态**(`_NowPlayingCard` 自己 watch)。
+    // 这里原先整屏 `watch`:每次播放 / 暂停 / 换歌,三条货架连同它们的封面
+    // 都要重建一遍 —— 而货架只在「点一下开播」时用到播放层(一个回调,
+    // 取值就够了)。同一个理由,上面那些 `select` 也是把重建收窄。
+    final playable = context.read<PlaybackController>();
 
     return RefreshIndicator(
       color: context.accentSafe,
@@ -159,7 +163,7 @@ class HomeScreen extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           const SliverToBoxAdapter(child: _NowPlayingHeader()),
-          SliverToBoxAdapter(child: _NowPlayingCard(playable: playable)),
+          SliverToBoxAdapter(child: _NowPlayingCard()),
           if (view.refreshError != null)
             SliverToBoxAdapter(
               child: StaleBanner(
@@ -250,13 +254,14 @@ class _NowPlayingHeader extends StatelessWidget {
 /// 与音乐库那张「继续收听」是同一件事,但那是首页**主角**、这里是货架上面
 /// 顺手的一格,所以这边给足封面与操作(上一首 / 播放 / 下一首)。
 class _NowPlayingCard extends StatelessWidget {
-  const _NowPlayingCard({required this.playable});
-
-  final PlaybackController playable;
+  const _NowPlayingCard();
 
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
+    // 自己订阅播放状态 —— 这一块是首页上唯一跟着播放重建的东西
+    // (页头与三条货架不该陪着一起重建)。
+    final playable = context.watch<PlaybackController>();
     final song = playable.state.song;
 
     // 还没播过任何东西:给一张**说明性的空卡**,而不是留白 ——

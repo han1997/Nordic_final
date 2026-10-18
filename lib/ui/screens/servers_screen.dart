@@ -703,14 +703,12 @@ class _ServersScreenState extends State<ServersScreen> {
   }
 
   /// 锁定某条线路。锁定是单选 —— 同时取消其它线路的选中;
-  /// **再点锁定中的那条就是解锁**(回到自动择优)。只有「锁」没有「解」的话,
-  /// 点错了就再也回不去自动择优。
+  /// **再点锁定中的那条就是解锁**(回到自动择优)。
+  /// 语义收在 [toggleRouteLock] 里(与线路面板共用一份)。
   Future<void> _selectRoute(AppState state, ServerRoute route) async {
-    final unlocking = route.selected;
-    final routes = (state.server?.routes ?? const <ServerRoute>[])
-        .map((r) => r.copyWith(selected: unlocking ? false : r.id == route.id))
-        .toList();
-    await state.updateRoutes(routes);
+    await state.updateRoutes(
+      toggleRouteLock(state.server?.routes ?? const [], route),
+    );
   }
 
   Future<void> _confirmRemove(AppState state) async {

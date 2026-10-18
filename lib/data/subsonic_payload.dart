@@ -1,5 +1,7 @@
 import 'package:meta/meta.dart';
 
+import 'json_list.dart';
+
 /// Subsonic / OpenSubsonic 响应外壳。
 ///
 /// 所有端点都返回 `{"subsonic-response": {...}}`,失败时里面带 `error`。
@@ -91,7 +93,7 @@ abstract final class SubsonicPayload {
   static List<Map<String, dynamic>> albums(Map<String, dynamic> body) {
     final root = _root(body);
     final list = (root['albumList2'] ?? root['albumList']) as Map?;
-    return _mapList(list?['album']);
+    return mapList(list?['album']);
   }
 
   /// `getAlbum` → `album`
@@ -115,7 +117,7 @@ abstract final class SubsonicPayload {
   /// `getPlaylists` → `playlists.playlist[]`
   static List<Map<String, dynamic>> playlists(Map<String, dynamic> body) {
     final root = _root(body);
-    return _mapList((root['playlists'] as Map?)?['playlist']);
+    return mapList((root['playlists'] as Map?)?['playlist']);
   }
 
   /// `getPlaylist` → `playlist`(含 `entry[]`)
@@ -145,7 +147,7 @@ abstract final class SubsonicPayload {
     Map<String, dynamic> body, {
     required String bucket,
   }) =>
-      _mapList((_root(body)[bucket] as Map?)?['song']);
+      mapList((_root(body)[bucket] as Map?)?['song']);
 
   /// `getStarred2` → `starred2`(三个桶:album / song / artist)
   static Map<String, dynamic> starred(Map<String, dynamic> body) {
@@ -157,7 +159,7 @@ abstract final class SubsonicPayload {
   /// 返回 `structuredLyrics[]`,每个含 `line[]`(value + start)。
   static List<Map<String, dynamic>> structuredLyrics(Map<String, dynamic> body) {
     final root = _root(body);
-    return _mapList((root['lyricsList'] as Map?)?['structuredLyrics']);
+    return mapList((root['lyricsList'] as Map?)?['structuredLyrics']);
   }
 
   /// `getLyrics` → `lyrics`(老接口,纯文本 + 可选 artist/title)
@@ -174,8 +176,4 @@ abstract final class SubsonicPayload {
     return envelope.cast<String, dynamic>();
   }
 
-  static List<Map<String, dynamic>> _mapList(Object? value) {
-    if (value is! List) return const [];
-    return value.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
-  }
 }

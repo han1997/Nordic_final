@@ -308,23 +308,12 @@ void openTab(BuildContext context, AppTab tab) {
 /// 位置不划算,挪进首页顶栏那颗放大镜;空出来的位置给**首页** ——
 /// 「不知道听什么」时才需要一直有个地方可去。
 enum AppTab {
-  home('/home', '首页', Icons.home_outlined),
-  library('/library', '音乐库', Icons.menu_book_outlined),
-  settings('/settings', '设置', Icons.settings_outlined);
+  home('首页', Icons.home_outlined),
+  library('音乐库', Icons.menu_book_outlined),
+  settings('设置', Icons.settings_outlined);
 
-  const AppTab(this.route, this.label, this.icon);
+  const AppTab(this.label, this.icon);
 
-  final String route;
   final String label;
   final IconData icon;
-
-  static AppTab? forRoute(String route) =>
-      values.where((t) => t.route == route).firstOrNull;
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
-  }
 }

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'json_list.dart';
 import 'models.dart';
 
 /// 一次缓存下来的音乐库快照,连同「什么时候存的」。
@@ -224,8 +225,6 @@ class LibraryCache {
         songsComplete: json['songsComplete'] == true,
       );
 
-  static List<T> _list<T>(Object? raw, T Function(Map<String, dynamic>) read) => [
-        for (final item in (raw as List? ?? const []))
-          if (item is Map) read(item.cast<String, dynamic>()),
-      ];
+  static List<T> _list<T>(Object? raw, T Function(Map<String, dynamic>) read) =>
+      [for (final item in mapList(raw)) read(item)];
 }

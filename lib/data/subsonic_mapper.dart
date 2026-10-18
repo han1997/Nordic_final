@@ -1,3 +1,4 @@
+import 'json_list.dart';
 import 'models.dart';
 
 /// Subsonic 响应 → 域模型。
@@ -26,7 +27,7 @@ abstract final class SubsonicMapper {
         albumCount: _int(json['albumCount']) ?? 0,
         coverArtId: _string(json['coverArt']),
         albumIds: [
-          for (final a in _mapList(json['album']))
+          for (final a in mapList(json['album']))
             if (a['id'] is String) a['id'] as String,
         ],
       );
@@ -78,9 +79,9 @@ abstract final class SubsonicMapper {
 
   /// 搜索结果的三个桶。
   static SearchHits search(Map<String, dynamic> result) => SearchHits(
-        songs: songs(_mapList(result['song'])),
-        albums: albums(_mapList(result['album'])),
-        artists: artists(_mapList(result['artist'])),
+        songs: songs(mapList(result['song'])),
+        albums: albums(mapList(result['album'])),
+        artists: artists(mapList(result['artist'])),
       );
 
   /// 结构化歌词(需要 OpenSubsonic 的 `getLyricsBySongId`)。
@@ -91,7 +92,7 @@ abstract final class SubsonicMapper {
     if (structured.isEmpty) return Lyrics.empty;
 
     List<Map<String, dynamic>> linesOf(Map<String, dynamic> block) =>
-        _mapList(block['line']);
+        mapList(block['line']);
 
     final synced = structured.firstWhere(
       (block) => linesOf(block).any((l) => _int(l['start']) != null),
@@ -162,22 +163,15 @@ abstract final class SubsonicMapper {
       value is String ? DateTime.tryParse(value) : null;
 
   static String? _firstArtistId(Object? artists) {
-    final list = _mapList(artists);
+    final list = mapList(artists);
     if (list.isEmpty) return null;
     return _string(list.first['id']);
   }
 
   static String? _firstGenreName(Object? genres) {
-    final list = _mapList(genres);
+    final list = mapList(genres);
     if (list.isEmpty) return null;
     return _string(list.first['name']);
   }
 
-  static List<Map<String, dynamic>> _mapList(Object? value) {
-    if (value is! List) return const [];
-    return value
-        .whereType<Map>()
-        .map((e) => e.cast<String, dynamic>())
-        .toList();
-  }
 }

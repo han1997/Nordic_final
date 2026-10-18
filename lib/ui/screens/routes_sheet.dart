@@ -124,14 +124,10 @@ class _RoutesSheetState extends State<_RoutesSheet> {
 
   /// 选中一条线路。**再点一下锁定中的那条就是解除锁定**(回到自动择优)。
   ///
-  /// 「锁定」是单选语义:留两条 `selected` 会让 [AppState.activeRoute] 的取值
-  /// 不确定。所以锁一条就取消其余;而只有**已经锁着的那条**能解 ——
-  /// 之前只有「锁」没有「解」,点错了就再也回不到自动择优,真机上就卡在这儿。
+  /// 单选与解锁的语义收在 [toggleRouteLock] 里(两处入口共用一份,
+  /// 免得「两个入口行为不一样」)。
   Future<void> _select(AppState state, ServerRoute route) async {
-    final unlocking = route.selected;
-    final routes = (state.server?.routes ?? const <ServerRoute>[])
-        .map((r) => r.copyWith(selected: unlocking ? false : r.id == route.id))
-        .toList();
+    final routes = toggleRouteLock(state.server?.routes ?? const [], route);
     await state.updateRoutes(routes);
     await state.refreshRouteLatency();
   }

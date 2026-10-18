@@ -750,9 +750,27 @@ class AppState extends ChangeNotifier {
 
   // ---------------- 偏好 ----------------
 
-  String? get themeModeName => configStore.loadThemeMode();
+  /// 主题档位的名字。
+  ///
+  /// **记在内存里**:应用根那一层用 `context.select` 盯的正是这一位,而
+  /// select 的选择函数在**每一次通知**上都会跑一遍(下载进度最多每秒四次)——
+  /// 每次都去读一遍偏好,读的却是一个几乎从不改变的值。
+  /// 写只有 [setThemeModeName] 一条路,所以这一份不会与盘上不一致;
+  /// 头一次读之前它还落在盘上(测试先摆偏好、再问值的那条路照样成立)。
+  String? _themeModeName;
+  bool _themeModeRead = false;
+
+  String? get themeModeName {
+    if (!_themeModeRead) {
+      _themeModeName = configStore.loadThemeMode();
+      _themeModeRead = true;
+    }
+    return _themeModeName;
+  }
 
   Future<void> setThemeModeName(String name) async {
+    _themeModeName = name;
+    _themeModeRead = true;
     await configStore.saveThemeMode(name);
     notifyListeners();
   }

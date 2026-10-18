@@ -17,7 +17,7 @@ import '../../theme/tokens.dart';
 ///
 /// 默认那份只留 **200** 个对象:库里 400 多张专辑、每张还要按尺寸各存一份,
 /// 很容易超过它 —— 于是滚动时刚看过的封面可能已经被淘汰,回头又要重下一遍。
-/// 这里放到 1200 个(每张几十 KB,占用仍在几十 MB 量级),过期给一个月。
+/// 这里放到 2000 个(每张几十 KB,占用顶到几十上百 MB),过期给一个月。
 ///
 /// 用 `defaultCacheManager` 而不是逐处传:封面地址散在十几个调用点,
 /// 逐个传的话漏一处就悄悄退回默认的 200。
@@ -481,8 +481,10 @@ class _PlayingBarsState extends State<PlayingBars>
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
-          // 暂停时停在当前相位上,不再随时间变化。
-          final t = widget.playing ? _controller.value : 0.0;
+          // 暂停时 `_controller` 停在原地(见 [didUpdateWidget] 里的 `stop`),
+        // 取它的值就是「停在当前相位上」—— 早先这里写的是 `playing ? value : 0.0`,
+        // 于是每次暂停三根条都**跳回**同一副样子(与这句注释说的正好相反)。
+        final t = _controller.value;
           return Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [

@@ -99,8 +99,12 @@ class NordicAccent {
     final accent = HSLColor.fromAHSL(1, hue, 0.68, 0.66).toColor();
     final value = NordicAccent(accent: accent, c1: c1, c2: c2);
 
-    // 满了整体清掉:重算一遍只是慢一点,记错才是问题。
-    if (_derivedCache.length >= _derivedLimit) _derivedCache.clear();
+    // 满了只挤掉最早那一份,而不是整体清空:一次横扫(库里几百张封面同时
+// 算一遍)撞上「整体清空」时,后面每一格都会重新算一遍 —— 而重算的正是
+// 刚刚才缓存过的那些。挤一份只让一格重新算。
+    if (_derivedCache.length >= _derivedLimit) {
+      _derivedCache.remove(_derivedCache.keys.first);
+    }
     _derivedCache[seed] = value;
     return value;
   }

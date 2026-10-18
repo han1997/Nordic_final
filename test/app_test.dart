@@ -176,7 +176,9 @@ void main() {
       // 原先这条路是一个全局 ValueNotifier 通知主壳换 tab,而那条线**断过一次**
       // (有人发没人听,顶栏放大镜成了死按钮)。搜索能独立成页之后,
       // 「点它会不会有反应」不再取决于主壳在不在。
-      expect(AppTab.values.map((t) => t.route), isNot(contains(AppRoutes.search)));
+      // 三个一级 tab 里没有「搜索」这一格 —— 它靠 push 进来(见 `AppRoutes.search`),
+      // 不占常驻位置(2026-10-17 用户要求,那一格给了首页)。
+      expect(AppTab.values.map((t) => t.label), isNot(contains('搜索')));
       expect(AppRoutes.generate(
         const RouteSettings(name: AppRoutes.search),
       ), isNotNull);
