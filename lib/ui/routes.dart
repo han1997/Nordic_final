@@ -14,8 +14,10 @@ import 'screens/servers_screen.dart';
 
 /// 路由约定。
 ///
-/// 沉浸页(播放 / 歌词 / 专辑 / 艺人 / 歌单)统一从**右侧滑入**,
-/// 与「从列表钻进一个详情」的心理模型一致;它们各自带返回按钮。
+/// 沉浸页(播放 / 歌词 / 专辑 / 艺人 / 歌单)一律**自己带返回按钮**、盖住标签栏。
+/// 过渡分两种:详情页(专辑 / 艺人 / 歌单 / 服务器…)从**右侧滑入**,
+/// 与「从列表钻进一个详情」的心理模型一致;播放页**整屏淡入**(与切 tab 同一套,
+/// 见 [fade]);歌词页与播放页是同一个播放对象的两面,直接换(见 [flip])。
 ///
 /// 集中在这里而不是散在调用点,是为了让「哪些页面对外可见」一眼看全 ——
 /// 也让 [openSearch] 这类跳转有唯一一处入口。
@@ -47,7 +49,7 @@ abstract final class AppRoutes {
   static Route<dynamic>? generate(RouteSettings settings) {
     switch (settings.name) {
       case player:
-        return slide(settings, const PlayerScreen());
+        return fade(settings, const PlayerScreen());
       case lyrics:
         // 歌词与播放页是**同一个播放对象的两面** —— 见 [flip]。
         return flip(settings, const LyricsScreen());
@@ -96,6 +98,33 @@ abstract final class AppRoutes {
         reverseTransitionDuration: Duration.zero,
         pageBuilder: (_, _, _) => page,
         transitionsBuilder: (_, _, _, child) => child,
+      );
+
+  /// 播放页的进出:**整屏淡入** —— 与切 tab 是同一套(`NordicMotion.screenFade`
+  /// 加 `NordicMotion.ease`)。
+  ///
+  /// 2026-10-18 用户提的:滑入那 320ms 在真机上读得出顿挫,「试试切 tab 那套动画」。
+  /// 这一版的读法是:旧那一屏原地不动,新那一屏从透明淡上来 —— 两屏底色是同款深色
+  /// 氛围,于是是一屏「化」进另一屏,而不是「一个页面从右边压上来」。原型已同步
+  /// (`prototype/app.js` 的 `navKind` / `styles.css` 的 `vt-fade-in|out`)。
+  ///
+  /// 与 [slide] 共用一条纪律:**不做缩放**。淡入会为整棵子树开一个离屏合成层,
+  /// 所以这里照 `shell.dart` 切 tab 那处的做法垫一层 [RepaintBoundary] —— 少了它,
+  /// 沉浸页那 62px 的氛围模糊与玻璃 `BackdropFilter` 每帧都要在新缓冲里重做一遍
+  /// (理由见 [generate] 上那段)。
+  ///
+  /// **这是一次试,手感要真机上才有结论**;别顺手把专辑 / 艺人 / 歌单也换成它 ——
+  /// 那几屏读的是「从列表钻进一个详情」,位移那一下正是它要说的意思。
+  static Route<dynamic> fade(RouteSettings settings, Widget page) =>
+      PageRouteBuilder(
+        settings: settings,
+        transitionDuration: NordicMotion.screenFade,
+        reverseTransitionDuration: NordicMotion.screenFade,
+        pageBuilder: (_, _, _) => page,
+        transitionsBuilder: (_, animation, _, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: NordicMotion.ease),
+          child: RepaintBoundary(child: child),
+        ),
       );
 
   /// 页面统一的滑入过渡。用平台默认的 [CupertinoPageRoute] 语义

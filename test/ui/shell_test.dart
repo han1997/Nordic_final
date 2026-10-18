@@ -188,6 +188,30 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  /// 切 tab 那一层淡入用的**就是播放页进出那个常量**(`NordicMotion.screenFade`)。
+  ///
+  /// 2026-10-18 用户要求「进播放页用切 tab 那套动画」—— 两处各写一个字面量迟早漂开
+  /// (一边改了另一边不知道)。`app_test` 那一组验的是播放页那条路由,这一条验的是
+  /// 主壳这一层,两边合起来才说明「同一套」。
+  testWidgets('切 tab 的淡入与播放页进出是同一个时长、同一根缓动', (tester) async {
+    await pumpShell(tester, playingController(playing));
+
+    final fade = tester.widget<FadeTransition>(
+      find
+          .ancestor(
+            of: find.byType(IndexedStack),
+            matching: find.byType(FadeTransition),
+          )
+          .first,
+    );
+    final curve = fade.opacity as CurvedAnimation;
+
+    expect((curve.parent as AnimationController).duration,
+        NordicMotion.screenFade);
+    expect(curve.curve, NordicMotion.ease);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('按住播放坞会亮一层底色，松手撤掉，抬手进播放页', (tester) async {
     await pumpShell(tester, playingController(playing));
 

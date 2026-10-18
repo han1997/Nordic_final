@@ -288,6 +288,13 @@ abstract final class NordicMotion {
   /// 整页交叉淡出。
   static const pageFade = Duration(milliseconds: 340);
 
+  /// 整屏淡入 —— **切 tab 与播放页进出共用一套**(原型 `.screen` 的 `screen-in`
+  /// 与 `::view-transition-new(phone)` 的 `vt-fade-in` 都是 0.22s)。
+  ///
+  /// 两处写成同一个常量不是凑巧:用户要的就是「进播放页用切 tab 那套」,
+  /// 拆成两个数早晚会各自漂走。
+  static const screenFade = Duration(milliseconds: 220);
+
   /// 弹层上滑。
   static const sheetUp = Duration(milliseconds: 300);
 

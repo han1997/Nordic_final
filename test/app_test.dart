@@ -415,6 +415,44 @@ void main() {
           reason: '点歌词回封面也要一样直接，不然来路去路手感不一致');
     });
 
+    /// 播放页的进出是**整屏淡入**,而且用的正是切 tab 那套
+    /// (`NordicMotion.screenFade` + `NordicMotion.ease`)。
+    ///
+    /// 2026-10-18 用户提的:滑入那 320ms 真机上读得出顿挫,「试试切 tab 那套」。
+    /// 这一条把「同一套」拆成三个可验的点钉住:两头时长、过渡类型(淡入而非位移)、
+    /// 缓动曲线 —— 任意一条漂开,「同一套」就不成立了。
+    testWidgets('播放页：进出走淡入，与切 tab 同一套', (tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(builder: (c) {
+          ctx = c;
+          return const SizedBox();
+        }),
+      ));
+
+      final route = AppRoutes.generate(
+        const RouteSettings(name: AppRoutes.player),
+      )! as PageRouteBuilder<dynamic>;
+
+      expect(route.transitionDuration, NordicMotion.screenFade);
+      expect(route.reverseTransitionDuration, NordicMotion.screenFade,
+          reason: '进与出同一套，不然来路去路的手感对不上');
+
+      // 过渡中间那一帧:这里刻意取 0.5,免得 0 / 1 两端把这个区别盖掉。
+      const halfway = AlwaysStoppedAnimation<double>(0.5);
+      final widget =
+          route.transitionsBuilder(ctx, halfway, halfway, const SizedBox());
+
+      expect(widget, isA<FadeTransition>());
+      expect(widget, isNot(isA<SlideTransition>()),
+          reason: '淡入那一下不该再有位移：两屏底色同款，位移那一道边正是顿挫的来源');
+      expect(
+        (widget as FadeTransition).opacity.value,
+        closeTo(NordicMotion.ease.transform(0.5), 1e-9),
+        reason: '缓动要与切换 tab、底部悬浮胶囊同一根曲线',
+      );
+    });
+
     test('专辑 / 艺人 / 歌单仍是滑入 —— 它们不是「翻面」而是进另一个页面', () {
       final settings = [
         RouteSettings(

@@ -39,9 +39,12 @@ class _NordicShellState extends State<NordicShell>
 
   /// 切 tab 时那一下淡入。**与底部悬浮 tab 的胶囊同一套缓动**(`NordicMotion.ease`)——
   /// 高亮滑过去、内容淡进来,两件事读起来才是一下。
+  ///
+  /// 时长与播放页的进出是**同一个常量**(`NordicMotion.screenFade`):那一屏
+  /// 2026-10-18 起也走这套淡入(见 `routes.dart` 的 [AppRoutes.fade])。
   late final AnimationController _fade = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 220),
+    duration: NordicMotion.screenFade,
     value: 1,
   );
 
