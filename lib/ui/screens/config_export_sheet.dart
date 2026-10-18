@@ -114,7 +114,26 @@ class _ExportSheetState extends State<_ExportSheet> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Center(child: QrView(data: payload, size: 216)),
+              // **码面按手头这点宽度尽量铺大**,不钉死一个数:模块数随载荷涨
+              // (实测 1 条线路 61 模块、3 条普通线路 81、4 条长主机名 105),
+              // 手机上每个模块占几个像素正是「扫不扫得动」的那根线 ——
+              // 216 的码面配 105 个模块只剩 2.1px/模块,太薄。
+              //
+              // 上限 300 不是拍的:再大这张纸就得往下滚才能看见「复制文本」那一行,
+              // 而 300 配 105 个模块已经有 2.9px/模块 —— 到顶了。下限那一头是为了
+              // 极窄的约束(超宽屏之外还有测试里那些小画布)别撑破纸面。
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Center(
+                    child: QrView(
+                      data: payload,
+                      size: (constraints.maxWidth - QrView.quietZone * 2)
+                          .clamp(200.0, 300.0),
+                    ),
+                  ),
+                ),
+              ),
               if (_password != null) ...[
                 const SizedBox(height: NordicSpace.s5),
                 Padding(
