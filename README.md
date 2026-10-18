@@ -20,7 +20,7 @@
   缓存**只管缓存**:点名下载的那些在另一个目录里,永远不会被淘汰掉
 - **平台**:Android、iOS、Windows、macOS、Linux、Web(单一 Flutter 代码库)
 
-## 当前阶段:M2 — Android 客户端
+## 当前阶段:M3 — 平台铺开(先做 Windows 桌面)
 
 原型已确认,开发已开始。`prototype/` 是**唯一的设计真相来源**,原样保留作对照基准;
 应用是它的逐项实现,并接上了真实的 Subsonic 协议。
@@ -80,10 +80,10 @@ tool/build.sh 是构建入口 —— 它设好引擎产物镜像再调 flutter
 | --- | --- |
 | M0 | HTML 原型 + 仓库初始化 |
 | M1 | Flutter 工程骨架、分层架构、音源抽象层 |
-| **M2** | Android MVP(浏览 / 搜索 / 播放 / 转码 / 收藏 / 歌单读写 / 歌词 / 下载 / 离线播放)← 当前 |
-| M3 | iOS / 桌面 / Web 铺开,接入飞牛音乐 |
+| M2 | Android MVP(浏览 / 搜索 / 播放 / 转码 / 收藏 / 歌单读写 / 歌词 / 下载 / 离线播放) |
+| **M3** | iOS / 桌面 / Web 铺开,接入飞牛音乐 ← 当前(先做 Windows 桌面) |
 
-M2 尚未完成的部分:
+M2 收口时留下的、**只剩真机走查**的几条:
 
 - 歌单写操作(建 / 改名 / 删 / 加歌 / 按位置移除)与**收藏**(曲 / 专辑 / 艺人)
   都已由 live 用例打到真服务器上验过(`playlist_writes_live_test.dart`、
@@ -111,6 +111,7 @@ M2 尚未完成的部分:
 ```bash
 tool/build.sh            # debug APK
 tool/build.sh release    # release APK
+tool/build.sh windows    # Windows release(整目录打成标准名的 zip)
 tool/build.sh run        # 在设备上跑
 ```
 
@@ -127,6 +128,17 @@ build/dist/Nordic-1.0.17+18-release.apk
 否则会得到一个「名字是新版、内容是旧版」的包,那种包装上手机才发现,比没有名字更糟。
 (浮出来的默认产物 `build/app/outputs/flutter-apk/app-release.apk` 照旧保留:
 `flutter install` / `run --release` 认的是它。)
+
+Windows 侧同理:`tool/build.sh windows` 落成
+`build/dist/Nordic-<版本>-windows-x64.zip`。它的产物**不是一个文件,是一整个目录**
+(`nordic.exe` + `flutter_windows.dll` + `data/` + 各插件的 dll),单拿 exe 跑不起来,
+所以整目录打包、解压出来就能双击;脚本同样校验 exe 里的版本与 pubspec 一致
+(Windows 没有签名那一套,不假装有)。
+
+**Windows 构建要先开系统的开发者模式**:Flutter 给插件建符号链接需要它,不然
+`flutter build windows` 会直接停在 `Building with plugins requires symlink support`
+(设置 → 隐私和安全性 → 开发者选项 → 开发人员模式)。这是这台机器上唯一一条
+Windows 构建的前置条件。
 
 **改名为什么在脚本里而不是 Gradle 里**:AGP 9 把 `VariantOutput.outputFileName`
 从公开 API 拿掉了(只剩 `versionCode` / `versionName`),照旧写法编译不过,

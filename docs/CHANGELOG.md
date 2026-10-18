@@ -363,3 +363,78 @@ Nordic 每一轮改动的原始记录。**从早到晚往下排**(第三轮在�
 
 版本 `1.0.32+33` → `1.0.33+34`(在代码那一个提交里 +1;补用例与改文档的两个提交
 按第八轮的口径不动版本)。
+
+## 第十轮(2026-10-18):Windows 桌面铺开第一步
+
+M2 收口后的下一格是 M3(iOS / 桌面 / Web 铺开,接入飞牛音乐)。先落**桌面**,而且是
+Windows —— 这台开发机**唯一能真正构建并运行**的目标:`flutter doctor` 里
+`[✓] Visual Studio - develop Windows apps`,`flutter devices` 里已经列出
+`Windows (desktop)`。iOS / macOS 在这台机器上根本构建不了;Web 要先把 8 个文件的
+`dart:io` 全部条件化,规模大得多,这一轮不碰。
+
+- **补上 `windows/` 脚手架**。整个目录原先不存在,是
+  `flutter create --platforms=windows` 生成的 —— 但**没在仓库目录里跑它**:那条命令
+  会重写 `.metadata`,它用一份**空的** `MigrateConfig` 重建平台列表(不读现有的),
+  于是 `android` 那组 `create_revision` / `base_revision` 会被抹掉。改成一个临时
+  目录里生成、只把 `windows/` 搬进来,`.metadata` 手工补 `windows` 三条、保住
+  `android` 那条。`--org fun.han1997 --project-name nordic` 都显式给:前者进
+  `Runner.rc` 的 `CompanyName`,而 `path_provider_windows` 的应用支持目录是**读 exe
+  的 VERSIONINFO** 拼出来的 —— 于是落在 `%APPDATA%\fun.han1997\nordic\`,与 Android
+  的 applicationId 同源。
+- **修掉一个静默缺陷:桌面上整块下载被判成不可用**。`download_store.dart` 的
+  `_resolveRoot()` 只接 `MissingPluginException`,而 `getExternalStorageDirectory()`
+  在桌面与 iOS / macOS 上**根本没被实现**(`path_provider_windows` 只覆写了
+  temp / support / documents / cache / downloads 五个,没有 `getExternalStoragePath`)
+  —— 平台层直接抛 `UnimplementedError`,**它继承 `Error` 不是 `Exception`**,
+  `on Exception` 也接不住,于是一路冒到 `open()` 的兜底,把整块下载判成不可用。
+  而那份文件 122 行的注释写的正是「桌面 / iOS 退回应用支持目录」,代码与注释相反。
+  改法:`catch` 放宽成一律接,第二次 `getApplicationSupportDirectory()` 留在 catch
+  里面(两条路都不通才是真的不通);另给 `open()` 那条什么都吞的 catch 加一行
+  `debugPrint` —— 它立刻显出价值:跑用例时把「根目录不可用」的真实原因
+  (`PathExistsException`)打了出来。**先写用例、先看它红**:新加的「目录归属」一组
+  把 `PathProviderPlatform.instance` 换成只实现支持目录的假平台(正是桌面 /
+  foundation 的样子),修复前 `store.isAvailable` 实测为 false —— 这就是那个静默
+  消失的确定性证据。所有既有用例都走 `open(root: ...)`,没有一条碰得到
+  `_resolveRoot`,这正是它活到今天的原因。
+- **装 Windows 音频后端 `just_audio_windows: ^0.2.3`**。它是 Windows 上 just_audio
+  唯一「零下载」的后端:纯原生包(缓存里没有 `lib/`、依赖只有 `flutter`),直接顶掉
+  just_audio 用的那几个平台通道,底层是系统自带的 Media Foundation。所以**没有任何
+  Dart 侧初始化**,也不需要 `Platform.isWindows` 判断 —— 注册就是标准那套
+  (`generated_plugins.cmake` 的 `FLUTTER_PLUGIN_LIST` 多了它,registrant 调
+  `JustAudioWindowsPluginRegisterWithRegistrar`)。
+  `just_audio_media_kit` 明确**否决**:它的 CMake 在**构建期**去 github.com 抓 libmpv
+  并做 MD5 校验,而本机 GitHub TLS 握手不通 —— 那不是备选,是另一个必然
+  `FATAL_ERROR` 的东西。
+- **`AudioService.init` 在 Windows 上是 NoOp,所以「跳过 init」那套没做**。原先预想
+  要加一处平台判断(怕它挂住、每次启动干等 8 秒),核实下来不必:`audio_service`
+  的平台接口在 Windows / Linux 上直接换成 `NoOpAudioService`
+  (`audio_service_platform_interface-0.1.3:18-21`),`init` 既不抛错也不挂住。
+  **`lib/` 里因此一行平台判断都没加** —— 少一处无人验证的分支。
+- **`tool/build.sh` 扩了 `windows` 分支**:产物是**一整个目录**而不是一个文件
+  (`nordic.exe` + `flutter_windows.dll` + `data/` + 各插件 dll),单拿 exe 跑不起来,
+  所以整目录打包成 `build/dist/Nordic-<版本>-windows-x64.zip`(用 PowerShell 的
+  `Compress-Archive`,Git Bash 的 GNU tar 不按扩展名打 zip)。校验 exe 在、引擎 dll
+  与 `data/` 都在、以及 exe 里的版本与 pubspec 一致。顺手把版本号提取抽成
+  `read_version()`。**版本串两种呈现都认**(`1.0.34+35` 与 `1.0.34.35`)——
+  实测过 `FileVersion` 是自由格式字符串。
+
+版本 `1.0.33+34` → `1.0.34+35`(在代码那一个提交里 +1)。
+
+**桌面外壳的两处待办**(这一轮 `windows/` 一个字节没改,好与模板逐字节对照):
+窗口标题是模板渲染出来的小写 `nordic`(`windows/runner/main.cpp` 一行)、
+图标是模板自带那张 Flutter 默认图。两处都要单独做,图标还得先让 `tool/app_icon.py`
+多产出一个 `.ico`(本机没有 PIL,走 ICO 容器直接内嵌 PNG 那种写法,不引新依赖)。
+
+**这一轮没在本机跑过的**:
+
+1. **Windows 构建本身** —— 被一个前置条件挡住:Flutter 给插件建符号链接要求系统开着
+   **开发者模式**,而本机没开(`flutter build windows` 停在 `Building with plugins
+   requires symlink support`)。所以 `tool/build.sh windows` 的产物这一轮**没有真正
+   生成过**,只验了 `bash -n` 与读版本那条机制。
+2. **iOS / macOS 上这个修复是否奏效** —— 依据是源码(`path_provider_foundation` 同样
+   没有 `getExternalStoragePath`),但本机没有 Xcode 工具链,一次都没跑过。
+3. **`audio_service` 在 Windows 上真的是 NoOp** —— 读源码得出的;实跑时看启动是否
+   秒开、控制台是否出现「后台播放服务启动超时」即可判定。
+4. **桌面窗口下的布局观感**(手机版布局第一次上 1280×720)—— 只看不改。
+5. **交付的 zip 在干净机器上能不能跑** —— 模板默认 `/MD`,依赖
+   `vcruntime140.dll` / `msvcp140.dll`。
