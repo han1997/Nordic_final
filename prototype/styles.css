@@ -1851,6 +1851,47 @@ html[data-nav="back"]::view-transition-old(phone) {
 html[data-nav="back"]::view-transition-new(phone) { animation: none; z-index: 0; }
 html[data-nav="back"]::view-transition-group(phone) { animation-duration: 0.26s; }
 
+/* ============================================================
+   进出播放页:整格**淡入**
+   ============================================================
+
+   与「切 tab 的淡入」同一套(0.22s / --ease)—— 2026-10-18 用户要求把播放页
+   的进出从滑动换成这一套试手感(真机反馈滑入那 320ms 有顿挫)。
+
+   实现上是**交叉淡出**:旧那一格在原地不动,新那一格从透明淡上来盖在它上面
+   (View Transition 的新快照本来就压在旧快照之上,不用像返回那样翻 z-index)。
+   两端底色是同款深色氛围,所以读起来是一屏「化」进另一屏。
+
+   返回时反过来:旧的(播放页)淡下去,新的原地露出来。 */
+@keyframes vt-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes vt-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+html[data-nav="fade-in"]::view-transition-old(phone) { animation: none; }
+html[data-nav="fade-in"]::view-transition-new(phone) {
+  animation: vt-fade-in 0.22s var(--ease) both;
+}
+html[data-nav="fade-in"]::view-transition-group(phone) { animation-duration: 0.22s; }
+
+html[data-nav="fade-out"]::view-transition-old(phone) {
+  animation: vt-fade-out 0.22s var(--ease) both;
+  z-index: 1;                              /* 同返回:压在新快照之上才看得见它在淡 */
+}
+html[data-nav="fade-out"]::view-transition-new(phone) { animation: none; z-index: 0; }
+html[data-nav="fade-out"]::view-transition-group(phone) { animation-duration: 0.22s; }
+
+/* 播放页 ↔ 歌词页:**不过渡**。同一个播放对象的两面(点封面互相翻),
+   让它滑或淡都会读成「进了另一个页面」。真机那两屏之间也是直接换
+   (`AppRoutes.flip`,时长 0);原型这边跟着对齐 —— 原先这里走的是滑动。 */
+html[data-nav="flip"]::view-transition-group(*),
+html[data-nav="flip"]::view-transition-old(*),
+html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
+
 /* 封面本身不做淡入淡出,只做位移与缩放 —— 两个快照叠加会在半途发灰。
    overflow:clip 让缩放的快照被裁在圆角框内(封面现在是纯渐变,没有子元素,
    但快照本身是整块矩形,不裁的话放大途中四角会溢出圆角)。 */

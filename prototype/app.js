@@ -1771,12 +1771,35 @@ function renderStage(root) {
     if (morphEl) { morphEl.style.viewTransitionName = ''; morphEl = null; }
   };
 
+  /* 进 / 出**播放页与歌词页**走哪一套过渡(2026-10-18 定):
+
+     - 从别处进播放页 / 歌词页,以及从它们退出去 —— **淡入**(0.22s / --ease,
+       与切 tab 同一套)。真机反馈滑入那 320ms 有顿挫,用户要求换成这一套试试;
+       原型跟着改,不然两边的手感对不上。
+     - 播放页 ↔ 歌词页 —— **不过渡**:它们是同一个播放对象的两面
+       (点封面互相翻),滑动会读成「进了另一个页面」。
+     - 其余二级页(专辑 / 艺人 / 歌单 / 服务器…)仍是**整屏滑动**。
+
+     方向与用途靠 <html data-nav> 分辨,View Transition 自己不知道这是进还是退。 */
+  const PLAYBACK_VIEWS = ['player', 'lyrics'];
+  const navKind = (nav, entering, leaving) => {
+    if (nav === 'push') {
+      if (PLAYBACK_VIEWS.includes(entering) && PLAYBACK_VIEWS.includes(leaving)) return 'flip';
+      if (PLAYBACK_VIEWS.includes(entering)) return 'fade-in';
+    }
+    if (nav === 'back') {
+      if (PLAYBACK_VIEWS.includes(entering) && PLAYBACK_VIEWS.includes(leaving)) return 'flip';
+      if (PLAYBACK_VIEWS.includes(leaving)) return 'fade-out';
+    }
+    return nav;
+  };
+
   const render = (morph = false, nav = '') => {
     const view = VIEWS[STATE.view];
     if (!view) return;
     const paint = () => {
       slot().innerHTML = view(STATE.params) + toastMarkup();
-      /* 推入 / 返回时新页**不自己淡入** —— 那件事改由整页滑动承担。
+      /* 推入 / 返回时新页**不自己淡入** —— 那件事改由整格承担(滑动或淡入,见 navKind)。
          写成行内样式而不是类:行内跟着这次 paint 的节点一起生灭,
          撤标记时不会把淡入动画重新启动一遍。 */
       if (nav) {
@@ -1790,8 +1813,8 @@ function renderStage(root) {
     /* 起名必须在快照之前，撤名必须在快照之后，否则两端拿不到同一对元素。 */
     const named = [];
     if (morph && morphEl) { morphEl.style.viewTransitionName = 'cover-art'; named.push(morphEl); }
-    /* 滑的是**手机那一格**,不是整页 —— 舞台侧栏与说明文字不该跟着滑。
-       方向靠 <html data-nav>:View Transition 自己不知道这是「进」还是「退」。 */
+    /* 动的是**手机那一格**,不是整页 —— 舞台侧栏与说明文字不该跟着动。
+       方向与用途靠 <html data-nav>:View Transition 自己不知道这是「进」还是「退」。 */
     if (nav) {
       slot().style.viewTransitionName = 'phone';
       document.documentElement.dataset.nav = nav;
@@ -1829,14 +1852,16 @@ function renderStage(root) {
 
   const go = (name, params, nav = 'push') => {
     const morph = name === 'player' || name === 'album';
+    const leaving = STATE.view;
     if (name !== STATE.view) STATE.history.push({ view: STATE.view, params: STATE.params });
     STATE.view = name;
     STATE.params = params || {};
     STATE.overlay = '';
-    render(morph, nav);
+    render(morph, navKind(nav, name, leaving));
   };
 
   const back = () => {
+    const leaving = STATE.view;
     const prev = STATE.history.pop();
     if (prev) {
       STATE.view = prev.view;
@@ -1846,7 +1871,7 @@ function renderStage(root) {
       STATE.params = { lib: 'songs' };
     }
     STATE.overlay = '';
-    render(true, 'back');
+    render(true, navKind('back', STATE.view, leaving));
   };
 
   root.innerHTML = `
