@@ -10,7 +10,9 @@
 #   tool/build.sh                  # 打 debug APK
 #   tool/build.sh release         # 打 release APK(并落成标准化名字,见下)
 #   tool/build.sh windows         # 打 Windows release(整目录打成标准名的 zip)
+#   tool/build.sh web             # 打 Web release(整目录打成标准名的 zip)
 #   tool/build.sh run -d windows  # 在桌面跑
+#   tool/build.sh run -d chrome   # 在浏览器里跑(会自动补 --no-web-resources-cdn)
 #   tool/build.sh <任意 flutter 参数...>
 set -euo pipefail
 
@@ -140,9 +142,84 @@ standardize_windows() {
   echo "  (flutter 默认那个 $built 照旧保留,flutter run -d windows 认的是它)"
 }
 
+# 标准化 Web 产物:`Nordic-<版本>-web.zip`。
+#
+# 与 Windows 同构:产物**也是一整个目录**(`index.html` + `main.dart.js` +
+# `flutter_bootstrap.js` + `canvaskit/` + assets),整目录打包,解压出来拿静态
+# 服务器提供即可。
+#
+# 校验四条,每条都要能真查出东西:
+#  1. 六个入口文件都在 —— 少一个,这个 zip 解出来就是跑不起来;
+#  2. `useLocalCanvasKit` 出现在 `flutter_bootstrap.js` 里 —— 这是防「有人绕过这个
+#     脚本手打 `flutter build web`」的守门。那种产物会在**运行时**去
+#     www.gstatic.com 取 CanvasKit,而失败形态是**停在加载动画上、不报错也不超时**
+#     (装载器卡在 main.dart.js 之前)—— 本轮最难查的一种,所以单独一条;
+#  3. **版本对齐**:读 `build/web/version.json`。那份是**构建系统**在构建那一刻从
+#     当次的 pubspec 写进去的(不是我们从手上这份抄的),所以「改了版本忘了重建」
+#     必被抓,与 apk / windows 那两条同一个理由;
+#  4. **没有签名那套** —— web 产物没有签名,也没有 Android 那种包名身份可校。
+#     这里不假装有。
+standardize_web() {
+  local built="$1"
+  local version zip_name out out_abs written written_num f
+  version="$(read_version)"
+  if [ -z "$version" ]; then
+    echo "读不出 pubspec.yaml 里的 version,产物名没法标准化" >&2
+    return 1
+  fi
+
+  for f in index.html main.dart.js flutter_bootstrap.js version.json \
+           canvaskit/canvaskit.js canvaskit/canvaskit.wasm; do
+    if [ ! -f "$built/$f" ]; then
+      echo "$built 不完整(缺 $f),这个 zip 解出来跑不起来" >&2
+      return 1
+    fi
+  done
+
+  if ! grep -q useLocalCanvasKit "$built/flutter_bootstrap.js"; then
+    echo "$built/flutter_bootstrap.js 里没有 useLocalCanvasKit" >&2
+    echo "—— 这份产物运行时会去 www.gstatic.com 取 CanvasKit,打开页面会停在加载动画上。" >&2
+    echo "   请走 tool/build.sh web(web) 分支带着 --no-web-resources-cdn)。" >&2
+    return 1
+  fi
+
+  written="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    "$built/version.json")"
+  written_num="$(sed -n 's/.*"build_number"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    "$built/version.json")"
+  if [ "$written" != "${version%%+*}" ] || [ "$written_num" != "${version##*+}" ]; then
+    echo "产物里的版本 ${written}+${written_num} 与 pubspec 的 $version 对不上" >&2
+    return 1
+  fi
+
+  zip_name="Nordic-${version}-web.zip"
+  out="build/dist/${zip_name}"
+  out_abs="$PWD/build/dist/${zip_name}"
+  mkdir -p build/dist
+  rm -f "$out"
+  ( cd "$built" && powershell -NoProfile -Command \
+      "Compress-Archive -Path '.\\*' -DestinationPath '$(cygpath -w "$out_abs")' -Force" ) \
+    || return 1
+
+  echo "✓ $out"
+  echo "  版本 ${version}(产物内 version.json 逐字核对过)· 整目录打包"
+  echo "  入口 index.html · 本地 CanvasKit(未走 www.gstatic.com)· 无签名可校"
+  echo "  必须从根提供(index.html 里是 base href=\"/\");"
+  echo "  (flutter 默认那个 $built 照旧保留,flutter run -d chrome 认的是它)"
+}
+
 case "${1:-debug}" in
   run)
     shift
+    # 跑在浏览器里时自动补上那个开关(理由见 `web)` 分支那段注释)。漏了它的症状是
+    # 「页面停住、什么都不说」,人大概率会先怀疑代码而不是少了个开关 —— 与脚本顶部
+    # 那句「本机网络环境需要的那几项配置收在一处」同一类。**只认 web 设备 id**,
+    # 桌面 / 手机原样透传;用户自己传过就不叠。
+    case " $* " in
+      *web-resources-cdn*) ;;
+      *" -d chrome"*|*" -d edge"*|*" -d web-server"*|*"--device-id chrome"*|*"--device-id edge"*|*"--device-id=chrome"*|*"--device-id=edge"*)
+        set -- "$@" --no-web-resources-cdn ;;
+    esac
     exec flutter run "$@"
     ;;
   release)
@@ -154,6 +231,20 @@ case "${1:-debug}" in
     shift
     flutter build windows --release "$@"
     standardize_windows build/windows/x64/runner/Release
+    ;;
+  web)
+    shift
+    # **`--no-web-resources-cdn` 不是可选项。** web 目标的默认是让**页面在运行时**
+    # 去 www.gstatic.com 取 CanvasKit(渲染器本体):`kWebResourcesCdnFlag` 的
+    # `defaultsTo: true`,`flutter_web_sdk/flutter_js/src/utils.js` 的
+    # `getCanvaskitBaseUrl()` 于是在 `engineRevision && !useLocalCanvasKit` 时
+    # 返回那个 CDN 地址。取不到的表现是**页面停在加载动画上,不报错也不超时**
+    # (装载器卡在 main.dart.js 之前)—— 最难查的一种。
+    # 加了这个开关,CanvasKit 从产物自己的 `build/web/canvaskit/` 里取。
+    # 注意 `FLUTTER_STORAGE_BASE_URL` **管不到这一跳**:它只管构建期的引擎产物下载,
+    # 而那个 CDN 地址是运行时用的、且在工具里是硬编码的。
+    flutter build web --release --no-web-resources-cdn "$@"
+    standardize_web build/web
     ;;
   debug|apk)
     shift
