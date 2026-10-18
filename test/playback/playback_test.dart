@@ -9,9 +9,11 @@ import 'package:just_audio/just_audio.dart';
 import 'package:nordic/data/media_cache.dart';
 import 'package:nordic/data/models.dart';
 import 'package:nordic/data/network_status.dart';
+import 'package:nordic/data/server_config.dart';
 import 'package:nordic/playback/audio_handler.dart';
 import 'package:nordic/playback/playback_controller.dart';
 import 'package:nordic/playback/quality.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   // 造处理器会碰 AudioSession 的平台通道,先起绑定。
@@ -163,6 +165,91 @@ void main() {
         const PlaybackState().copyWith(repeat: PlaybackRepeat.one).repeat,
         PlaybackRepeat.one,
       );
+    });
+  });
+
+  group('记忆循环与随机', () {
+    // 真机上报:「循环 / 随机每次冷启动都悄悄回到默认」。真值本来只活在
+    // just_audio 的播放器上(`loopMode` / `shuffleModeEnabled`),**没有任何一处
+    // 读盘** —— 这一组钉的就是补上的那两笔账。
+    test('盘上的名字认不出来就回顺序播放（与档位面板同一条兜底）', () {
+      expect(repeatModeByName('all'), PlaybackRepeat.all);
+      expect(repeatModeByName('one'), PlaybackRepeat.one);
+      expect(repeatModeByName('off'), PlaybackRepeat.off);
+      // 手改过 / 以后删过档 / 从没存过 —— 一律当顺序播放,不崩。
+      expect(repeatModeByName('没见过的'), PlaybackRepeat.off);
+      expect(repeatModeByName(null), PlaybackRepeat.off);
+    });
+
+    late _FakePlayer player;
+    late NordicAudioHandler handler;
+    late ConfigStore store;
+
+    setUp(() async {
+      // 一份空盘 = 一次全新安装。
+      SharedPreferences.setMockInitialValues({});
+      store = await ConfigStore.open();
+      player = _FakePlayer();
+      handler = NordicAudioHandler(() => null, QualityController(), player: player);
+    });
+
+    tearDown(() => player.dispose());
+
+    test('点一下循环 / 随机：当场落到播放器上，并且记进盘', () async {
+      final playback = PlaybackController(handler, config: store);
+
+      // 每点一下都让状态流回得来 —— 下一态是从 [PlaybackState] 上算的。
+      await playback.cycleRepeat(); // 顺序播放 → 列表循环
+      await pumpEventQueue();
+      await playback.cycleRepeat(); // → 单曲循环
+      await pumpEventQueue();
+      await playback.toggleShuffle();
+      await pumpEventQueue();
+
+      expect(player.loopMode, LoopMode.one);
+      expect(player.shuffleModeEnabled, isTrue);
+      // 存的是枚举的**名字**(存序号会在枚举增删时错位)。
+      expect(store.loadRepeatModeName(), 'one');
+      expect(store.loadShuffle(), isTrue);
+
+      playback.dispose();
+    });
+
+    test('重启：同一份盘上再建一个控制器，循环 / 随机还是上次那两态', () async {
+      final first = PlaybackController(handler, config: store);
+      await first.cycleRepeat();
+      await pumpEventQueue();
+      await first.cycleRepeat();
+      await pumpEventQueue();
+      await first.toggleShuffle();
+      await pumpEventQueue();
+      first.dispose();
+
+      // 换一个播放器 = 换一次冷启动,但**盘还是那一份**。
+      final fresh = _FakePlayer();
+      addTearDown(fresh.dispose);
+      final restarted = PlaybackController(
+        NordicAudioHandler(() => null, QualityController(), player: fresh),
+        config: store,
+      );
+      await pumpEventQueue();
+
+      expect(fresh.loopMode, LoopMode.one, reason: '上次停在单曲循环');
+      expect(fresh.shuffleModeEnabled, isTrue, reason: '上次随机是开着的');
+      restarted.dispose();
+    });
+
+    test('默认那两态：播放器不动，盘上也不留痕', () async {
+      final playback = PlaybackController(handler, config: store);
+      await pumpEventQueue();
+
+      // 「没存过」就是没存过 —— 别在第一次启动就替用户写一个 false 进去。
+      expect(store.loadRepeatModeName(), isNull);
+      expect(store.loadShuffle(), isFalse); // 没存过与存了 false 在这里等价
+      expect(player.loopMode, LoopMode.off);
+      expect(player.shuffleModeEnabled, isFalse);
+
+      playback.dispose();
     });
   });
 
@@ -730,6 +817,34 @@ class _FakePlayer extends AudioPlayer {
   LoopMode loopMode = LoopMode.off;
 
   @override
+  bool shuffleModeEnabled = false;
+
+  /// 循环 / 随机两条状态流。真播放器上 `setLoopMode` / `setShuffleModeEnabled`
+  /// 只改序列状态、**不发 playbackEvent**,界面态是从这两条专用流回读的
+  /// (见 `PlaybackController._wire`)。假的要是不发,`state` 就永远停在旧值 ——
+  /// 「连点两下还停在列表循环」这种事只会在假播放器上发生。
+  final loopModes = StreamController<LoopMode>.broadcast();
+  final shuffles = StreamController<bool>.broadcast();
+
+  @override
+  Stream<LoopMode> get loopModeStream => loopModes.stream;
+
+  @override
+  Stream<bool> get shuffleModeEnabledStream => shuffles.stream;
+
+  @override
+  Future<void> setLoopMode(LoopMode mode) async {
+    loopMode = mode;
+    loopModes.add(mode);
+  }
+
+  @override
+  Future<void> setShuffleModeEnabled(bool enabled) async {
+    shuffleModeEnabled = enabled;
+    shuffles.add(enabled);
+  }
+
+  @override
   Duration position = Duration.zero;
 
   @override
@@ -772,5 +887,7 @@ class _FakePlayer extends AudioPlayer {
   Future<void> dispose() async {
     await positions.close();
     await events.close();
+    await loopModes.close();
+    await shuffles.close();
   }
 }

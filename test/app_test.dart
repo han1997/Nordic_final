@@ -780,6 +780,84 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('章节头：右侧动作和标题要在同一条中线上', () {
+    // 真机上报的「测速按钮里『测速』两个字没对齐」。这一组钉两件事:
+    //   (1) 右侧那颗胶囊 / 排序键不许被基线行压到标题下面;
+    //   (2) 胶囊**自己**的内容要居中 —— 未选中态走玻璃底(Stack 默认顶对齐),
+    //       选中态走不透明的定高盒子(会撑满、天然居中),两边不一致的话
+    //       点一下「测速」→「测速中」,字会往下跳一截。
+    Future<void> pumpHeader(WidgetTester tester, {bool selected = false}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: NordicTheme.build(NordicTokens.dark),
+          home: Scaffold(
+            body: SectionHeader(
+              title: '线路',
+              count: '3 条',
+              trailing: NordicChip(
+                label: '测速',
+                icon: Icons.refresh,
+                height: 30,
+                selected: selected,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('胶囊的中心 == 标题的中心', (tester) async {
+      await pumpHeader(tester);
+      expect(tester.takeException(), isNull);
+
+      final titleCenter = tester.getRect(find.text('线路')).center.dy;
+      final chipCenter = tester.getRect(find.byType(NordicChip)).center.dy;
+
+      // 两个都是那一行的直接子节点、都被居中,所以中心恒等于行高的一半 ——
+      // 差值是结构性的,不靠字号凑。epsilon 只用来吸收半个像素的取整。
+      expect(
+        chipCenter,
+        moreOrLessEquals(titleCenter, epsilon: 0.5),
+        reason: '右侧胶囊要和标题中线对齐（原型 .section .chip{align-self:center})',
+      );
+    });
+
+    testWidgets('失败形态：胶囊不许沉到标题下面', (tester) async {
+      await pumpHeader(tester);
+      expect(
+        tester.getRect(find.byType(NordicChip)).center.dy,
+        lessThanOrEqualTo(tester.getRect(find.text('线路')).center.dy + 0.5),
+        reason: '基线行会把非文字的 trailing 往下压，这正是真机上报的那一版',
+      );
+    });
+
+    testWidgets('胶囊里的字也要在胶囊里居中 —— 选中 / 未选中都是', (tester) async {
+      // 两态各差多少才算「字在里面居中」,分开量:
+      // 未选中走 NordicGlass(Stack 默认把内容顶对齐),选中走不透明的定高盒子
+      // (会撑满、天然居中)。只量未选中态的话,「点一下字往下跳」这件事漏得掉。
+      final offsets = <bool, double>{};
+      for (final selected in [false, true]) {
+        await pumpHeader(tester, selected: selected);
+        expect(tester.takeException(), isNull, reason: '选中态 $selected');
+        final chip = tester.getRect(find.byType(NordicChip));
+        final label = tester.getRect(find.text('测速'));
+        offsets[selected] = label.center.dy - chip.center.dy;
+        expect(
+          offsets[selected],
+          moreOrLessEquals(0, epsilon: 0.5),
+          reason: '选中态 $selected：字没落在胶囊中线上',
+        );
+      }
+      // 再钉一次「点一下字不跳」:两态下字相对胶囊的偏移必须一致。
+      expect(
+        offsets[true],
+        moreOrLessEquals(offsets[false]!, epsilon: 0.5),
+        reason: '「测速」→「测速中」时两个字不该跳',
+      );
+    });
+  });
 }
 
 /// 剥掉 `ResizeImage` 那层包装(设了 cacheWidth 就会有)。

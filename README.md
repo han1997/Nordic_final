@@ -556,6 +556,59 @@ flutter test
 - **`_songsExhausted` / `_maybeEmpty` / `toggleRouteLock` / `mergeEditedRoute` /
   `json_list.dart`** 都是这一轮新立的口径,改它们之前先看各自的注释与用例。
 
+### 第七轮(2026-10-18):循环 / 随机的记忆 + 一处对不齐的两个根
+
+真机反馈两条,都不是新功能。**原型这一轮一行没改**:一条是纯行为,另一条是
+**应用没跟上原型**(原型那两处 CSS 早就是目标形态)。
+
+- **循环模式与随机播放记进盘里**。这两个开关原先只活在 `just_audio` 播放器上
+  (`LoopMode` / `shuffleModeEnabled`),没有任何一处读写盘 —— 于是每次冷启动都悄悄
+  回到「顺序播放 + 不随机」。现在与排序 / 转码档 / 缓存档同一套口径:存**枚举名字**
+  (`nordic.pref.repeat` / `nordic.pref.shuffle`)而不是序号,免得以后往
+  `PlaybackRepeat` 里插一态就把老档错位;认不出来的值当顺序播放(`repeatModeByName`,
+  与 `QualityOption.byId` 同一条兜底 —— 一个坏值不该把启动搞崩)。落盘落在
+  **用户动作**里(`cycleRepeat` / `toggleShuffle`)而不是流监听上:记的是意图值,
+  回读要等一个微任务,连点两下会把上一态记进盘;而且是 `await` 平台那一头成功了才写,
+  失败时不留脏值。冷启动由 `_restoreModes()` 摆回**播放器** —— 这两个是播放器级开关,
+  装载队列从不碰它们,摆上去就生效;默认值不调,省一次平台往返也省一次没人要的
+  通知栏播报。`PlaybackController` 的 `config` 是**可空**的:不传就是「不记忆」,
+  测试与假播放层照旧。不进设置页、也不走 `AppState` —— 循环 / 随机不在设置页露脸,
+  而 `AppState` 的偏好 setter 都要 `notifyListeners()`,给一个不进界面的值赔上
+  整棵树的重建不划算。
+- **「测速」按钮里那两个字贴顶**(真机上报的那一处)。根子在 `NordicGlass` 的 `Stack`
+  取的是默认的 `topStart` + `loose`:未选中的胶囊是「定高 30 的盒子 + 一层玻璃底 +
+  只有 ~15 高的内容」,内容被顶对齐;而选中态走不透明的定高 `Container`(撑满、
+  天然居中)——于是点一下「测速」变「测速中」,字会往下跳一截。修法是在未选中分支
+  包一层 `Center`,等价于原型那句 `.chip { align-items: center }`。
+- **章节头右侧那颗胶囊 / 排序键整体沉到标题下面**。`SectionHeader` 是个 `baseline`
+  对齐的 `Row`,标题、计数、`Spacer` 与 `trailing` **全是它的直接子节点** —— 于是塞进
+  `trailing` 的**非文字**部件也被按基线摆(基线行的定位是
+  `maxBaselineDistance - childBaseline`,而 `RenderFlex` 算嵌套 flex 的基线时不加
+  子节点的居中偏移)。原型明确把它摘出来(`.section .chip, .section .pill-btn
+  { align-self: center }`),**移植时留下了基线行、丢了这条摘出的规则**。改法:外层
+  回到默认居中,标题与计数之间那层基线关系用一个内层 `Row` 保住。一处改动覆盖
+  3 个带非文字 `trailing` 的调用点(测速胶囊 ×1、两处排序键),其余 21 处渲染结果不变。
+- 顺手扫出来的其余几处(整个 `lib/` 过了一遍):队列行原先是 `SizedBox(height: 64)`,
+  大字号下标题加艺人两行要 ~70(改成 `ConstrainedBox(minHeight:)`,与 `NordicRow`
+  同一套);设置页那个 `chevron_right` 是 17、其余六处都是 18;`GhostButton` 的图标
+  间距 8 对不上原型的 9,`PillButton` 的 6 对不上 7。其余手搓行逐处读过,都是裸 `Row`
+  (默认居中),没有别的活的偏移;两处「两边都是文字」的基线行(服务器页的数值加单位、
+  弹层标题加副标题)与原型一致,没动。
+- **守卫**:`test/app_test.dart` 的「章节头」那一组,原先只是**光秃秃地 pump 一个
+  `NordicChip`** —— 既没把它放进 `SectionHeader`,也没查过它内部的居中,这正是这两个
+  病先前漏过去的原因。现在三条:胶囊中心 == 标题中心、胶囊不许沉到标题下面、**选中与
+  未选中两态里字都落在胶囊中线上、且两态的偏移一致**(最后这条就是「点一下字不跳」,
+  只修外层行的话它会继续红)。改前红、改后绿。
+- **假播放器补了两个洞**:`test/playback/playback_test.dart` 的 `_FakePlayer` 原先只
+  覆盖了 `loopMode` 字段,`setLoopMode` / `setShuffleModeEnabled` 一调就碰平台通道。
+  照它已有的写法补齐,并让那两条流真的发事件 —— 否则 `cycleRepeat` 读到的永远是旧态
+  (它从流上回读,不是自己记账)。「记忆循环与随机」那一组用**同一份 prefs 再建一个
+  控制器**来验「重启之后还在」。
+- **考虑过、这一轮没做**:没动 `NordicGlass` 的 `Stack` 的 `fit` / `alignment`。
+  那是全应用每一块玻璃面的地基(坞、顶栏、弹层、分段控件都走它),改它爆炸半径大得多
+  —— 真要动该是单独一轮,并且逐屏截图对照。
+- 版本 `1.0.31+32` → `1.0.32+33`。
+
 ### 已知环境问题
 
 开发机上的 AVD `nordic-ui-api34` 网络配置有缺陷:`eth0` 是
