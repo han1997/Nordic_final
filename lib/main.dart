@@ -95,7 +95,9 @@ Future<void> main() async {
   }
 
   final audioHandler = await service;
-  final playback = PlaybackController(audioHandler);
+  // 把偏好交进播放层:循环 / 随机要跨冷启动记住(构造时摆回播放器,
+  // 之后每点一下记一笔)。见 PlaybackController 的 _restoreModes / toggleShuffle。
+  final playback = PlaybackController(audioHandler, config: configStore);
 
   // 换线路之后把正在放的那一首也挪过去 —— 流地址是装载时拼好的,不重新装载的话
   // 界面会说「正在走新线路」,声音却还在旧那条流里(真机报的「线路切换无效」)。

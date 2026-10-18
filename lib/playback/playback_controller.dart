@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../data/models.dart';
+import '../data/server_config.dart';
 import 'audio_handler.dart';
 import 'quality.dart';
 
@@ -32,6 +33,14 @@ PlaybackRepeat nextRepeatMode(PlaybackRepeat current) => switch (current) {
       PlaybackRepeat.off => PlaybackRepeat.all,
       PlaybackRepeat.all => PlaybackRepeat.one,
       PlaybackRepeat.one => PlaybackRepeat.off,
+    };
+
+/// 盘上的名字 → 枚举。认不出来的(手改过 / 以后删过档)当**顺序播放** ——
+/// 与 `QualityOption.byId` 同一条兜底口径:一个坏值不该把启动搞崩。
+PlaybackRepeat repeatModeByName(String? name) => switch (name) {
+      'all' => PlaybackRepeat.all,
+      'one' => PlaybackRepeat.one,
+      _ => PlaybackRepeat.off,
     };
 
 /// 界面态 → `audio_service` 的重复模式。反方向在 `audio_handler.dart` 的
@@ -127,11 +136,16 @@ Duration tailDurationAfter(List<Song> queue, int index) {
 }
 
 class PlaybackController extends ChangeNotifier {
-  PlaybackController(this._handler) {
+  PlaybackController(this._handler, {this.config}) {
     _wire();
+    _restoreModes();
   }
 
   final NordicAudioHandler _handler;
+
+  /// 循环 / 随机的落盘处。**没传就是「不记忆」** —— 测试与假播放层照旧,
+  /// 不该为一个偏好白白多出一次 prefs 访问。
+  final ConfigStore? config;
 
   final List<StreamSubscription<dynamic>> _subs = [];
 
@@ -281,6 +295,21 @@ class PlaybackController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 冷启动把上次的循环 / 随机摆回**播放器**。
+  ///
+  /// 此刻队列还是空的,但这两个都是**播放器级**开关(不是队列级)——
+  /// `setQueue` 从不碰它们,摆上去之后第一次装载队列就照着生效。
+  /// 默认值(顺序播放 / 不随机)不调:省一次平台往返,也省一次没人要的通知栏播报。
+  void _restoreModes() {
+    final repeat = repeatModeByName(config?.loadRepeatModeName());
+    if (repeat != PlaybackRepeat.off) {
+      unawaited(_handler.setRepeatMode(audioServiceRepeatModeFor(repeat)));
+    }
+    if (config?.loadShuffle() ?? false) {
+      unawaited(_handler.setShuffleMode(AudioServiceShuffleMode.all));
+    }
+  }
+
   // ---------------- 命令 ----------------
 
   /// 用整个列表替换队列并从 [index] 开播。
@@ -319,19 +348,28 @@ class PlaybackController extends ChangeNotifier {
   Future<void> reorder(int oldIndex, int newIndex) =>
       _handler.reorder(oldIndex, newIndex);
 
-  Future<void> toggleShuffle() => _handler.setShuffleMode(
-        _state.shuffle
-            ? AudioServiceShuffleMode.none
-            : AudioServiceShuffleMode.all,
-      );
+  /// 随机开关。**记进盘里**:下次冷启动要还是它。
+  ///
+  /// 落盘的是**意图值**(`!state.shuffle`)而不是回读:回读要等一个微任务,
+  /// 连点两下会把上一态记进盘。平台那一头成功了才写 —— 抛异常时不留脏值。
+  Future<void> toggleShuffle() async {
+    final enabled = !_state.shuffle;
+    await _handler.setShuffleMode(
+      enabled ? AudioServiceShuffleMode.all : AudioServiceShuffleMode.none,
+    );
+    await config?.saveShuffle(enabled);
+  }
 
   /// 循环键点一下:**顺序播放 → 列表循环 → 单曲循环 → 顺序播放**。
   ///
   /// 落成哪一态由界面从 [state] 上读(图标 + 选中底色),这里不返回值 ——
   /// 早先返回过,是为了让界面弹一句文案说「刚才那下生效了」,那句已移除。
-  Future<void> cycleRepeat() => _handler.setRepeatMode(
-        audioServiceRepeatModeFor(nextRepeatMode(_state.repeat)),
-      );
+  /// 同样记进盘里(存的是枚举的**名字**)。
+  Future<void> cycleRepeat() async {
+    final next = nextRepeatMode(_state.repeat);
+    await _handler.setRepeatMode(audioServiceRepeatModeFor(next));
+    await config?.saveRepeatModeName(next.name);
+  }
 
   /// 切转码档位。会以新档位重新加载当前曲目,位置尽量保住。
   Future<void> setQuality(QualityOption option) async {

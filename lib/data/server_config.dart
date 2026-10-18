@@ -156,6 +156,8 @@ class ConfigStore {
   static const _albumSortKey = 'nordic.pref.albumSort';
   static const _songSortKey = 'nordic.pref.songSort';
   static const _cacheLimitKey = 'nordic.pref.cacheLimit';
+  static const _repeatKey = 'nordic.pref.repeat';
+  static const _shuffleKey = 'nordic.pref.shuffle';
 
   String? loadThemeMode() => _prefs.getString(_themeKey);
 
@@ -198,6 +200,19 @@ class ConfigStore {
   String? loadCacheLimit() => _prefs.getString(_cacheLimitKey);
 
   Future<void> saveCacheLimit(String id) => _prefs.setString(_cacheLimitKey, id);
+
+  /// 播放页那两颗键(循环 / 随机)。
+  ///
+  /// **存枚举名字**(与排序、缓存档位同一套做法):存序号的话,以后往
+  /// `PlaybackRepeat` 里插一档,所有人盘上的值都会错位。
+  String? loadRepeatModeName() => _prefs.getString(_repeatKey);
+
+  Future<void> saveRepeatModeName(String name) =>
+      _prefs.setString(_repeatKey, name);
+
+  bool loadShuffle() => _prefs.getBool(_shuffleKey) ?? false;
+
+  Future<void> saveShuffle(bool value) => _prefs.setBool(_shuffleKey, value);
 }
 
 /// 用已有配置拼一个可直接开工的客户端。
