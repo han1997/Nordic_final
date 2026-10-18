@@ -28,7 +28,8 @@
 ```
 lib/
   theme/      设计 token(styles.css :root 的 Dart 翻译)、强调色取色、玻璃、氛围背景
-  data/       Subsonic 协议:鉴权、客户端(多线路择优 + 故障切换)、映射、配置
+  data/       音源抽象层(music_source):界面只认 MusicSource 这个接口,不认协议
+              Subsonic 协议:鉴权、客户端(多线路择优 + 故障切换)、映射、配置
               以及下载:落盘索引(download_store)、下载器(download_manager)、网络探针
               缓存:音乐库快照(library_cache)、听过的歌(media_cache)与文件命名规则
               (media_files)、排序口径(sorting)
@@ -79,9 +80,9 @@ tool/build.sh 是构建入口 —— 它设好引擎产物镜像再调 flutter
 | 阶段 | 内容 |
 | --- | --- |
 | M0 | HTML 原型 + 仓库初始化 |
-| M1 | Flutter 工程骨架、分层架构、音源抽象层 |
+| M1 | Flutter 工程骨架、分层架构 |
 | M2 | Android MVP(浏览 / 搜索 / 播放 / 转码 / 收藏 / 歌单读写 / 歌词 / 下载 / 离线播放) |
-| **M3** | iOS / 桌面 / Web 铺开,接入飞牛音乐 ← 当前(Windows 桌面已通 · Web 第一版 · 飞牛音乐未接) |
+| **M3** | iOS / 桌面 / Web 铺开,接入飞牛音乐 ← 当前(Windows 桌面已通 · Web 第一版 · 音源接缝已立 · 飞牛音乐未接) |
 
 M2 收口时留下的、**只剩真机走查**的几条:
 

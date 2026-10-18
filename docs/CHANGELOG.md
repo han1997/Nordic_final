@@ -556,3 +556,139 @@ M3 的「铺开」里,Web 是本机还能真跑起来的最后一个目标(iOS �
    http 地址打开页面」时发生(`localhost` / `127.0.0.1` 是 potentially trustworthy
    origin,不受影响),所以开发期碰不到。修它要动 `lib/state/`,那是另一个决定。
 3. Web 上的下载入口该长什么样(这一轮已定「不拦,点了给一句人话错误」)。
+
+## 第十二轮(2026-10-18):音源抽象层
+
+M3 的原话是「iOS / 桌面 / Web 铺开,**接入飞牛音乐**」。前三个平台铺完了,而飞牛
+音乐的协议是未知的 —— 所以这一轮做的是它的**前置**:让「音源」在代码里成为一个
+真的接缝。顺带把 `README.md` 里程碑表里 M1 那行不实的话改掉(它写着「音源抽象层」,
+而抽象层其实今天才做)。
+
+**行为零变化是硬要求**,唯一的例外不是变化:一处不可观测的内部差异见下。
+
+### 两个接口,不是一个
+
+`lib/data/music_source.dart` 是新的中立文件,放三个互相引用的类型:
+
+- **`MusicSourceException`** —— 音源失败的**中立基类**。是**具体类**而不是抽象接口:
+  应用层自己也要造失败(`_requireRepository` 的「还没有连接服务器」、`downloadArtist`
+  的「音乐库里没有找到…」),那些与协议无关,直接抛它即可;做成抽象的话就得再加第三个
+  名字。两个 flag(`isAuthFailure` / `isNetworkFailure`)在基类上默认都不标,**由实现
+  各自覆盖** —— 基类不该替实现猜。
+- **`ServerConnection`** —— 「怎么连」:`routes` / `setRoutes` / `activeRoute` /
+  `autoRoute`(可读可写)/ `pings` / `pingAll` / `pingRoute`。
+- **`MusicSource`** —— 「有什么」:21 个音乐方法(`artists` / `albums` / `albumList` /
+  `album` / `artist` / `allSongs` / `songsByArtist` / `playlists` / `playlist` /
+  `search` / `lyrics` / `setStarred` / `starred` / `coverUri` / `streamUri` /
+  `downloadUri` 与 5 个歌单写)加一个 `connection` getter。
+
+**两者分开是有意的**:线路(多地址、择优、故障切换、锁定)是传输层的事,与「这台
+服务器上有什么音乐」无关。合成一个接口的话,每个音源都得实现一遍线路表,哪怕它根本
+没有多线路这回事。
+
+`SubsonicClient` 那 5 个成员的名字与签名本来就跟 `ServerConnection` 一模一样,所以
+`implements` 是**零改名**;`SubsonicRepository` 补了一个 `connection => client`。
+
+### 异常中立化:界面不再认 Subsonic 的名字
+
+`SubsonicException` 从 `lib/data/` 一路漏到界面 —— 16 处 UI `catch` 加 app_state 里
+5 处都按这个 Subsonic 专属的名字判。换一个音源之后那些 catch 一条都接不住,错误会直接
+穿过界面。这是「真接得进飞牛音乐」的前提。
+
+- `SubsonicException` 改成 `extends MusicSourceException`,构造换成 `super.message`
+  转发,自己的 `code` / `statusCode` 与两个 getter 原样。**位置参数与可选命名参数都没
+  变**,所以全仓库所有 `SubsonicException(...)` 构造点零改动;`lib/data/` 内部那几十处
+  `catch` 因为**子类关系**也零改动 —— 它们判的就是 Subsonic 协议,该留着。
+- 16 处 UI `catch` 与 app_state 的三处 `catch` 改判中立类型;app_state 那两处自造异常
+  也改成中立 —— 它们本来就不是协议失败,却借了 `SubsonicException` 的名字。
+- 11 个界面文件原先只为 `SubsonicException` 而 `import subsonic_payload.dart`,整条换成
+  `music_source.dart`。
+
+**一处不可观测的差异,如实记下**:那两处自造异常换成中立类型后,它们的
+`isNetworkFailure` 从 `true`(旧判据是 `code == null && statusCode == null`)变成
+`false`(基类默认)。全仓库 grep 核实过:`isNetworkFailure` 只有两个读点
+(`subsonic_client.dart` 的故障切换、`app_state.dart` 的 `_failLoad`),**都不在这两处
+异常的路上**,所以不可观测 —— 但这是真的变了,不假装零差异。
+
+### 分派点:`sourceFor`,**不做抛异常的空壳**
+
+`server_config.dart` 新增 `sourceFor(config, password, autoRoute, dio, localCover)`,
+是 `ServerConfig` 到 `MusicSource` 的唯一出口;`clientFor` 降为它的下位构件并保持公开
+(5 个 live 测试的 `SubsonicRepository(clientFor(...))` 形态原样可用)。
+
+**三个 `ServerKind` 今天走同一支**,`fnos` 那一档写成显式 case + 注释:
+
+> fnOS:按社区逆向的说法也讲 Subsonic,先走同一条。拿到真实协议时,**分叉就发生在这里**。
+
+本来打算给飞牛音乐做一个「抛 `UnimplementedError` 的空壳」,核完源码发现**那是回归**:
+
+- `ServerKind` 自己的注释(`server_config.dart` 里)逐字写着「三者都讲 Subsonic 协议,
+  差异在能力边界:飞牛音乐基于社区逆向,官方无公开 API」—— 仓库的口径就是 fnOS 也讲
+  Subsonic;
+- `servers_screen.dart` 把 `ServerKind.values` 全部渲染成可选卡片,**飞牛音乐今天就是
+  可选项**,而 `clientFor` 从来不读 `kind` —— 选它的用户现在拿到的是一个普通客户端。
+
+一个会抛的桩会把**可能能用**的配置变成**必然失败**。改成显式 case 之后,行为与今天
+逐字相同,但那是一支**活的、被执行的**代码,而且把将来的分叉点标了出来。
+
+`sourceFor` 的 `localCover` 形参**必须带**:它是封面「本机优先」的回调,漏掉它,断网时
+已下载内容的封面会从「看得见」变成「没有」—— 那是实打实的行为变化(差点漏掉,靠复核
+才发现)。
+
+### 顺便搬的两处 + 没进接口的两样
+
+- **`ServerRoute` / `RouteTag` / `RoutePing` 与那两个编辑函数**(`mergeEditedRoute` /
+  `toggleRouteLock`)从 `subsonic_client.dart` 搬到新的 `server_route.dart`;
+- **`AlbumSort`** 从 `subsonic_repository.dart` 搬到 `sorting.dart` —— 它是**排序口径**,
+  不是协议,而且音源接口的签名要用到它,**不搬就成环**
+  (`music_source` → `AlbumSort` → `subsonic_repository` → `MusicSource`)。
+
+两个旧文件各 `export` 一次,并且**用 `show` 收窄**(`sorting.dart` 那边只透 `AlbumSort`)
+—— 不加 show 的话整个 sorting 库都会跟着透传,原先直连 `SongSort` / `sortSongs` 的文件
+会凭空多出一条 `unnecessary_import`。`export` 不把名字带进导出库自己的 scope,所以
+`import` 与 `export` **必须成对写**。
+
+- **`invalidateDetail` 不进接口**:全仓库 grep 过,它**只被自己调**(4 处,全是
+  `'playlist'`),界面与测试一次都没碰过。参数是 Subsonic 端点名,进接口等于把协议词汇
+  焊到中立契约上。
+- **通用件不抽**:详情缓存、URI 备忘录、本机封面回退、`_isBy`、`_playCount` 机制上确实
+  协议无关,但**只有一个实现**。为一个假想的第二用户造机器是投机;等 fnOS 真接进来、
+  真出现第二个消费者时再抽,那时才知道该抽哪一层。
+
+### 翻标注 + 穿墙改道
+
+约 40 处 `SubsonicRepository` 类型标注全改成 `MusicSource`:AppState 的字段 / getter /
+`_requireRepository`、`audio_handler`(含那个 `switch` 的类型模式 —— 漏改会在运行时
+静默丢封面,编译不报)、`download_manager` 的字段与两个形参、12 个界面文件(含
+`context.select<AppState, MusicSource?>` 的泛型参数 —— 那是 Provider 的类型契约,不是
+美化,漏改即编译失败)。
+
+5 处穿墙访问 `repo.client.X` 改成 `repo.connection.X`,接缝上不再有洞。
+`SubsonicRepository.client` 字段保留公开(live 测试与仓库内部要用)。
+
+### 新增的用例
+
+`test/data/source_for_test.dart` 钉两条**决定**,不是断言 `implements` 生效(那是编译期
+的事,写成运行时断言就是空转守卫):
+
+1. 三个 `ServerKind` 今天**都落到 Subsonic 那一条** —— 谁哪天把它换成抛异常的空壳,
+   这里当场变红;
+2. **`localCover` 真的透传到了音源上** —— 就是上面那条差点漏掉的回归。
+
+### 验证
+
+`flutter analyze` 干净;`flutter test` **309 passed / 16 skipped / 0 failed**
+(305 + 新增 4);标点守卫 0 处待改。26 处 `@override` 由
+`dart fix --apply --code=annotate_overrides` 补上,不是手写。
+
+**仍然只有人能验的**:这轮是类型级重构,**编译过不等于行为没变** —— 桌面 / 真机上
+浏览、搜索、播放、收藏、歌单读写、下载各走一遍才算数。
+
+版本 `1.0.35+36` → `1.0.36+37`。
+
+### 记下的待办
+
+飞牛音乐那份协议拿到之后,分叉点在 `server_config.dart` 的 `sourceFor` 里。另外
+`subsonic_payload.dart` 里有一处判据值得那时再看:fnOS 若真应答却不是
+`subsonic-response` 外壳,会被判成「协议不对」(不触发换线路)—— 那是符合预期的,但接
+fnOS 时会在这一层显现出来。
