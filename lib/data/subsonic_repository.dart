@@ -152,9 +152,11 @@ class SubsonicRepository {
   /// [offset] 用于翻页 —— 空查询也能带 `songOffset`,这是协议里
   /// 唯一的翻页手段(见 [songsByArtist])。
   ///
-  /// **一页 500 是服务器的常见上限**(实测这台 Navidrome 就卡在 500):
-  /// 要全集就得一页页取,所以界面上的「全部歌曲」是按需翻页的
-  /// (见 `LibraryScreen` 的翻页小节),不是一次取完。
+  /// **一页 500 不是服务器的上限** —— 那是早先的误判(旧注释写「实测这台
+  /// Navidrome 就卡在 500」,换成 `songCount=1000/2000/20000` 都返回全量,
+  /// 见 `docs/performance.md` 的翻页小节)。500 只是一个够用的**页宽**:要全集
+  /// 仍得一页页取,所以界面上的「全部歌曲」是按需翻页的(见 `LibraryScreen`
+  /// 的翻页小节),不是一次取完。
   Future<List<Song>> allSongs({int size = 500, int offset = 0}) async {
     final body = await client.call('search3', {
       'query': '',
