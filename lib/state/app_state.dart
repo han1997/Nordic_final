@@ -595,7 +595,10 @@ class AppState extends ChangeNotifier {
   /// (那要播放次数与时间,只有在服务器上)。失败时抛出去让界面说话,
   /// 本地这份列表**保持原样** —— 排错了总比排没了强。
   Future<void> setAlbumSort(AlbumSort sort) async {
-    if (sort == albumSort) return;
+    // 同一个口径再设一次通常是白花一次请求。**但「随机」不是** —— 那一版的顺序是
+    // 服务器每次请求重新给的(`getAlbumList2` 的 type=random),再点一次「按随机」
+    // 本来就该换一版;其余五个口径重拉才是白花流量。
+    if (sort == albumSort && sort != AlbumSort.random) return;
     await configStore.saveAlbumSort(sort.name);
 
     final repo = _repository;

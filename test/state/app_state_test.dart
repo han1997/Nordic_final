@@ -755,6 +755,27 @@ void main() {
       expect(state.library.albums.first.name, '可能');
     });
 
+    test('同一个口径再点一次不重拉 —— 那是白花一次请求', () async {
+      await state.setAlbumSort(AlbumSort.newest);
+      final before = seen.length;
+
+      await state.setAlbumSort(AlbumSort.newest);
+
+      expect(seen.length, before, reason: '口径没变，没必要再问一次服务器');
+    });
+
+    test('「随机」再点一次要重洗 —— 顺序只能从服务器再要一次', () async {
+      await state.setAlbumSort(AlbumSort.random);
+      final before = seen.length;
+
+      await state.setAlbumSort(AlbumSort.random);
+
+      expect(seen.length, greaterThan(before),
+          reason: '随机顺序是服务器每次请求重新给的，不重拉就永远那一版');
+      expect(seen.last.queryParameters['type'], 'random');
+    });
+
+
     test('排序口径存下来：下次开一个 AppState 还是它', () async {
       await state.setAlbumSort(AlbumSort.newest);
 
