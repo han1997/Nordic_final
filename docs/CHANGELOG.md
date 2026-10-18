@@ -692,3 +692,212 @@ M3 的原话是「iOS / 桌面 / Web 铺开,**接入飞牛音乐**」。前三�
 `subsonic_payload.dart` 里有一处判据值得那时再看:fnOS 若真应答却不是
 `subsonic-response` 外壳,会被判成「协议不对」(不触发换线路)—— 那是符合预期的,但接
 fnOS 时会在这一层显现出来。
+
+## 第十三轮(2026-10-18):M3 收尾
+
+四件记下的收尾活:平台外壳统一、货架封面的共享元素过渡、「随机」再点重洗、
+非 secure context 上连服务器卡死。
+
+**飞牛音乐这一轮不做** —— 用户说了「有(服务器),但是暂时不做飞牛音乐的接入」。
+M3 后半句继续挂着,分叉点仍是 server_config.dart 的 sourceFor。
+
+### 一、平台外壳统一(图标 + 名字)
+
+图形**一个矢量源**:tool/app_icon.py。文本**一个名字口径**:Nordic,真值取
+android/app/src/main/AndroidManifest.xml 的 android:label。
+**图形有生成器,名字没有** —— Nordic 现在有六处字面量(lib/app.dart、设置页、
+AndroidManifest.xml、main.cpp、web/index.html 两处、web/manifest.json 两处),
+改名字要照着 android:label 一处一处对。
+
+生成器新增两个目标:
+
+| 产物 | mode | 尺寸 | 通道 |
+| --- | --- | --- | --- |
+| web/favicon.png | legacy | **32** | RGBA |
+| web/icons/Icon-{192,512}.png | legacy | 192 / 512 | RGB |
+| web/icons/Icon-maskable-{192,512}.png | maskable | 192 / 512 | RGBA |
+| windows/runner/resources/app_icon.ico | legacy | 16/32/48/256 | RGBA |
+
+文件名与 manifest.json 里的 src **一个字符没动**,所以清单的 icons 数组不用改。
+favicon 出 32 而不是模板的 16:与 ICON_FAVICON 那个 data URI 对齐,16px 下那七根柱
+必然糊,而 link rel=icon 没有 sizes、浏览器自己会缩。
+
+**maskable 的边距与 Android 的不是一回事**(这块最容易抄错):Android 自适应保证的是
+中央 72×72 的**方块**,图形角上可以到 50.9;而 web 的 maskable 规范保证的是一个**居中
+的、直径 80% 的圆**,半径只有 43.2。定稿 m05 的硬墨迹角点离中心 47.96,所以新增
+SCALES['maskable'] = 0.88(0.9008 往下留抗锯齿余量)。代价认下来:会遮罩的启动器里
+那份看着比不遮罩平台上那份略小。
+
+**ICO 用 PIL 打包,每一档都作为 provided image 递进去** —— 不让 PIL 自己缩:它只在
+没有同尺寸 provided image 时才 thumbnail,而且是在**未 premultiply 的 RGBA** 上缩,
+那正是 downscale() 花力气避开的事(透明边缘会出黑边/彩边)。不用
+bitmap_format='bmp'(全局开关,会把 256 那帧也写成 DIB,文件涨到几百 KB 且**仍然**
+与模板不同)。我们这份**每帧都是 PNG**,模板是「256 用 PNG + 48/32/16 各三种色深的
+BMP」—— Win10/11 都正常,**旧系统没验过**,别写成已验证。
+
+**CLI**:加 `--targets android,web,windows`。没点名任何目标时不写任何像素产物、只出
+prototype/icon.js(这条等于脚本以前的行为,旧命令含义一个没变)。`--verify` 扩成也
+校验 web 与 windows(尺寸 / 通道 / 四角是地面色 / 硬墨迹框与规格的差 / ICO 档位),
+**仍然不叫 chromium**,没装 Chrome 的机器上也跑得动。
+
+**唯一一处破坏性变更**:`--out` 的语义从「Android 的 res 根」改成「要落的那棵树的根」
+—— 三个目标各落各的子路径,没法给每个目标各配一个开关。
+
+顺手两处收尾:`--freeze` 的 docstring 改准(它写着「重出全部产物」,其实不点 `--targets`
+只出原型);`verify()` 里 rglob('*.xml') 钉在 Android 的 res 根上(`--out` 变成树根
+之后它会一路摸到 web/)。
+
+**纠正第十轮一句过时的话**:那句「本机没有 PIL,走 ICO 容器直接内嵌 PNG 那种写法」
+作废 —— `py -3` 有 PIL 12.2.0 + numpy 2.2.5(脚本的 downscale() 本来就在用),
+PIL 直接能写多分辨率 ICO,不必手写容器。(第十轮说的「本机没有 PIL」指的是 PATH 里那个
+python,它是 3.8 32 位,确实没有;能跑这个脚本的一直是 `py -3`。)
+
+**文本改了哪些**:
+
+- windows/runner/main.cpp:窗口标题 L"nordic" → L"Nordic",并留一条注释说清
+  「应用数据目录在 Runner.rc 的 CompanyName + ProductName,别在这行找」;
+- web/index.html:title、apple-mobile-web-app-title、meta description;
+- web/manifest.json:name / short_name / description / background_color / theme_color。
+
+**description 那句**逐字取 README 第 3 行,只把逗号换成**全角**(应用可见文案的规矩;
+README 的叙述照旧半角)—— 这个刻意的单字差异不是抄漏。manifest.json 是 JSON 写不了
+注释,所以口径记在 index.html 的注释与这一节里。
+
+**两个颜色从 Flutter 蓝 #0175C2 改成 #07070C** —— 它与 app_icon.py 的 GROUND、
+Android 的 nordic_bg(它的 launch_background.xml 已经在用它铺启动底,注释写着
+「和应用第一帧同一个色,冷启动看不出接缝」)、NordicTokens.dark.bg 是同一条口径。
+原来启动会先蓝一下再进深色应用,而图标自己的地面就是近黑。
+
+**两条「改了但看不出」,写在这儿免得以后白找**:
+
+1. index.html 的 title **只管加载期** —— 应用起来后引擎会用 MaterialApp.title
+   (lib/app.dart 已经是 Nordic)盖掉 document.title。真正看得见的是
+   apple-mobile-web-app-title,那条不会被盖(iOS 装到主屏上就叫这个)。
+2. manifest.json 的 theme_color **只管开机前** —— 运行期引擎会注入自己的
+   meta[name=theme-color]。而开机前正是蓝闪那一下,所以更该改。
+
+**Runner.rc 一个字节没动**:它的 ProductName + CompanyName 决定
+%APPDATA%\fun.han1997\nordic\(path_provider_windows 读 exe 的 VERSIONINFO),
+动它会把用户数据目录搬走。代价是任务管理器进程名与 exe 属性里的「文件说明 / 产品名称」
+仍是小写 nordic —— 如实留着。
+
+**踩到并修掉的一个坑(值得记住)**:windows/runner/main.cpp 是**没有 BOM** 的,而
+windows/runner 走的是 Flutter 模板那套 /W4 /WX —— 往里写中文注释会直接
+C4819 -> C2220,**构建失败**。第一次加固时就撞上了。现在那个文件里的注释**全是 ASCII**,
+并把这条教训写进了注释本身。
+
+这与 just_audio_windows 的 uri_utils.hpp 是同一个病(见 windows/CMakeLists.txt 那条):
+要往这类文件里写非 ASCII,得先给它 BOM 或者给 target 挂 /utf-8 —— 两条都比「把注释写成
+英文」重,所以选了后者。
+
+
+### 记一笔:第十轮那句「一个字节没改,好与模板逐字节对照」到此作废
+
+第十轮与第十一轮特意让 windows/、web/ **一个字节不改**,好与 flutter create 的模板逐字节
+对照。这一轮有意打破它 —— 现在偏离模板的每一处:
+
+- windows/runner/main.cpp:**1 行**(标题)+ 一段注释;
+- windows/runner/resources/app_icon.ico:**整份替换**(二进制);
+- web/index.html:**3 处值** + 注释;
+- web/manifest.json:**5 个字段**;
+- web/ 的 **5 张 PNG**:整份替换;
+- windows/runner/Runner.rc:**0 字节**(有意保留,理由见上);
+- windows/CMakeLists.txt 里那句「**本仓库唯一一处**对 windows/ 模板的改动」变成假话,
+  已改成指路 —— **清单不维护在注释里**,它会一升 Flutter 就过期。
+
+**「逐字节对照」是一次性核对手法,不是长期守卫** —— 它只在「树刚搬进来、还没长出自己的
+东西」那两轮有意义。取代它的是三样:tool/app_icon.py --verify(内容级判据)、
+windows/CMakeLists.txt 里那条指路注释、以及下面这条**已经核过源码的结论**。
+
+**要再对一次怎么办**:flutter create --org fun.han1997 --project-name nordic
+--platforms windows,web 开在**临时目录**,与仓库 diff -r —— **别在仓库里跑**
+(它会用一份空的 MigrateConfig 重写 .metadata,第十轮踩过)。
+
+**已经核过源码的两条**(以后有人担心就直接引用):
+
+- **flutter build windows 不会从模板重拷 app_icon.ico**:flutter_tools 里零处引用
+  app_icon,构建期那几个 migrator 都不碰它。**唯一会覆盖的是人手跑 flutter create .**。
+- **MSBuild 不把 .ico 当成 Runner.rc 的依赖**:nordic.vcxproj 的 ResourceCompile 没有
+  AdditionalInputs。只换 .ico 而 Runner.rc 字面量不变,**资源可能不重编、exe 里还是旧
+  图标,而且构建全绿、没有任何提示** —— 所以**换图标后第一次构建必须清 build/windows**
+  (或 flutter clean)。验收靠从 exe 里抽图标看一眼 + 人眼。
+
+**动手前先核过 Android 那 15 张没被动**:两次渲染逐字节一致;仓库里那 17 个产物今天仍
+复现得出来(--out 到 .tmp-shots 再 diff -r,只差它不产的那些文件)。所以 --targets 不是为
+「怕 diff 噪音」而加,是为了 CLI 卫生与让 --verify 能分目标。
+
+### 二、货架封面也能飞进专辑页
+
+**「原型已定、应用没做」**,不是新增设计:prototype/app.js 的 .rail-item 本身就带
+data-morph,而 morph 逻辑是「点哪个卡片就飞它那张 .cover」—— **不认 tag**,网格与货架
+一视同仁。所以 prototype/ 一个字节没改。
+
+**现状**:货架的 tag 是 '$heroPrefix-${album.id}'(首页给的前缀是 cover-rail-recent /
+cover-rail-frequent),而专辑页写死 'cover-${album.id}' —— 从货架进去永远配不上起点,
+从来没飞过。网格那条今天是飞的。
+
+**不能把货架前缀改成 cover-{id}**:同一张专辑常常同时在两条货架上,同一条路由里重名
+Hero 会直接断言失败(真机表现是「从首页点进任何一页都崩」,2026-10-18 修的就是这一处)。
+
+**修法:让 tag 跟着路由走**(不是「专辑页挂两个 Hero」—— 框架按 tag 找起点,挂两个等于
+把「哪一张在飞」交给运气):AppRoutes.openAlbum(context, id, {heroTag}) 的参数从 String
+改成记录,AlbumScreen 加可空的 heroTag,_AlbumHead 透传,挂 heroTag ?? 'cover-${album.id}';
+货架把自己那张卡片的 tag 原样交出去。**其余四个调用点一个字没改**(网格、艺人页、播放页、
+歌曲菜单 —— 后三处的来路本身没有 Hero)。
+
+**护栏两条**(app_test.dart 的「页面过渡」一组):一条钉路由把 tag 带过去、不传则退回
+网格那个;一条**真搭起来测**货架 —— 挂 NordicTheme.dark(不需要 Provider,因为
+NordicAccentScope.of 缺祖先时会退回中性色),读出卡片显示的 tag、点一下、断言路由
+**带过去的正是同一个**。
+
+### 三、「随机」再点一次重新洗
+
+setAlbumSort 开头那句 `if (sort == albumSort) return;` 挡掉了「同一个口径再点一次」——
+对五个口径是对的(重拉是白花一次请求),但**对「随机」是错的**:那一版的顺序是**服务器
+每次请求重新给的**(getAlbumList2 的 type=random),不重拉就永远那一版。
+
+改成 `if (sort == albumSort && sort != AlbumSort.random) return;`。界面一个字不用改
+(sort_sheet 已经无条件下调)。别混:**播放的随机**是另一条线(toggleShuffle),它本来就
+每次翻转、没有早退。
+
+### 四、非 secure context 上连服务器卡死
+
+**现场**:_connect() 整个函数体没有 try/catch/finally。await appState.connect(...) 一抛
+出去,后面那句 _busy = false 就永远走不到 —— 而 _canSubmit 要求 !_busy,于是提交键被
+禁用并显示加载态:**按钮永远转圈**。
+
+抛出的是 flutter_secure_storage_web 在没有 window.isSecureContext 时丢的
+UnsupportedError(**是 Error 不是 Exception**)。而 connect() 的第一步 savePassword 是
+**裸 await 且排在 saveServer 之前**,所以失败时**密码没写、配置也没存** —— 失败得还算
+干净,只是用户完全看不出来。
+
+**改成**:把 connect 与 loadLibrary 两个 await 包进 try;catch 里复位 _busy 并写
+_formError。存储那一步的 UnsupportedError 单独翻译成人话(说清该怎么改),其余走通用的
+「连不上」。
+
+**这是让它响亮地失败,不是让它能用**:http:// 局域网地址下系统密码存储本来就是关着的,
+凭据存不住 —— 就算放过去也会「连上、一刷新就没」,那比连不上更让人糊涂。所以不吞异常、
+不降级保存。**不是原型改动**:_formError 是服务器页已有的状态与渲染。
+
+### 版本与提交
+
+版本 1.0.36+37 → 1.0.37+38(这一轮只 +1 一次)。六个提交,每个都单独编译过、单独 push:
+
+1. 外壳:图标生成器补 web 与 windows 两个目标(脚本 + 6 个图形产物,**必须一起** ——
+   产物是脚本的输出,拆开中间那个 --verify 会红);
+2. 外壳:窗口标题与浏览器标题 / 清单统一到 Nordic;
+3. 界面:货架封面也能飞进专辑页(tag 随路由走);
+4. 状态:「随机」再点一次重新洗;
+5. 界面:连服务器失败时不再永远转圈;
+6. 文档:第十三轮记录 + 版本号 + 改掉 CMakeLists 那句假话。
+
+### 这一轮没验到的(只有人或别的设备能看)
+
+1. **图标真的进了 exe** —— --verify 只校那个 .ico 文件本身,校不到 exe。要人看:
+   任务栏、Alt-Tab、资源管理器开到「超大图标」看 256 那一档。
+2. **apple-mobile-web-app-title** —— 要 iOS 设备(装到主屏上才看得见)。
+3. **http:// 局域网打开 Web 时那个失败提示** —— 本机没有那样的环境,只做代码走查。
+4. **货架的飞行** —— 测试钉的是「tag 两边一致」,真飞起来好不好看要人看。
+5. **ICO 在旧版 Windows 上的表现** —— 我们那份每帧都是 PNG,模板是混合编码。Win10/11 正常。
+
+**上一轮还挂着的**:Web 上音频到底出不出声;Windows 那 21 屏在 1280×720 下的观感。

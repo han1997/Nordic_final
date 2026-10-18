@@ -57,7 +57,9 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
-# **本仓库唯一一处对 windows/ 模板的改动**(其余逐字节与模板一致,好对照)。
+# **这一处不是模板原样** —— windows/ 里偏离 flutter create 模板的地方**不止这里**
+# (窗口标题、应用图标、还有下面这两行),见 docs/CHANGELOG.md 第十轮与第十三轮。
+# 清单**不维护在这条注释里**:它会一升 Flutter 就过期,而这份文件本身没变。
 #
 # just_audio_windows 撞上了 VS 2026 的工具链,两处都在**插件自己的 C++** 里;
 # 这里不动它的源码,只在自己的工程里把编译器摆正:

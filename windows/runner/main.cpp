@@ -27,12 +27,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  // 窗口标题是外壳名 —— 与 android/app/src/main/AndroidManifest.xml 的
-  // android:label 同一口径(真值取那儿)。
+  // The window title is the app's shell name -- the same string as
+  // android:label in android/app/src/main/AndroidManifest.xml (that file is the
+  // source of truth for the name; everything else follows it).
   //
-  // 别在这儿找应用数据目录:`%APPDATA%\<公司>\<产品>` 那两级来自 Runner.rc 的
-  // CompanyName 与 ProductName(path_provider_windows 读 exe 的 VERSIONINFO),
-  // 改这一行不会把它搬走,改那两个字段才会。
+  // Do NOT look for the app data directory here: %APPDATA%\<company>\<product>
+  // comes from CompanyName + ProductName in Runner.rc (path_provider_windows
+  // reads the exe's VERSIONINFO). Changing this line does not move it; changing
+  // those two fields would.
+  //
+  // ASCII only, please: this file has no BOM and the runner project is built
+  // with /W4 /WX, so a single non-ASCII byte here is C4819 -> C2220 (build fails).
   if (!window.Create(L"Nordic", origin, size)) {
     return EXIT_FAILURE;
   }
