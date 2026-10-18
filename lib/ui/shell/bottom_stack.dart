@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
-import '../../data/subsonic_payload.dart';
+import '../../data/music_source.dart';
 import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
@@ -187,7 +187,7 @@ class _PlayerDock extends StatelessWidget {
     if (repo == null || id == null) return null;
     try {
       return repo.coverUri(id, size: 128);
-    } on SubsonicException {
+    } on MusicSourceException {
       // 还没配好线路时取不到 —— 坞里退回渐变兜底即可,不必报错。
       return null;
     }

@@ -7,6 +7,7 @@ import 'package:nordic/data/download_manager.dart';
 import 'package:nordic/data/download_store.dart';
 import 'package:nordic/data/library_cache.dart';
 import 'package:nordic/data/media_cache.dart';
+import 'package:nordic/data/music_source.dart';
 import 'package:nordic/data/server_config.dart';
 import 'package:nordic/data/subsonic_client.dart';
 import 'package:nordic/data/sorting.dart';
@@ -206,7 +207,7 @@ void main() {
 
       await expectLater(
         bare.addSongToPlaylist('pl-1', 'song-9'),
-        throwsA(isA<SubsonicException>()
+        throwsA(isA<MusicSourceException>()
             .having((e) => e.message, 'message', contains('还没有连接服务器'))),
       );
     });

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
-import '../../data/subsonic_payload.dart';
+import '../../data/music_source.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
@@ -68,7 +68,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
         _loading = false;
         _starred = state.isAlbumStarred(widget.albumId);
       });
-    } on SubsonicException catch (e) {
+    } on MusicSourceException catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -190,7 +190,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: size);
-    } on SubsonicException {
+    } on MusicSourceException {
       return null;
     }
   }

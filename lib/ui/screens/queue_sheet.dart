@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
-import '../../data/subsonic_payload.dart';
+import '../../data/music_source.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
@@ -109,7 +109,7 @@ class _QueueSheet extends StatelessWidget {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: 128);
-    } on SubsonicException {
+    } on MusicSourceException {
       return null;
     }
   }

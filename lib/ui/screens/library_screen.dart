@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import '../../data/models.dart';
 import '../../data/server_config.dart';
 import '../../data/sorting.dart';
-import '../../data/subsonic_payload.dart';
+import '../../data/music_source.dart';
 import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
@@ -407,7 +407,7 @@ class AlbumTile extends StatelessWidget {
     if (repo == null || coverArtId == null) return null;
     try {
       return repo.coverUri(coverArtId, size: 512);
-    } on SubsonicException {
+    } on MusicSourceException {
       return null;
     }
   }
@@ -731,7 +731,7 @@ class _PlaylistsTab extends StatelessWidget {
     if (repo == null || coverArtId == null) return null;
     try {
       return repo.coverUri(coverArtId, size: 256);
-    } on SubsonicException {
+    } on MusicSourceException {
       return null;
     }
   }

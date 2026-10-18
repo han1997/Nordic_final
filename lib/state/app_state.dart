@@ -12,9 +12,9 @@ import '../data/download_manager.dart';
 import '../data/library_cache.dart';
 import '../data/media_cache.dart';
 import '../data/models.dart';
+import '../data/music_source.dart';
 import '../data/server_config.dart';
 import '../data/subsonic_client.dart';
-import '../data/subsonic_payload.dart';
 import '../data/sorting.dart';
 import '../data/subsonic_repository.dart';
 import '../playback/quality.dart';
@@ -338,7 +338,7 @@ class AppState extends ChangeNotifier {
       // 都不会打架,腾出去的只是「翻页这一下要不要等它」。
       unawaited(libraryCache.write(_serverKey(_server!), _library));
       return page.isNotEmpty;
-    } on SubsonicException catch (e) {
+    } on MusicSourceException catch (e) {
       // 翻页失败不该把已经拿到的那些弄没 —— 记一句,列表照旧。
       _refreshError = e.message;
       _fromCache = true;
@@ -530,7 +530,7 @@ class AppState extends ChangeNotifier {
             _completeSongs().whenComplete(() => _completing = null);
         unawaited(_completing);
       }
-    } on SubsonicException catch (e) {
+    } on MusicSourceException catch (e) {
       _failLoad(e.message, isAuth: e.isAuthFailure, isNetwork: e.isNetworkFailure);
     } catch (e) {
       _failLoad('$e');
@@ -911,7 +911,7 @@ class AppState extends ChangeNotifier {
 
   /// 建一个歌单。成功后就地把它插进本地快照 —— 不必整库重拉。
   ///
-  /// 失败时抛 [SubsonicException] 而不是吞掉:这是用户主动发起的写操作,
+  /// 失败时抛 [MusicSourceException] 而不是吞掉:这是用户主动发起的写操作,
   /// 「点了创建但什么都没有」比一句错误提示糟得多。
   Future<Playlist> createPlaylist(String name) async {
     final repo = _requireRepository();
@@ -992,7 +992,7 @@ class AppState extends ChangeNotifier {
   SubsonicRepository _requireRepository() {
     final repo = _repository;
     if (repo == null) {
-      throw const SubsonicException('还没有连接服务器');
+      throw const MusicSourceException('还没有连接服务器');
     }
     return repo;
   }
@@ -1031,7 +1031,7 @@ class AppState extends ChangeNotifier {
     if (repo == null) return null;
     try {
       return repo.coverUri(coverArtId, size: size);
-    } on SubsonicException {
+    } on MusicSourceException {
       return null;
     }
   }
@@ -1056,7 +1056,7 @@ class AppState extends ChangeNotifier {
     final repo = _requireRepository();
     final songs = await repo.songsByArtist(artist);
     if (songs.isEmpty) {
-      throw SubsonicException('在音乐库里没有找到 ${artist.name} 的歌曲');
+      throw MusicSourceException('在音乐库里没有找到 ${artist.name} 的歌曲');
     }
     return downloadManager.enqueue(DownloadRequest.artist(artist, songs));
   }

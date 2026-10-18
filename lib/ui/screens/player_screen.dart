@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
-import '../../data/subsonic_payload.dart';
+import '../../data/music_source.dart';
 import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
@@ -184,7 +184,7 @@ class _HeroStack extends StatelessWidget {
         // 512 与专辑页 / 网格同一张 —— 从那儿进播放页时直接命中缓存,
         // 不再为了更大的 700 重新下一张(那一下正好落在滑入动画上)。
         coverUri = repo.coverUri(song.coverArtId!, size: 512);
-      } on SubsonicException {
+      } on MusicSourceException {
         coverUri = null;
       }
     }

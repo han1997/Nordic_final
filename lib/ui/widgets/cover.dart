@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../../data/models.dart';
-import '../../data/subsonic_payload.dart';
+import '../../data/music_source.dart';
 import '../../data/subsonic_repository.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
@@ -536,7 +536,7 @@ Uri? albumCoverUri(
   if (repo == null || coverArtId == null || coverArtId.isEmpty) return null;
   try {
     return repo.coverUri(coverArtId, size: size);
-  } on SubsonicException {
+  } on MusicSourceException {
     return null;
   }
 }

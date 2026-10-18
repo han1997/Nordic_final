@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
-import '../../data/subsonic_payload.dart';
+import '../../data/music_source.dart';
 import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
@@ -109,7 +109,7 @@ class _SearchScreenState extends State<SearchScreen> {
         _searching = false;
         _error = null;
       });
-    } on SubsonicException catch (e) {
+    } on MusicSourceException catch (e) {
       if (!mounted || _pendingQuery != query) return;
       setState(() {
         _searching = false;

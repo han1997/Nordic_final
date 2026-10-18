@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../data/subsonic_payload.dart';
+import '../../data/music_source.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
@@ -204,7 +204,7 @@ class _NewPlaylistScreenState extends State<NewPlaylistScreen> {
           duration: const Duration(seconds: 2),
         ),
       );
-    } on SubsonicException catch (e) {
+    } on MusicSourceException catch (e) {
       if (!mounted) return;
       setState(() => _creating = false);
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(

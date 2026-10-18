@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/server_config.dart';
-import '../../data/subsonic_payload.dart';
+import '../../data/music_source.dart';
 import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
@@ -486,7 +486,7 @@ class _NowPlayingCard extends StatelessWidget {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: 256);
-    } on SubsonicException {
+    } on MusicSourceException {
       return null;
     }
   }
@@ -625,7 +625,7 @@ class _SongShelf extends StatelessWidget {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: 256);
-    } on SubsonicException {
+    } on MusicSourceException {
       return null;
     }
   }
@@ -715,7 +715,7 @@ class _PlaylistShelf extends StatelessWidget {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: 128);
-    } on SubsonicException {
+    } on MusicSourceException {
       return null;
     }
   }
