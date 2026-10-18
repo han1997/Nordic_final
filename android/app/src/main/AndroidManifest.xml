@@ -10,6 +10,12 @@
     <!-- 「仅 Wi-Fi 下载」要问系统当前网络是否计费(见 MainActivity 的网络通道)。
          这是普通权限,不会弹窗。 -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- 扫码同步要开摄像头。mobile_scanner 自己的清单里也声明了这条,这里再写一遍
+         是为了让「这个应用要哪些权限」在这一个文件里看得全 —— 不必翻进插件源码。 -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- 摄像头**不是必需品**:没有摄像头的设备不该被拦在安装之外。那台设备会
+         退成粘贴文本(见 lib/data/scan_capability.dart 与那一屏里的说明)。 -->
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
 
     <application
         android:label="Nordic"

@@ -339,6 +339,8 @@ class NordicTextField extends StatelessWidget {
     this.onChanged,
     this.autofocus = false,
     this.enabled = true,
+    this.maxLines = 1,
+    this.monospace = false,
   });
 
   final TextEditingController controller;
@@ -350,18 +352,33 @@ class NordicTextField extends StatelessWidget {
   final bool autofocus;
   final bool enabled;
 
+  /// 大于 1 就是多行框(盒子跟着内容长,不再固定 54)。
+  /// 「扫码同步」粘的那一串配置要一整段看得见,单行框既看不全也选不全。
+  final int maxLines;
+
+  /// 等宽 —— 那串载荷是一长串 base64,等宽底下更容易看出有没有复制全。
+  final bool monospace;
+
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
+    final multiline = maxLines > 1;
     return Container(
-      height: 54,
-      padding: const EdgeInsets.symmetric(horizontal: 17),
+      // 多行时盒子跟着内容长 —— 固定 54 的话粘进来那一整段只看得到一行。
+      height: multiline ? null : 54,
+      constraints: multiline ? const BoxConstraints(minHeight: 108) : null,
+      padding: EdgeInsets.symmetric(
+        horizontal: 17,
+        vertical: multiline ? 13 : 0,
+      ),
       decoration: BoxDecoration(
         color: t.fill1,
         borderRadius: BorderRadius.circular(NordicRadius.md),
         border: Border.all(color: t.line),
       ),
       child: Row(
+        crossAxisAlignment:
+            multiline ? CrossAxisAlignment.start : CrossAxisAlignment.center,
         children: [
           if (prefixIcon != null) ...[
             Icon(prefixIcon, size: 18, color: t.fg3),
@@ -375,7 +392,14 @@ class NordicTextField extends StatelessWidget {
               onChanged: onChanged,
               autofocus: autofocus,
               enabled: enabled,
-              style: Theme.of(context).textTheme.bodyLarge,
+              maxLines: maxLines,
+              style: monospace
+                  ? Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        height: 1.7,
+                      )
+                  : Theme.of(context).textTheme.bodyLarge,
               cursorColor: context.accent.accent,
               decoration: InputDecoration(
                 isDense: true,

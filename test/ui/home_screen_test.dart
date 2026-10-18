@@ -266,6 +266,11 @@ void main() {
 
     expect(find.text('还没有连接服务器'), findsWidgets);
     expect(find.text('最近添加'), findsNothing);
+    // 底下那两颗入口:**手动填**,或者**扫码把另一台设备的配置带过来**。
+    // 空态说的是「这儿没有」,那就得顺手给出「怎么让它有」——只写一句
+    // 「到设置里填」等于把活交给用户去找。
+    expect(find.text('连接服务器'), findsWidgets);
+    expect(find.text('扫码同步'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 

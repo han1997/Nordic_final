@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nordic/data/config_transfer.dart';
 import 'package:nordic/data/download_manager.dart';
 import 'package:nordic/data/download_store.dart';
 import 'package:nordic/data/library_cache.dart';
@@ -15,8 +16,12 @@ import 'package:nordic/state/app_state.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/screens/servers_screen.dart';
+import 'package:nordic/ui/widgets/components.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'memory_credentials.dart';
+import 'pump_real_io.dart';
 
 /// 这一屏管的是「我的服务器」:线路、**账号 / 密码 / 地址**、移除。
 ///
@@ -44,11 +49,13 @@ void main() {
   late Directory root;
   late MediaCache audioCache;
   late AppState state;
+  late MemoryCredentials credentials;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     root = await Directory.systemTemp.createTemp('nordic-servers-ui');
     audioCache = await openAudioCache(root);
+    credentials = MemoryCredentials();
 
     final dio = Dio(BaseOptions(validateStatus: (_) => true));
     dio.interceptors.add(InterceptorsWrapper(
@@ -64,7 +71,7 @@ void main() {
     late final AppState appState;
     appState = AppState(
       configStore: await ConfigStore.open(),
-      credentialStore: CredentialStore(),
+      credentialStore: credentials,
       quality: QualityController(),
       downloadManager: DownloadManager(
         store: await DownloadStore.open(root: root),
@@ -81,10 +88,21 @@ void main() {
   });
 
   tearDown(() async {
-    if (root.existsSync()) await root.delete(recursive: true);
+    // 扫码那条用例要真跑一次 `connect`,而它末尾那次库快照的写会挂在真实事件
+    // 循环上(假时钟不替它推进,见 `pump_real_io.dart`),Windows 上那个
+    // `library.json.tmp` 于是还占着句柄 —— 目录删不掉。删得掉就删,删不掉留给系统。
+    try {
+      await root.delete(recursive: true);
+    } catch (_) {
+      // 见上。
+    }
   });
 
-  Future<void> pumpServers(WidgetTester tester, {bool startInForm = false}) async {
+  Future<void> pumpServers(
+    WidgetTester tester, {
+    bool startInForm = false,
+    TransferredServer? prefill,
+  }) async {
     // 这一屏比一屏高(表单有四组字段、管理页有一张概览卡 + 线路表),
     // 默认 800×600 的测试视口装不下 —— 装不下的部分**不会被建出来**,
     // `find` 就找不到,那会把「控件在不在」测成假阴性。给一块够高的画布。
@@ -97,7 +115,7 @@ void main() {
         value: state,
         child: MaterialApp(
           theme: NordicTheme.build(NordicTokens.dark),
-          home: ServersScreen(startInForm: startInForm),
+          home: ServersScreen(startInForm: startInForm, prefill: prefill),
         ),
       ),
     );
@@ -210,5 +228,75 @@ void main() {
     expect(find.text('接入类型'), findsOneWidget);
     expect(find.text('连接'), findsOneWidget);
     expect(find.text('取消'), findsNothing, reason: '没配置过时没有「管理页」可退回');
+  });
+
+  /// 「扫码同步」读出来的那份配置。三条线路 —— 这一组测试的重点正是
+  /// **最容易出的那个坑**:表单只有一个地址框,3 条线路进来很容易被静默丢掉 2 条。
+  TransferredServer imported() => const TransferredServer(
+        kind: ServerKind.subsonic,
+        name: '卧室 Navidrome',
+        username: 'demo',
+        routes: [
+          ServerRoute(id: 'r0', name: '局域网', url: 'http://bedroom.local:4533'),
+          ServerRoute(
+            id: 'r1',
+            name: '外网',
+            url: 'https://bedroom.example.com',
+            tag: RouteTag.wan,
+          ),
+          ServerRoute(id: 'r2', name: '备用', url: 'http://10.0.0.9:4533'),
+        ],
+      );
+
+  testWidgets('扫码带进来一份配置：除密码以外都填好，而且当场说明白了', (tester) async {
+    await pumpServers(tester, prefill: imported());
+
+    // 名字 / 账号 / 地址都填的是**载荷里那份**,不是本机现有那台。
+    expect(find.widgetWithText(TextField, '卧室 Navidrome'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'demo'), findsOneWidget);
+    expect(
+      find.widgetWithText(TextField, 'http://bedroom.local:4533'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(TextField, '客厅 Navidrome'), findsNothing);
+
+    // 密码那一格是空的 —— 而「连接」要求密码非空,所以此刻它是暗的。
+    // 不说清楚的话用户会以为这一屏卡住了(所以那句话本身就是判据)。
+    expect(find.textContaining('只差密码'), findsOneWidget);
+    expect(find.textContaining('有 3 条线路'), findsOneWidget);
+    expect(find.text('服务器设置'), findsNothing);
+    expect(
+      tester.widget<PrimaryButton>(find.byType(PrimaryButton)).onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets('扫码带进来那几条线路：提交之后三条都还在，第一条被表单里那条地址替换', (tester) async {
+    await pumpServers(tester, prefill: imported());
+
+    // 表单里那条地址对应**第一条**线路 —— 改它就等于改第一条。
+    await tester.enterText(
+      find.widgetWithText(TextField, 'http://bedroom.local:4533'),
+      'http://bedroom-edited.local:4533',
+    );
+    await tester.enterText(find.widgetWithText(TextField, '服务器密码'), 's3cret');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('连接'));
+    await pumpRealIo(tester);
+
+    final server = state.server;
+    expect(server?.name, '卧室 Navidrome');
+    expect(server?.kind, ServerKind.subsonic);
+    expect(server?.username, 'demo');
+    expect(
+      server?.routes.map((r) => r.url).toList(),
+      [
+        'http://bedroom-edited.local:4533',
+        'https://bedroom.example.com',
+        'http://10.0.0.9:4533',
+      ],
+      reason: '表单那条地址改的是第一条，载荷里其余几条**一条都不该少**',
+    );
+    expect(server?.routes[1].tag, RouteTag.wan, reason: '其余几条连标记一起原样留着');
   });
 }

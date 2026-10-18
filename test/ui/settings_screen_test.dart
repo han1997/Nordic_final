@@ -226,4 +226,59 @@ void main() {
     expect(state.cacheUsedBytes, 0);
     expect(kept.existsSync(), isTrue, reason: '下载是点名要的，清缓存不该动它');
   });
+
+  testWidgets('服务器那一栏：扫码同步与导出配置两条都在', (tester) async {
+    await pumpSettings(tester);
+
+    await tester.dragUntilVisible(
+      find.text('扫码同步'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pump();
+
+    expect(find.text('扫码同步'), findsOneWidget);
+    expect(find.text('扫码或粘贴，把服务器与线路带到这台设备'), findsOneWidget);
+    expect(find.text('导出配置'), findsOneWidget);
+    expect(find.text('二维码 · 可复制成一段文本'), findsOneWidget);
+  });
+
+  testWidgets('没连服务器时不给「导出配置」那一行', (tester) async {
+    // 那一行只在**真有配置可导出**时出现:`_SettingRow` 没有禁用态,一颗
+    // `onTap: null` 的行既不置灰也不回弹,读起来就是个坏按钮。
+    //
+    // 造一个没接管服务器的实例 —— 而不是调 `disconnect()`:那条路要碰系统
+    // 密钥库(测试里没有那个插件)。开这几个 store 是真碰文件系统,所以走
+    // `runAsync`(`testWidgets` 的假时钟不替真 I/O 推进)。
+    await tester.runAsync(() async {
+      late final AppState fresh;
+      fresh = AppState(
+        configStore: await ConfigStore.open(),
+        credentialStore: CredentialStore(),
+        quality: QualityController(),
+        downloadManager: DownloadManager(
+          store: await DownloadStore.open(root: root),
+          repository: () => null,
+          wifiOnly: () => false,
+        ),
+        libraryCache: await LibraryCache.open(root: root),
+        mediaCache: audioCache,
+      );
+      state = fresh;
+    });
+
+    await pumpSettings(tester);
+
+    await tester.dragUntilVisible(
+      find.text('扫码同步'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pump();
+
+    // 扫码那一行一直在 —— 没连服务器时它正是要用的那一条。
+    expect(find.text('扫码同步'), findsOneWidget);
+    expect(find.text('导出配置'), findsNothing);
+  });
+
 }

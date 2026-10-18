@@ -827,6 +827,58 @@ class ListNote extends StatelessWidget {
       );
 }
 
+/// 一句**带语气**的说明 —— 原型里的 `.note`(提醒 / 出错 / 成功 / 中性说明
+/// 都长这个样子,只有颜色不同)。
+///
+/// 收在一处是因为它已经在服务器表单、导出配置那张纸、扫码同步三处各写了一遍
+/// (前两处各有一个私有的同名小控件)—— 同一种东西三份实现,改一次要找三处。
+class NordicNote extends StatelessWidget {
+  const NordicNote(this.message, {super.key, this.tone = NordicNoteTone.warn});
+
+  final String message;
+  final NordicNoteTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    final info = tone == NordicNoteTone.info;
+    final color = switch (tone) {
+      NordicNoteTone.info => t.fg2,
+      NordicNoteTone.ok => t.ok,
+      NordicNoteTone.warn => t.warn,
+      NordicNoteTone.bad => t.bad,
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(NordicSpace.s4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(NordicRadius.md),
+        // 中性的那条不叠淡色 —— 灰底上再叠一层灰只是脏,用现成的填充色就够。
+        color: info ? t.fill2 : color.withValues(alpha: 0.11),
+        border: Border.all(
+          color: info ? t.line : color.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Text(
+        message,
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: color, height: 1.6),
+      ),
+    );
+  }
+}
+
+/// [NordicNote] 的四种语气。
+enum NordicNoteTone {
+  /// 中性说明 —— 「已经按扫码内容填好了,只差密码」这一类,不吓人也不庆祝。
+  info,
+  ok,
+  warn,
+  bad,
+}
+
 /// 空态 —— `.empty`。**只在「确实为空」时用**;
 /// 加载中与出错时另走 [LoadingState] / [ErrorState](见「不造假空态」约定)。
 class EmptyState extends StatelessWidget {

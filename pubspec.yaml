@@ -62,6 +62,21 @@ dependencies:
   crypto: ^3.0.7
   meta: ^1.18.0
   characters: ^1.4.1
+  # 二维码**生成** —— 纯 Dart 的**编码器本身**(没有平台代码,没有插件注册),
+  # 所以 Android / Windows / Web 一处写法通吃,不像扫码头那样得分平台。
+  # 绘制那几十行在 lib/ui/widgets/qr_view.dart 里自己写(静区、纠错等级、配色
+  # 全在自己手里)。它只依赖 meta,而 meta 已经是本仓库的直接依赖 ——
+  # **净新增的传递依赖为零**。
+  qr: ^4.0.0
+  # 摄像头**扫码**。它声明的平台只有 android / ios / macos / web,所以
+  # Windows 与 Linux 构建根本不参与(与 just_audio_windows 是同一条道理);
+  # 桌面因此走粘贴文本(见 lib/data/scan_capability.dart)。
+  #
+  # **web 那一路故意不用**:它的 web 实现要求页面自己从 unpkg 引 @zxing
+  # (`lib/src/web/zxing/zxing_barcode_reader.dart` 里那个 scriptUrl),而本仓库
+  # 不许有运行时的 CDN 依赖(见 tool/build.sh 的守卫与 web/index.html 的注释)。
+  # web 上 `ScanCapability` 一律返回 false,那个控件从不被构造。
+  mobile_scanner: ^7.4.2
 
 dev_dependencies:
   flutter_test:

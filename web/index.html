@@ -49,6 +49,18 @@
 </head>
 <body>
   <!--
+    **别往这里加运行时的 CDN 脚本。**
+
+    `tool/build.sh web` 里有一条守卫:产物里出现那几家 CDN 的域名就直接失败 ——
+    运行时的脚本取不到时表现是**卡住、不报错**,与 CanvasKit 从 www.gstatic.com
+    取不到是同一种失败(见那一节的上一条)。最容易撞上这条的一次,是「为了让 web
+    也能扫码」而加一行第三方的扫码库:web 上**刻意不扫码**,没摄像头、或浏览器
+    不支持的,一律走粘贴文本(见 lib/data/scan_capability.dart)。
+
+    那条守卫是**按字面找域名**的,所以这段说明里也不能把那几个域名写出来 ——
+    写了,守卫会把这一段自己认出来、构建当场失败。那几个字面量写在
+    tool/build.sh 的 standardize_web 第 5 条里,要改这段先看那儿。
+
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
     or to give the user feedback during the initialization process.

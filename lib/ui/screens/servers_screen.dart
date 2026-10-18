@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/config_transfer.dart';
 import '../../data/server_config.dart';
 import '../../data/server_url.dart';
 import '../../data/subsonic_client.dart';
@@ -26,13 +27,20 @@ import '../widgets/states.dart';
 /// 一直是按「首次配置 / 修改配置」写的,`initState` 也早就把现有值填回表单了,
 /// 差的只是那个入口。
 class ServersScreen extends StatefulWidget {
-  const ServersScreen({super.key, this.startInForm = false});
+  const ServersScreen({super.key, this.startInForm = false, this.prefill});
 
   /// 一进来就停在**表单**(而不是管理页)。
   ///
   /// 设置页那颗「添加服务器」走的是这条:用户已经说了要填新服务器,
   /// 再让他自己找一下「服务器设置」是多余的一步。
   final bool startInForm;
+
+  /// 「扫码同步」读出来那份配置 —— 带进来做初值。
+  ///
+  /// 走**路由参数**而不是 `AppState` 上的一个字段:预填是这一次导航的事,
+  /// 放在状态层会跨任意导航活下来(用户走到别处再回来,它还在),而且
+  /// 「谁来清掉它」会变成一个没人说得清的问题。`openAlbum` 传 record 是同一个做法。
+  final TransferredServer? prefill;
 
   @override
   State<ServersScreen> createState() => _ServersScreenState();
@@ -64,12 +72,58 @@ class _ServersScreenState extends State<ServersScreen> {
   /// 其余线路(见 [_mergeIntoExisting])。
   bool _creatingNew = false;
 
+  /// 「扫码同步」带进来的那几条线路。
+  ///
+  /// 单独记着,是因为 [_connect] 造线路那条分支只认**表单里那一条地址**
+  /// (`_creatingNew ? [_routeFor(url)] : mergeEditedRoute(...)`)—— 一份 3 条线路
+  /// 的载荷会被**静默丢掉 2 条**。有了这个字段,表单那条地址改的是**第一条**,
+  /// 其余几条连 id 与锁定一起原样提交(与「改现有那台」同一条语义)。
+  List<ServerRoute>? _importedRoutes;
+
   @override
   void initState() {
     super.initState();
+    final appState = context.read<AppState>();
+    final prefill = widget.prefill;
+    if (prefill != null) {
+      _applyPrefill(prefill);
+      return;
+    }
     // 已经配过服务器、而且是来**改配置**的,就把现有值填回表单。
-    _creatingNew = !context.read<AppState>().hasServer ? true : widget.startInForm;
-    if (!_creatingNew) unawaited(_prefillFrom(context.read<AppState>()));
+    _creatingNew = !appState.hasServer ? true : widget.startInForm;
+    if (!_creatingNew) unawaited(_prefillFrom(appState));
+  }
+
+  /// 把扫码带进来那份配置填上:**除密码以外**全部预填。
+  ///
+  /// 密码留空是有意的。那条路走不到带密码的载荷上 —— 带了密码的话扫码那一屏
+  /// 自己就连上去了,不会把人送到这儿来;送到这儿,要的正是让他补这一处。
+  /// `_canSubmit` 要求密码非空,所以「连接」此时是暗的,那是对的(见 [_prefillNotice])。
+  void _applyPrefill(TransferredServer server) {
+    _nameController.text = server.name;
+    _userController.text = server.username;
+    _kind = server.kind;
+    if (server.routes.isNotEmpty) {
+      _urlController.text = server.routes.first.url;
+    }
+    // 这台是**新填的**:不要把本机现有那几条线路合回来(那是另一台机器的事),
+    // 但要保住载荷里那几条。
+    _creatingNew = true;
+    _editing = true;
+    _importedRoutes = server.routes;
+  }
+
+  /// 扫码带进来那份配置的说明。
+  ///
+  /// 必须说清「只差密码」:那颗「连接」此时是暗的(表单要求密码非空),
+  /// 不说的话用户会以为这一屏卡住了。
+  String? get _prefillNotice {
+    final imported = _importedRoutes;
+    if (imported == null) return null;
+    final rest = imported.length > 1
+        ? '这段配置里有 ${imported.length} 条线路，这里只显示第一条 —— 其余几条会原样保存。'
+        : '';
+    return '已从扫码内容填入，只差密码。$rest';
   }
 
   /// 把已配置的值填回表单 —— 进表单时、以及**按「取消」时**都要用。
@@ -142,15 +196,20 @@ class _ServersScreenState extends State<ServersScreen> {
         kind: _kind,
         username: _userController.text,
         password: _passwordController.text,
-        // 改现有那台:表单里这条地址**替换掉第一条线路**,其余几条原样留着;
-        // 新接一台:就一条线路。
+        // 三条路,按「这张表单是给谁填的」分:
+        //   - 扫码带进来的那份配置:表单里这条地址**替换掉第一条**,载荷里其余
+        //     几条连 id 与锁定一起留着(丢了它们就是静默少了两条线路);
+        //   - 改现有那台:同上,只是那几条来自本机现有配置;
+        //   - 新接一台:就一条线路。
         //
         // 早先这里无条件提交一条 `route-1`:用户只想改个密码,内外网那两条线路
         // 就被抹掉了,活下来的那条还被强制锁定(于是「自动择优」也一起停了)——
         // 而这条路是这一轮才开的入口,所以以前碰不到。
-        routes: _creatingNew
-            ? [_routeFor(url)]
-            : mergeEditedRoute(appState.server?.routes ?? const [], _routeFor(url)),
+        routes: _importedRoutes != null
+            ? mergeEditedRoute(_importedRoutes!, _routeFor(url))
+            : _creatingNew
+                ? [_routeFor(url)]
+                : mergeEditedRoute(appState.server?.routes ?? const [], _routeFor(url)),
       );
 
       if (!mounted) return;
@@ -369,17 +428,23 @@ class _ServersScreenState extends State<ServersScreen> {
             ],
           ),
         ),
+        if (_prefillNotice != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              NordicSpace.s5, NordicSpace.s5, NordicSpace.s5, 0),
+            child: NordicNote(_prefillNotice!, tone: NordicNoteTone.info),
+          ),
         if (_formError != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(
               NordicSpace.s5, NordicSpace.s5, NordicSpace.s5, 0),
-            child: _Notice(message: _formError!, isError: true),
+            child: NordicNote(_formError!, tone: NordicNoteTone.bad),
           ),
         if (_formSuccess != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(
               NordicSpace.s5, NordicSpace.s5, NordicSpace.s5, 0),
-            child: _Notice(message: _formSuccess!, isError: false),
+            child: NordicNote(_formSuccess!, tone: NordicNoteTone.ok),
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
@@ -410,6 +475,8 @@ class _ServersScreenState extends State<ServersScreen> {
                             // 取消之后这张表单回到「改现有那台」的样子 ——
                             // 下次从「服务器设置」进来时别再当成新填一台。
                             _creatingNew = false;
+                            // 扫码带进来那几条也算「扔掉的改动」,一起清掉。
+                            _importedRoutes = null;
                           });
                           // 扔掉的那半份改动也**从输入框里清掉**(见 [_prefillFrom])。
                           await _prefillFrom(state);
@@ -634,6 +701,8 @@ class _ServersScreenState extends State<ServersScreen> {
                 // 这条路是**改现有那台** —— 之前那张表单可能是「添加服务器」
                 // 那条路留下的标记,不清掉的话进来会是一张空白表单。
                 _creatingNew = false;
+                // 扫码带进来那几条同理:这一条路走的是本机现有配置。
+                _importedRoutes = null;
               });
               // 填回现有的值(上一次可能是新填一台上半途退出来的)。
               await _prefillFrom(state);
@@ -1037,48 +1106,6 @@ class _Stat extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-/// 表单提示条。
-class _Notice extends StatelessWidget {
-  const _Notice({required this.message, required this.isError});
-
-  final String message;
-  final bool isError;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    final tone = isError ? t.bad : t.ok;
-
-    return Container(
-      padding: const EdgeInsets.all(NordicSpace.s4),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(NordicRadius.md),
-        color: tone.withValues(alpha: 0.11),
-        border: Border.all(color: tone.withValues(alpha: 0.28)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isError ? Icons.error_outline : Icons.check_circle_outline,
-            size: 18,
-            color: tone,
-          ),
-          const SizedBox(width: NordicSpace.s3),
-          Expanded(
-            child: Text(
-              message,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: t.fg,
-                    height: 1.6,
-                  ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

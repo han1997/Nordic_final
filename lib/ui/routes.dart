@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/config_transfer.dart';
 import '../theme/tokens.dart';
 import 'screens/add_route_screen.dart';
 import 'screens/album_screen.dart';
@@ -11,6 +12,7 @@ import 'screens/playlist_screen.dart';
 import 'screens/player_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/servers_screen.dart';
+import 'screens/sync_screen.dart';
 
 /// 路由约定。
 ///
@@ -21,6 +23,13 @@ import 'screens/servers_screen.dart';
 ///
 /// 集中在这里而不是散在调用点,是为了让「哪些页面对外可见」一眼看全 ——
 /// 也让 [openSearch] 这类跳转有唯一一处入口。
+/// 「服务器与线路」那一屏的路由参数 —— 见 [AppRoutes.openServers]。
+///
+/// 用一个 record 而不是「先传个 bool、再想办法塞个对象进去」:`RouteSettings`
+/// 只有一个 `arguments` 槽,record 让两个值一起过去,而且调用点一眼看得见
+/// `form` 是真是假(与 `openAlbum` 的 `(id:, heroTag:)` 同一个做法)。
+typedef ServersArgs = ({bool form, TransferredServer? prefill});
+
 abstract final class AppRoutes {
   static const player = '/player';
   static const lyrics = '/lyrics';
@@ -32,6 +41,7 @@ abstract final class AppRoutes {
   static const downloads = '/downloads';
   static const newPlaylist = '/new-playlist';
   static const addRoute = '/add-route';
+  static const sync = '/sync';
 
   /// 所有页面的路由都从这里出。
   ///
@@ -53,11 +63,22 @@ abstract final class AppRoutes {
       case lyrics:
         // 歌词与播放页是**同一个播放对象的两面** —— 见 [flip]。
         return flip(settings, const LyricsScreen());
-      case servers:
+      case servers: {
+        // 两种调用点:老的那几个传一个 bool;「扫码同步」传一个 record
+        // (它还要把读出来那份配置带进去预填)。**不为迁就 record 把老的改一遍** ——
+        // `args == true` 那条兜底让它们原样可用。
+        final args = settings.arguments;
+        final (form, prefill) = args is ServersArgs
+            ? (args.form, args.prefill)
+            : (args == true, null);
         return slide(
           settings,
-          ServersScreen(startInForm: settings.arguments == true),
+          ServersScreen(startInForm: form, prefill: prefill),
         );
+      }
+      case sync:
+        // 二级页,走滑入 —— 它不是播放页那种「同一张封面翻个面」。
+        return slide(settings, const SyncScreen());
       case downloads:
         return slide(settings, const DownloadsScreen());
       case newPlaylist:
@@ -190,8 +211,22 @@ abstract final class AppRoutes {
   ///
   /// [form] 为真时**直接落在录入表单上**(设置页那颗「添加服务器」),
   /// 否则落在管理页 —— 那一页里的「服务器设置」才是改账号 / 密码 / 地址的入口。
-  static Future<void> openServers(BuildContext context, {bool form = false}) =>
-      Navigator.of(context).pushNamed(servers, arguments: form);
+  ///
+  /// [prefill] 是「扫码同步」读出来那份配置:落在表单上、除密码以外全部填好,
+  /// 用户补一次密码就能连。
+  static Future<void> openServers(
+    BuildContext context, {
+    bool form = false,
+    TransferredServer? prefill,
+  }) =>
+      Navigator.of(context).pushNamed(
+        servers,
+        arguments: (form: form, prefill: prefill),
+      );
+
+  /// 打开扫码同步 —— 把另一台设备上的服务器与线路带到这台设备来。
+  static Future<void> openSync(BuildContext context) =>
+      Navigator.of(context).pushNamed(sync);
 
   static Future<void> openDownloads(BuildContext context) =>
       Navigator.of(context).pushNamed(downloads);

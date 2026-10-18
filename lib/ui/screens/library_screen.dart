@@ -163,15 +163,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (!view.hasServer) {
       return EmptyState(
         title: '还没有连接服务器',
-        detail: '填上服务器地址与账号，曲库会显示在这里。',
+        detail: '扫码带走另一台设备的配置，或者手动填上地址与账号。',
         topPadding: 80,
-        // 与首页同一颗入口(见那儿为什么加)。
+        // 与首页**同一块**空态(两颗入口的来由见那边)。
         action: SizedBox(
-          width: 200,
-          child: PrimaryButton(
-            label: '连接服务器',
-            icon: Icons.dns_outlined,
-            onPressed: () => AppRoutes.openServers(context, form: true),
+          width: 210,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PrimaryButton(
+                label: '连接服务器',
+                icon: Icons.dns_outlined,
+                onPressed: () => AppRoutes.openServers(context, form: true),
+              ),
+              const SizedBox(height: NordicSpace.s3),
+              GhostButton(
+                label: '扫码同步',
+                icon: Icons.qr_code_scanner,
+                onPressed: () => AppRoutes.openSync(context),
+              ),
+            ],
           ),
         ),
       );

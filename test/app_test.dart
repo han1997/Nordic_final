@@ -1,7 +1,10 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nordic/data/config_transfer.dart';
 import 'package:nordic/data/models.dart';
+import 'package:nordic/data/server_config.dart';
+import 'package:nordic/data/server_route.dart';
 import 'package:nordic/playback/playback_controller.dart';
 import 'package:nordic/theme/accent.dart';
 import 'package:nordic/theme/nordic_theme.dart';
@@ -10,6 +13,7 @@ import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/routes.dart';
 import 'package:nordic/ui/screens/album_screen.dart';
 import 'package:nordic/ui/screens/lyrics_screen.dart';
+import 'package:nordic/ui/screens/servers_screen.dart';
 import 'package:nordic/ui/shell/bottom_stack.dart';
 import 'package:nordic/ui/widgets/album_rail.dart';
 import 'package:nordic/ui/widgets/components.dart';
@@ -451,6 +455,74 @@ void main() {
         closeTo(NordicMotion.ease.transform(0.5), 1e-9),
         reason: '缓动要与切换 tab、底部悬浮胶囊同一根曲线',
       );
+    });
+
+    /// 「扫码同步」是**二级页**:滑入。它不是播放页那种「同一张封面翻个面」。
+    testWidgets('扫码同步：滑入，不是播放页那套淡入', (tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(builder: (c) {
+          ctx = c;
+          return const SizedBox();
+        }),
+      ));
+
+      final route = AppRoutes.generate(
+        const RouteSettings(name: AppRoutes.sync),
+      )! as PageRouteBuilder<dynamic>;
+
+      const halfway = AlwaysStoppedAnimation<double>(0.5);
+      final widget =
+          route.transitionsBuilder(ctx, halfway, halfway, const SizedBox());
+
+      expect(route.transitionDuration, greaterThan(Duration.zero));
+      expect(widget, isA<SlideTransition>(),
+          reason: '二级页是「进了一个新页面」，那一下位移正是它要说的意思');
+    });
+
+    /// `servers` 这条路由有**两种调用点**:老的那几个传一个 bool,
+    /// 「扫码同步」传一个 record(它还要把读出来那份配置带进去预填)。
+    /// 这一条钉住 record 穿得过去,而且 `args == true` 那条兜底还在 ——
+    /// 少了兜底,老的五个调用点会在运行时静默退化成「管理页」。
+    testWidgets('servers 路由：扫码带进来那份配置落在表单上，老的 bool 形式照旧', (tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(builder: (c) {
+          ctx = c;
+          return const SizedBox();
+        }),
+      ));
+
+      Widget pageOf(Object? arguments) {
+        final route = AppRoutes.generate(
+          RouteSettings(name: AppRoutes.servers, arguments: arguments),
+        )! as PageRouteBuilder<dynamic>;
+        return route.pageBuilder(
+          ctx,
+          const AlwaysStoppedAnimation<double>(1),
+          const AlwaysStoppedAnimation<double>(1),
+        );
+      }
+
+      const imported = TransferredServer(
+        kind: ServerKind.subsonic,
+        name: '卧室 Navidrome',
+        username: 'demo',
+        routes: [
+          ServerRoute(id: 'r0', name: '局域网', url: 'http://bedroom.local:4533'),
+          ServerRoute(id: 'r1', name: '外网', url: 'https://bedroom.example.com'),
+        ],
+      );
+
+      final scanned = pageOf(const (form: true, prefill: imported)) as ServersScreen;
+      expect(scanned.startInForm, isTrue);
+      expect(scanned.prefill?.name, '卧室 Navidrome');
+      expect(scanned.prefill?.routes.length, 2, reason: '几条线路一起过去，不能只剩一条');
+
+      // 老的调用点:一个 bool(「添加服务器」),以及什么都不传(「服务器设置」)。
+      expect((pageOf(true) as ServersScreen).startInForm, isTrue);
+      expect((pageOf(null) as ServersScreen).startInForm, isFalse);
+      expect((pageOf(null) as ServersScreen).prefill, isNull);
     });
 
     test('专辑 / 艺人 / 歌单仍是滑入 —— 它们不是「翻面」而是进另一个页面', () {

@@ -109,16 +109,31 @@ class HomeScreen extends StatelessWidget {
     if (!view.hasServer) {
       return EmptyState(
         title: '还没有连接服务器',
-        detail: '填上服务器地址与账号，最近在听的会显示在这里。',
+        detail: '扫码带走另一台设备的配置，或者手动填上地址与账号。',
         topPadding: 80,
         // 空态说的是「这儿没有」,那就顺手给出**怎么让它有** ——
         // 只写一句「到设置里填」等于把活交给用户去找。
+        //
+        // 两颗入口:手动填是原有的路,扫码是这一轮新开的那条 —— 另一台设备上
+        // 已经配好的服务器与线路,扫一下就带过来,不必重打一遍地址。两个都落在
+        // `EmptyState.action` 那一个槽里,所以自己竖着排。
         action: SizedBox(
-          width: 200,
-          child: PrimaryButton(
-            label: '连接服务器',
-            icon: Icons.dns_outlined,
-            onPressed: () => AppRoutes.openServers(context, form: true),
+          width: 210,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PrimaryButton(
+                label: '连接服务器',
+                icon: Icons.dns_outlined,
+                onPressed: () => AppRoutes.openServers(context, form: true),
+              ),
+              const SizedBox(height: NordicSpace.s3),
+              GhostButton(
+                label: '扫码同步',
+                icon: Icons.qr_code_scanner,
+                onPressed: () => AppRoutes.openSync(context),
+              ),
+            ],
           ),
         ),
       );

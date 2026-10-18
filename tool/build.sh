@@ -148,7 +148,7 @@ standardize_windows() {
 # `flutter_bootstrap.js` + `canvaskit/` + assets),整目录打包,解压出来拿静态
 # 服务器提供即可。
 #
-# 校验四条,每条都要能真查出东西:
+# 校验五条,每条都要能真查出东西:
 #  1. 六个入口文件都在 —— 少一个,这个 zip 解出来就是跑不起来;
 #  2. `useLocalCanvasKit` 出现在 `flutter_bootstrap.js` 里 —— 这是防「有人绕过这个
 #     脚本手打 `flutter build web`」的守门。那种产物会在**运行时**去
@@ -159,6 +159,7 @@ standardize_windows() {
 #     必被抓,与 apk / windows 那两条同一个理由;
 #  4. **没有签名那套** —— web 产物没有签名,也没有 Android 那种包名身份可校。
 #     这里不假装有。
+#  5. **没有运行时的 CDN 地址**(扫码那一半)—— 见这段末尾那条守卫。
 standardize_web() {
   local built="$1"
   local version zip_name out out_abs written written_num f
@@ -183,6 +184,30 @@ standardize_web() {
     return 1
   fi
 
+  # 5. **没有运行时的 CDN 依赖**(扫码那一半)。
+  #
+  #    没有摄像头的设备走粘贴文本,而 web 上**从不**把摄像头那一支建起来
+  #    (见 `lib/data/scan_capability.dart`)。这条守的是「有人为了让 web 也能扫,
+  #    往 index.html 或别处塞一行 unpkg 的 @zxing」—— 那种产物会在**运行时**去
+  #    CDN 取脚本,失败形态与上面 CanvasKit 那条一模一样:卡住、不报错。
+  #
+  #    **扫描范围刻意排除 main.dart.js**:`mobile_scanner` 的 Dart 源码里写着那些
+  #    地址(它要自己动态插 `<script>`,见它自己的 `zxing_barcode_reader.dart`),
+  #    bundle 里真出现那串也是**库自己的代码**,不是运行时一定会去取。而这条路在
+  #    我们这个产物里从不会被走到 —— web 上压根不建摄像头那一支。
+  #
+  #    2026-10-18 实测:这份产物里 main.dart.js **一处都没有**(树摇把它摇掉了),
+  #    也就是说这条排除今天什么都没遮住;留着是为了将来某个版本不再摇掉它时,
+  #    守卫不会因为库内部的字符串而误报。真要确认「没有被取」,还是打开页面盯
+  #    Network 面板看有没有对那两家的请求(见 docs/CHANGELOG 本轮记录)。
+  if grep -rIl --include='*.html' --include='*.js' --include='*.json' \
+       --exclude='main.dart.js' \
+       -e 'unpkg\.com' -e 'jsdelivr' -e '@zxing' "$built"; then
+    echo "—— 上面这些文件里有运行时的 CDN 地址。这个产物打开后会去外网取脚本," >&2
+    echo "   取不到的表现是**卡住、不报错**(与 CanvasKit 那条同一种失败)。" >&2
+    return 1
+  fi
+
   written="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
     "$built/version.json")"
   written_num="$(sed -n 's/.*"build_number"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
@@ -204,6 +229,7 @@ standardize_web() {
   echo "✓ $out"
   echo "  版本 ${version}(产物内 version.json 逐字核对过)· 整目录打包"
   echo "  入口 index.html · 本地 CanvasKit(未走 www.gstatic.com)· 无签名可校"
+  echo "  扫码那一半:web 上不起摄像头(不用 unpkg 的 @zxing),产物里没有 CDN 地址"
   echo "  必须从根提供(index.html 里是 base href=\"/\");"
   echo "  (flutter 默认那个 $built 照旧保留,flutter run -d chrome 认的是它)"
 }

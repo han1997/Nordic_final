@@ -12,6 +12,7 @@ import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/rows.dart';
+import 'config_export_sheet.dart';
 import 'cache_sheet.dart';
 import 'quality_sheet.dart';
 
@@ -126,6 +127,25 @@ class SettingsScreen extends StatelessWidget {
                   // 「服务器设置」(那是改现有配置的入口)。
                   onTap: () => AppRoutes.openServers(context, form: true),
                 ),
+                _SettingRow(
+                  icon: Icons.qr_code_scanner,
+                  title: '扫码同步',
+                  subtitle: '扫码或粘贴，把服务器与线路带到这台设备',
+                  trailing: Icon(Icons.chevron_right,
+                      size: 18, color: context.nordic.fg3),
+                  onTap: () => AppRoutes.openSync(context),
+                ),
+                // 只在真连着的时候出现。[_SettingRow] 没有禁用态,给一个
+                // `onTap: null` 的行既不置灰也不回弹,读起来就是个坏按钮。
+                if (state.server != null)
+                  _SettingRow(
+                    icon: Icons.qr_code_2,
+                    title: '导出配置',
+                    subtitle: '二维码 · 可复制成一段文本',
+                    trailing: Icon(Icons.chevron_right,
+                        size: 18, color: context.nordic.fg3),
+                    onTap: () => showConfigExportSheet(context),
+                  ),
               ],
             ),
             const SectionHeader(title: '缓存'),
