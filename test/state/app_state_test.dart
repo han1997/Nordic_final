@@ -545,13 +545,17 @@ void main() {
     /// 一台「有 1200 首」的假服务器:按 `songOffset` 切页,一页最多 `songCount`。
     /// 三个数字都是**服务器口径**里的真值,不另存一份 —— 这样「取了几页」
     /// 只能从发出去的请求看出来。
-    Dio pagingDio(int librarySize) {
+    ///
+    /// [cap] 模拟**把 `search3` 卡在某个条数上**的服务器(Navidrome 之外
+    /// 有些实现是 500):要 1000 也只给 500。
+    Dio pagingDio(int librarySize, {int? cap}) {
       Dio dio = Dio(BaseOptions(validateStatus: (_) => true));
       dio.interceptors.add(InterceptorsWrapper(
         onRequest: (options, interceptor) {
           seen.add(options.uri);
           final q = options.uri.queryParameters;
-          final count = int.tryParse(q['songCount'] ?? '500') ?? 500;
+          var count = int.tryParse(q['songCount'] ?? '500') ?? 500;
+          if (cap != null && count > cap) count = cap;
           final offset = int.tryParse(q['songOffset'] ?? '0') ?? 0;
           // 每首的入库时间按序号递增 —— 与真机 Navidrome 的 `search3` 一致:
           // 序号越大越新,也就越靠后(升序)。这样「只排第一页」与「排全量」
@@ -619,10 +623,28 @@ void main() {
 
       expect(state.library.songs.length, 1200);
       expect(state.library.songsComplete, isTrue);
-      expect(state.library.songsMissing, 0);
+      expect(state.library.totalSongs, 1200);
       final searches = seen.where((u) => u.path.contains('search3')).toList();
       expect(searches.map((u) => u.queryParameters['songOffset']).toList(),
           [null, '1000'], reason: 'offset 必须按「取回过的原始条数」走');
+    });
+
+    test('服务器把一页卡在 500 时也要翻到底 —— 「不足一页」不等于「到底了」', () async {
+      final state =
+          await buildState(pagingDio(3000, cap: 500), root, cache: cache);
+      await state.loadLibrary();
+
+      // 首屏只有 500 条,但它显然不是全部 —— 专辑那一栏报的规模是 3000。
+      // 按条数判的话这里就该收摊了,库永远停在 500。
+      expect(state.library.songs.length, 500);
+      expect(state.library.songsComplete, isFalse);
+
+      await state.songsSettled;
+
+      expect(state.library.songs.length, 3000);
+      expect(state.library.songsComplete, isTrue);
+      // 「最近添加」按全量重算 —— 最新的那几首在最后一页上。
+      expect(state.library.recentlyAddedSongs.first.id, 's2999');
     });
 
     test('取到不足一页就到底了 —— 页脚那句「已取到全部」的依据', () async {
@@ -631,7 +653,6 @@ void main() {
 
       expect(state.library.songs.length, 1201);
       expect(state.library.songsComplete, isTrue);
-      expect(state.library.songsMissing, 0);
       // 取全之后总数以实际条数为准,不再拿专辑 songCount 的估计值。
       expect(state.library.totalSongs, 1201);
     });

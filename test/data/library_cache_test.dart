@@ -66,6 +66,9 @@ void main() {
             songCount: 5,
           ),
         ],
+        // 「取全了没有」也要能往返:丢了它,一个已经取全的库冷启动读回来
+        // 会被当成还差一截。
+        songsComplete: true,
       );
 
   test('写进去再读回来,内容一字不差', () async {
@@ -82,6 +85,7 @@ void main() {
     expect(cached.snapshot.songs.first.created, DateTime.utc(2026, 1, 5));
     expect(cached.snapshot.playlists.single.readonly, isTrue);
     expect(cached.snapshot.playlists.single.songCount, 3);
+    expect(cached.snapshot.songsComplete, isTrue);
     // 存的时候得记下时间 —— 界面要说「上次同步 …」。
     expect(
       DateTime.now().difference(cached.savedAt).inMinutes,

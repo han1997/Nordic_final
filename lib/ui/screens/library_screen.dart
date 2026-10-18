@@ -606,9 +606,18 @@ class _SongsFooter extends StatelessWidget {
     final missing = library.songsComplete ? 0 : (total - loaded).clamp(0, 1 << 30);
 
     // 取全了、条数也对得上 —— 那就不必多说什么(库里没问题时报一句总数是噪音)。
+    // 取全之后 `total` 就是实际条数,所以「已取到全部 N 首」这句在这里到不了,
+    // 页脚收掉本身就是那句「已经到底了」。
     if (!loadingMore && missing <= 0 && loaded == total) {
       return const SizedBox(height: NordicSpace.s5);
     }
+
+    // 「还有 N 首没取」里的 N 来自专辑那一栏报的规模估计,它可能比手头这份
+    // 列表还小(有的曲子不在任何专辑里)。那时印出来是「库里 0 首,还有 0 首
+    // 没取」—— 两个数自相矛盾,不如只说还没取完。
+    final progress = missing > 0
+        ? '已取到 $loaded 首 · 库里 $total 首,还有 $missing 首没取'
+        : '已取到 $loaded 首 · 库里还有没取到的曲目';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -616,9 +625,7 @@ class _SongsFooter extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            library.songsComplete
-                ? '已取到全部 $loaded 首'
-                : '已取到 $loaded 首 · 库里 $total 首,还有 $missing 首没取',
+            progress,
             textAlign: TextAlign.center,
             style: Theme.of(context)
                 .textTheme

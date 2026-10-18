@@ -498,11 +498,10 @@ class LibrarySnapshot {
   /// 启动只拉一页(见 `AppState._songPageSize`),余下的在后台续取
   /// (见 `AppState._completeSongs`),用户滑到底也会接着取。
   /// 取全之后置真 —— 在那之前界面不能说「这就是全部」。
+  ///
+  /// 判据在 `AppState._songsExhausted`:不是「这一页不满」,而是
+  /// 「这一页空了,或者已取到的条数追平了服务器报的规模估计」。
   final bool songsComplete;
-
-  /// 还差多少首没取。未知(还没翻完、也没有初始化)时为 null。
-  int? get songsMissing =>
-      songsComplete ? 0 : (totalSongs - songs.length).clamp(0, 1 << 30);
 
   LibrarySnapshot markSongsComplete(bool complete) => LibrarySnapshot(
         albums: albums,

@@ -216,9 +216,36 @@ class AppState extends ChangeNotifier {
   /// 取 1000:实测这台 Navidrome 对 `songCount=1000/2000/20000` 都返回全量,
   /// 500 并不是它的硬上限(旧注释的「卡在 500」是误判)。常见个人库(几百到
   /// 一千首)**一个请求就完整**,于是「最近添加」当场就是对的。
-  /// 真有服务器卡在 500 时,首屏拿 500、`songsComplete=false`,
-  /// 由后台补齐继续取 —— 逻辑不变。
   static const _songPageSize = 1000;
+
+  /// 这一页回来之后,能不能说「服务器的曲目就这些了」。
+  ///
+  /// **不能只看「这一页不满」**:服务器完全可能把 `search3` 卡在比
+  /// [_songPageSize] 更低的条数上(常见的是 500),那时每一页都不满 ——
+  /// 按条数判会当场收摊,库永远停在第一页;而「最近添加」是拿已取到的曲子
+  /// 排的,首页那条货架于是也跟着错(最新的歌排在最后一页)。
+  ///
+  /// 所以再借一个信号:专辑那一栏报的 `songCount` 之和 —— 服务器给的规模
+  /// 估计(与 [LibrarySnapshot.totalSongs] 同一个口径)。三条里占一条才敢收:
+  ///
+  ///   - 这一页是**空的** —— 服务器亲口说到头了;
+  ///   - 或者这一页不满、而且**已经取到的原始条数追平了那个估计**;
+  ///   - 估计本身得是正数:一台不给专辑的服务器上估计是 0,
+  ///     「追平了 0」什么也说明不了,只能等空页。
+  ///
+  /// 估计值**偏高**时最多多要一两页(代价是流量),偏低时才是截断 ——
+  /// 而偏低那一头在改动之前也一样会截断,不是这里引入的。
+  static bool _songsExhausted({
+    required int pageLength,
+    required int fetched,
+    required int estimate,
+  }) =>
+      pageLength == 0 ||
+      (pageLength < _songPageSize && estimate > 0 && fetched >= estimate);
+
+  /// 专辑那一栏报的曲目总数 —— 服务器给的规模估计。
+  int get _songsEstimate =>
+      _library.albums.fold(0, (sum, a) => sum + a.songCount);
 
   /// 后台补齐时最多再翻多少页(一页 1000,即一万首封顶)。
   /// 防的是「极端大库把启动后的网络一路占着」。
@@ -252,7 +279,12 @@ class AppState extends ChangeNotifier {
       _library = mergeSongPage(
         _library,
         page,
-        complete: page.length < _songPageSize,
+        // 同 [loadLibrary]:不满一页不等于到底了(判据见 [_songsExhausted])。
+        complete: _songsExhausted(
+          pageLength: page.length,
+          fetched: _songsFetched,
+          estimate: _songsEstimate,
+        ),
         sort: songSort,
       );
       // 缓存跟着更新:不然重启之后「全部歌曲」又只剩第一页,
@@ -346,6 +378,10 @@ class AppState extends ChangeNotifier {
     if (cached == null) return;
 
     _library = cached.snapshot;
+    // 翻页的 offset 是「取回过的**原始**条数」,缓存里没单独存这一位,
+    // 拿落盘的条数顶 —— 去重之后它只会偏小,于是下一次翻页与上一页有重叠,
+    // 由 `mergeSongPage` 的 id 去重兜住(offset 仍然在往前推,不会卡住)。
+    _songsFetched = cached.snapshot.songs.length;
     _cachedAt = cached.savedAt;
     _fromCache = true;
     _phase = LoadPhase.ready;
@@ -404,9 +440,10 @@ class AppState extends ChangeNotifier {
       ]);
 
       final songs = results[2] as List<Song>;
+      final albums = results[0] as List<Album>;
       _songsFetched = songs.length;
       _library = LibrarySnapshot(
-        albums: results[0] as List<Album>,
+        albums: albums,
         artists: results[1] as List<Artist>,
         songs: sortSongs(songs, songSort),
         playlists: results[3] as List<Playlist>,
@@ -416,9 +453,12 @@ class AppState extends ChangeNotifier {
         recentlyAddedSongs: recentlyAddedSongsOf(songs),
         recentlyPlayed: results[4] as List<Album>,
         mostPlayed: results[5] as List<Album>,
-        // 一页就装下了(不足一页)才叫全集 —— 「全部歌曲」那一栏据此决定
-        // 还要不要继续翻、以及页脚有没有一句「已到全部」。
-        songsComplete: songs.length < _songPageSize,
+        // 判据见 [_songsExhausted] —— 「不足一页」本身说明不了什么。
+        songsComplete: _songsExhausted(
+          pageLength: songs.length,
+          fetched: songs.length,
+          estimate: albums.fold(0, (sum, a) => sum + a.songCount),
+        ),
       );
       _phase = LoadPhase.ready;
       _error = null;

@@ -201,6 +201,10 @@ class LibraryCache {
         'recentlyAddedSongs': [for (final s in snapshot.recentlyAddedSongs) s.toJson()],
         'recentlyPlayed': [for (final a in snapshot.recentlyPlayed) a.toJson()],
         'mostPlayed': [for (final a in snapshot.mostPlayed) a.toJson()],
+        // 「取全了没有」跟着一起落盘:不存的话,一个已经取全的库冷启动读回来
+        // 会被当成「还差一截」,页脚挂上「还有 N 首没取」,下一次翻页又从
+        // offset 0 重来一遍(把第一页白拉一次)。
+        'songsComplete': snapshot.songsComplete,
       };
 
   static LibrarySnapshot _snapshotFrom(Map<String, dynamic> json) =>
@@ -215,6 +219,9 @@ class LibraryCache {
         // 不是错误(下一次刷新就补上了)。
         recentlyPlayed: _list(json['recentlyPlayed'], Album.fromJson),
         mostPlayed: _list(json['mostPlayed'], Album.fromJson),
+        // 同样:前一版缓存里没有这一位,读出来是 false(当成没取全)—— 下一轮
+        // 刷新会按真实情况改写它,最多多花一次请求。
+        songsComplete: json['songsComplete'] == true,
       );
 
   static List<T> _list<T>(Object? raw, T Function(Map<String, dynamic>) read) => [
