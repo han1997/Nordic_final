@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 
+import 'music_source.dart';
 import 'server_route.dart';
 import 'subsonic_auth.dart';
 import 'subsonic_payload.dart';
@@ -21,7 +22,7 @@ export 'server_route.dart';
 ///   2. **故障切换** —— 当前线路网络失败(超时 / 连接被拒)时,
 ///      自动换到下一条可用线路再试一次。认证失败**不换**线
 ///      (密码错了换到哪条都错,换线只会让用户困惑)。
-class SubsonicClient {
+class SubsonicClient implements ServerConnection {
   SubsonicClient({
     required this.auth,
     required List<ServerRoute> routes,
@@ -46,6 +47,7 @@ class SubsonicClient {
   /// 切到别的线路。设置页那句「每条线路要手动锁定」说的就是这件事:
   /// 用户既然点名了走哪条,就不该在他不知情的时候换成另一条。
   /// 运行中可以改(设置页的开关直接改这个字段)。
+  @override
   bool autoRoute;
 
   /// 当前生效的线路 id。优先级:用户锁定 > 实测最快 > 列表首条。
@@ -54,6 +56,7 @@ class SubsonicClient {
   /// 最近一次测速结果。
   final Map<String, RoutePing> _pings = {};
 
+  @override
   List<ServerRoute> get routes => List.unmodifiable(_routes);
 
   /// 换一份线路表(增删 / 改名 / 锁定)。
@@ -65,6 +68,7 @@ class SubsonicClient {
   /// 顺手把不存在的线路留下的痕迹清掉:生效线路若已被删,择优结果跟着作废
   /// (否则 [activeRoute] 会退到「列表首条」这种没根据的答案上);测速结果同理,
   /// 留着的话「N / M 条可用」会跟着算错。
+  @override
   void setRoutes(List<ServerRoute> routes) {
     _routes
       ..clear()
@@ -77,8 +81,10 @@ class SubsonicClient {
     _pings.removeWhere((id, _) => !ids.contains(id));
   }
 
+  @override
   Map<String, RoutePing> get pings => Map.unmodifiable(_pings);
 
+  @override
   ServerRoute? get activeRoute {
     if (_routes.isEmpty) return null;
     final locked = _routes.where((r) => r.selected).firstOrNull;
@@ -104,6 +110,7 @@ class SubsonicClient {
   }
 
   /// 批量测速。逐条并发,单条失败不影响其它条。
+  @override
   Future<Map<String, RoutePing>> pingAll() async {
     final results = await Future.wait(_routes.map(pingRoute));
     for (final ping in results) {
@@ -115,6 +122,7 @@ class SubsonicClient {
   }
 
   /// 单条线路测速。用 `ping.view`(最轻的端点)量一次往返。
+  @override
   Future<RoutePing> pingRoute(ServerRoute route) async {
     final stopwatch = Stopwatch()..start();
     try {

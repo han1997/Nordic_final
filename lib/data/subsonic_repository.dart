@@ -1,5 +1,6 @@
 import 'json_list.dart';
 import 'models.dart';
+import 'music_source.dart';
 import 'sorting.dart';
 import 'subsonic_client.dart';
 import 'subsonic_mapper.dart';
@@ -18,10 +19,15 @@ export 'sorting.dart' show AlbumSort;
 /// 职责边界:持有 [SubsonicClient](网络 + 线路择优)、调端点、用
 /// [SubsonicMapper] 映射成域模型、把失败包成能直接展示成文案的异常。
 /// **不做缓存** —— 缓存是状态层的事,混进来会让「刷新」语义变得含糊。
-class SubsonicRepository {
+class SubsonicRepository implements MusicSource {
   SubsonicRepository(this.client, {this._localCover});
 
   final SubsonicClient client;
+
+  /// 线路这一层(见 [ServerConnection])—— 客户端本来就是干这个的,
+  /// 直接把它交出去,不另包一层。
+  @override
+  ServerConnection get connection => client;
 
   /// 「这张封面在本机有没有」—— 有就返回磁盘路径。
   ///
@@ -82,6 +88,7 @@ class SubsonicRepository {
 
   /// 全部艺人。按首字母分组由服务器给出,这里拉平 ——
   /// 原型里艺人页是「常听 + 全部」两条,分组头用不到。
+  @override
   Future<List<Artist>> artists() async {
     final body = await client.call('getArtists');
     return SubsonicMapper.artists(SubsonicPayload.artists(body));
@@ -93,6 +100,7 @@ class SubsonicRepository {
   /// 就是 [albumList] 里「整库浏览」那一档:**同一套端点、同一套映射**,
   /// 差别只在要多少(网格要 500 条,货架只要一屏)。早先这里是一份照着写的
   /// 副本,两边得手工保持同步。
+  @override
   Future<List<Album>> albums({AlbumSort sort = AlbumSort.alphabeticalByArtist}) =>
       albumList(sort, size: 500);
 
@@ -100,6 +108,7 @@ class SubsonicRepository {
   ///
   /// 与 [albums] 的区别只在**要多少**:整库浏览要 500 条,货架只要一屏 ——
   /// 为了几行横滑去拉五百张专辑的元数据是白花的。
+  @override
   Future<List<Album>> albumList(AlbumSort sort, {int size = 20}) async {
     final body = await client.call('getAlbumList2', {
       'type': sort.wireName,
@@ -109,6 +118,7 @@ class SubsonicRepository {
   }
 
   /// 专辑详情(含曲目)。
+  @override
   Future<({Album album, List<Song> songs})> album(String albumId) async {
     final cached = _cachedDetail<({Album album, List<Song> songs})>('album:$albumId');
     if (cached != null) return cached;
@@ -124,6 +134,7 @@ class SubsonicRepository {
   }
 
   /// 艺人详情。`getArtist` 一次给回艺人信息 + 专辑列表 + 曲目列表。
+  @override
   Future<({Artist artist, List<Album> albums, List<Song> topSongs})> artist(
     String artistId,
   ) async {
@@ -166,6 +177,7 @@ class SubsonicRepository {
   /// 见 `docs/performance.md` 的翻页小节)。500 只是一个够用的**页宽**:要全集
   /// 仍得一页页取,所以界面上的「全部歌曲」是按需翻页的(见 `LibraryScreen`
   /// 的翻页小节),不是一次取完。
+  @override
   Future<List<Song>> allSongs({int size = 500, int offset = 0}) async {
     final body = await client.call('search3', {
       'query': '',
@@ -182,6 +194,7 @@ class SubsonicRepository {
   /// Subsonic 没有「按艺人列全部曲目」的端点:`getArtist` 只给几首热门。
   /// 只能翻全集再按艺人筛,并且**要翻到底** —— 取前 500 首当全集,
   /// 会让大库里的用户在「下载这位艺人的歌」时默默少下后半截。
+  @override
   Future<List<Song>> songsByArtist(Artist artist) async {
     const pageSize = 500;
     // 两万首封顶。真实艺人远远到不了;这是给「筛不出东西时别把库翻穿」
@@ -210,12 +223,14 @@ class SubsonicRepository {
 
 
   /// 歌单列表。
+  @override
   Future<List<Playlist>> playlists() async {
     final body = await client.call('getPlaylists');
     return SubsonicMapper.playlists(SubsonicPayload.playlists(body));
   }
 
   /// 歌单详情(含曲目)。
+  @override
   Future<({Playlist playlist, List<Song> songs})> playlist(String playlistId) async {
     final cached = _cachedDetail<({Playlist playlist, List<Song> songs})>(
       'playlist:$playlistId',
@@ -236,6 +251,7 @@ class SubsonicRepository {
 
   /// 输入即筛选。服务器侧的 `search3` 支持空查询返回全量,
   /// 所以本地不必再单独维护一份索引。
+  @override
   Future<SearchHits> search(String query) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return SearchHits.empty;
@@ -255,6 +271,7 @@ class SubsonicRepository {
   ///
   /// 退避是必要的:Navidrome 0.64 支持前者,但别的 Subsonic 实现未必,
   /// 而歌词页在两者下都该能出内容 —— 只是一个能逐句跟随,一个不能。
+  @override
   Future<Lyrics> lyrics(String songId) async {
     try {
       final body = await client.call('getLyricsBySongId', {'id': songId});
@@ -281,6 +298,7 @@ class SubsonicRepository {
 
   // ---------------- 收藏 ----------------
 
+  @override
   Future<void> setStarred({
     String? songId,
     String? albumId,
@@ -299,6 +317,7 @@ class SubsonicRepository {
   }
 
   /// 收藏内容。界面用它在设置页显示「我的收藏」入口计数。
+  @override
   Future<SearchHits> starred() async {
     final body = await client.call('getStarred2');
     final json = SubsonicPayload.starred(body);
@@ -320,6 +339,7 @@ class SubsonicRepository {
   /// [size] 由服务器负责缩放;传原始尺寸会把 4000px 的原图拉进内存。
   /// 本机那份不再按 [size] 缩放:它是下载时按 1024 存的,为显示尺寸现解码
   /// 一张已经在磁盘上的图不值当。
+  @override
   Uri coverUri(String coverArtId, {int size = 512}) {
     final local = _localCover?.call(coverArtId);
     if (local != null) return Uri.file(local);
@@ -337,6 +357,7 @@ class SubsonicRepository {
 
   /// 音频流 URL。转码档位在这里落成 `maxBitRate` / `format` 参数;
   /// 原音档不传参数,直接取原文件。
+  @override
   Uri streamUri(String songId, {int? maxBitRate, String? format}) {
     final route = _activeRouteOrThrow;
     return _rememberUri('stream|${route.url}|$songId|$maxBitRate|$format', () =>
@@ -389,6 +410,7 @@ class SubsonicRepository {
   /// 下载的卖点是「离线也能听」,那就该存服务器上真正的那个文件。
   /// 跟着当前档位存一份转码过的,既对不起界面上「下载到本机(FLAC)」
   /// 那句话,也会让用户在换档位时才发现本地这首比在线的还差。
+  @override
   Uri downloadUri(String songId) => streamUri(songId);
 
   ServerRoute get _activeRouteOrThrow {
@@ -406,6 +428,7 @@ class SubsonicRepository {
   /// `createPlaylist` 在部分实现里会**返回空响应体**(而不是新建的对象),
   /// 那种情况下退回去 `getPlaylists` 里按名字找最新的一条 —— 建完却拿不到
   /// 对象会让调用方以为失败,而服务器上其实已经有了。
+  @override
   Future<Playlist> createPlaylist(String name, {List<String> songIds = const []}) async {
     // 先记下手上这份名单:服务器**不返回新建对象**时(有的实现就是空响应体),
     // 建完之后要靠「哪一条是新的」认出来。同名歌单早就存在是常事 ——
@@ -433,6 +456,7 @@ class SubsonicRepository {
   }
 
   /// 把一首歌加进歌单。
+  @override
   Future<void> addToPlaylist(String playlistId, String songId) async {
     await client.call('updatePlaylist', {
       'playlistId': playlistId,
@@ -446,6 +470,7 @@ class SubsonicRepository {
   /// **按位置移除**:协议给的是 `songIndexToRemove`,索引指服务器那份列表里的
   /// 位置。同一首歌在歌单里出现两次时,「移除哪一次」只有位置说得清,
   /// 所以这里收位置而不是歌曲 id。
+  @override
   Future<void> removeFromPlaylist(String playlistId, int index) async {
     await client.call('updatePlaylist', {
       'playlistId': playlistId,
@@ -455,6 +480,7 @@ class SubsonicRepository {
   }
 
   /// 重命名歌单。
+  @override
   Future<void> renamePlaylist(String playlistId, String name) async {
     await client.call('updatePlaylist', {
       'playlistId': playlistId,
@@ -464,6 +490,7 @@ class SubsonicRepository {
   }
 
   /// 删除歌单。
+  @override
   Future<void> deletePlaylist(String playlistId) async {
     await client.call('deletePlaylist', {'id': playlistId});
     invalidateDetail('playlist', playlistId);

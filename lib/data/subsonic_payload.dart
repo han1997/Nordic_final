@@ -1,6 +1,7 @@
 import 'package:meta/meta.dart';
 
 import 'json_list.dart';
+import 'music_source.dart';
 
 /// Subsonic / OpenSubsonic 响应外壳。
 ///
@@ -66,16 +67,20 @@ class SubsonicError {
 }
 
 /// 与服务器对话过程中的失败。[isAuthFailure] 供界面决定是否引导去设置页。
-class SubsonicException implements Exception {
-  const SubsonicException(this.message, {this.code, this.statusCode});
+///
+/// 继承 [MusicSourceException] —— 界面与状态层只认那个中立基类,所以换一个
+/// 音源之后那些 catch 仍然成立。这个类自己只在 `lib/data/` 内部被抛与接。
+class SubsonicException extends MusicSourceException {
+  const SubsonicException(super.message, {this.code, this.statusCode});
 
-  final String message;
   final int? code;
   final int? statusCode;
 
+  @override
   bool get isAuthFailure => code != null && (code == 40 || code == 44 || code == 50);
 
   /// 网络层失败(超时、DNS、连接被拒)——调用方据此判断「这条线路不行,换一条」。
+  @override
   bool get isNetworkFailure => code == null && statusCode == null;
 
   @override
