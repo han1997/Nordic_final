@@ -50,9 +50,9 @@ void main() {
     }
   }
 
-  test('曲、专辑、艺人都能收藏也能取消,跑完原样还回去', () async {
+  test('曲、专辑、艺人都能收藏也能取消，跑完原样还回去', () async {
     if (!await reachable()) {
-      markTestSkipped('Navidrome 不可达,跳过');
+      markTestSkipped('Navidrome 不可达，跳过');
       return;
     }
 
@@ -60,7 +60,7 @@ void main() {
     final albums = await repo.albums();
     final artists = await repo.artists();
     if (songs.isEmpty || albums.isEmpty || artists.isEmpty) {
-      markTestSkipped('库里素材不够,跳过');
+      markTestSkipped('库里素材不够，跳过');
       return;
     }
     final song = songs.first;

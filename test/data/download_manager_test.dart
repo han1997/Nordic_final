@@ -609,7 +609,7 @@ void main() {
       await File('$finalPath.part').writeAsBytes(bytes, flush: true);
     }
 
-    test('半截就是续传起点,进度按累计口径算', () async {
+    test('半截就是续传起点，进度按累计口径算', () async {
       final s1 = song('s1', size: 4000);
       final request = DownloadRequest.song(s1);
       final finalPath = await finalPathOf(request, s1);
@@ -645,7 +645,7 @@ void main() {
           reason: '不补偏移的话这里会算成 37.5% —— 进度条先退再爬');
     });
 
-    test('服务器回 206:接着半截写,拼成完整的一首', () async {
+    test('服务器回 206：接着半截写，拼成完整的一首', () async {
       final s1 = song('s1', size: 4000);
       final request = DownloadRequest.song(s1);
       final finalPath = await finalPathOf(request, s1);
@@ -673,12 +673,12 @@ void main() {
       final bytes = await File(finalPath).readAsBytes();
       expect(bytes.length, 4000);
       expect(bytes.sublist(0, 1000), everyElement(7),
-          reason: '已经下好的那一段要原样留着,不该重下');
+          reason: '已经下好的那一段要原样留着，不该重下');
       expect(bytes.sublist(1000), everyElement(9), reason: '新的接在后面');
       expect(seen.single.headers['Range'], 'bytes=1000-');
     });
 
-    test('服务器回 200(无视 Range):截断重来,不在半截后面接整段', () async {
+    test('服务器回 200（无视 Range)：截断重来，不在半截后面接整段', () async {
       final s1 = song('s1', size: 4000);
       final request = DownloadRequest.song(s1);
       final finalPath = await finalPathOf(request, s1);
@@ -703,10 +703,10 @@ void main() {
           reason: '接在半截后面会长成 5000 —— 前 1000 字节是重复的');
       expect(bytes, everyElement(9), reason: '旧的 1000 字节必须已经被扔掉');
       expect(seen.single.headers['Range'], 'bytes=1000-',
-          reason: '确实试着续传了,只是服务器不认');
+          reason: '确实试着续传了，只是服务器不认');
     });
 
-    test('Content-Range 的总量对不上:当半截不可信,重来', () async {
+    test('Content-Range 的总量对不上：当半截不可信，重来', () async {
       final s1 = song('s1', size: 4000);
       final request = DownloadRequest.song(s1);
       final finalPath = await finalPathOf(request, s1);
@@ -736,7 +736,7 @@ void main() {
       expect(File('$finalPath.part.restart').existsSync(), isFalse);
     });
 
-    test('半截是空的:当没有,从 0 下', () async {
+    test('半截是空的：当没有，从 0 下', () async {
       final s1 = song('s1', size: 4000);
       final request = DownloadRequest.song(s1);
       final finalPath = await finalPathOf(request, s1);
@@ -763,7 +763,7 @@ void main() {
       expect(seenFrom, 0, reason: '空文件没什么可续的');
     });
 
-    test('真传输这条路:没有半截时连 Range 都不发', () async {
+    test('真传输这条路：没有半截时连 Range 都不发', () async {
       final seen = <RequestOptions>[];
       final manager = managerWith(
         dio: streamingDio(
