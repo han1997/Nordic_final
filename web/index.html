@@ -18,18 +18,33 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="多平台 NAS 音乐播放器。连接你自己的音乐服务器，在任意设备上听自己的库。">
 
+  <!--
+    外壳身份这几样是本仓库自己填的,不再等于 flutter create 模板(见
+    docs/CHANGELOG.md 第十三轮)。口径:
+      - 名字 = Nordic,真值取 android/app/src/main/AndroidManifest.xml 的
+        android:label,其余各处向它看齐;
+      - 图标与 favicon 由 tool/app_icon.py 生成(与 Android 那份同一个矢量源);
+      - manifest.json 的两个颜色 = #07070C,与 nordic_bg / NordicTokens.dark.bg
+        同一条口径 —— 启动那一下不该先闪一层 Flutter 蓝。
+    manifest.json 是 JSON,写不了注释,所以口径记在这里。
+  -->
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="nordic">
+  <meta name="apple-mobile-web-app-title" content="Nordic">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>nordic</title>
+  <!--
+    下面那条 <title> 只管**加载期**:应用起来之后引擎会用 MaterialApp.title
+    (lib/app.dart:33 已经是 Nordic)把 document.title 盖掉。而上面那条
+    apple-mobile-web-app-title 不会被盖 —— 「装到 iOS 主屏上叫什么」看的是它。
+  -->
+  <title>Nordic</title>
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
