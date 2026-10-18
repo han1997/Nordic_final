@@ -9,7 +9,8 @@
 # 用法:
 #   tool/build.sh                  # 打 debug APK
 #   tool/build.sh release         # 打 release APK(并落成标准化名字,见下)
-#   tool/build.sh run             # 在模拟器上跑
+#   tool/build.sh windows         # 打 Windows release(整目录打成标准名的 zip)
+#   tool/build.sh run -d windows  # 在桌面跑
 #   tool/build.sh <任意 flutter 参数...>
 set -euo pipefail
 
@@ -29,10 +30,16 @@ export FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL:-https://storage.flu
 # 而本仓库的约定本来就是「统一从这个脚本出入」(见 README),落在这里更稳。
 #
 # 版本号取自 `pubspec.yaml`,不另存一份 —— 唯一的真值在那一行。
+# 抽成一个函数是因为产物不止一个了(APK 与 Windows 的 zip 都从这儿取名),
+# 别让第二个产物把「从哪儿读版本」抄第二遍。
+read_version() {
+  sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -1
+}
+
 standardize_apk() {
   local built="$1"
   local version apk_name out
-  version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -1)"
+  version="$(read_version)"
   if [ -z "$version" ]; then
     echo "读不出 pubspec.yaml 里的 version,产物名没法标准化" >&2
     return 1
@@ -75,6 +82,64 @@ standardize_apk() {
   echo "   flutter install / run --release 认的是它)"
 }
 
+# 标准化 Windows 产物:`Nordic-<版本>-windows-x64.zip`。
+#
+# **产物不是一个文件,是一整个目录**:`flutter build windows` 落的是 `nordic.exe`
+# + `flutter_windows.dll` + `data/` + 各插件的 dll,单拿 exe 跑不起来。所以整目录
+# 打包,解压出来就能双击。
+#
+# 为什么用 PowerShell 的 Compress-Archive:Git Bash 里的 tar 是 GNU tar,不按扩展名
+# 打 zip。从目录**里面**打包,压缩包顶层就不会多套一层 `Release/`。
+#
+# 校验三样:exe 在、引擎 dll 与 data/ 都在、以及 **exe 里的版本与 pubspec 对得上**。
+# 只校验 exe 的话,一个「看起来有产物」的残缺 zip 会被当成成功;版本那条与 apk
+# 同一个理由 —— 名字是从 pubspec 拼的、内容不能是旧版。
+# (Windows 没有签名那套东西,这里不假装有。)
+standardize_windows() {
+  local built="$1"
+  local version zip_name out out_abs exe exe_win vinfo alt
+  version="$(read_version)"
+  if [ -z "$version" ]; then
+    echo "读不出 pubspec.yaml 里的 version,产物名没法标准化" >&2
+    return 1
+  fi
+
+  exe="$built/nordic.exe"
+  if [ ! -f "$exe" ]; then
+    echo "找不到 $exe —— 构建没产出可执行文件" >&2
+    return 1
+  fi
+  if [ ! -f "$built/flutter_windows.dll" ] || [ ! -d "$built/data" ]; then
+    echo "$built 不完整(缺 flutter_windows.dll 或 data/),这个 zip 解压出来跑不起来" >&2
+    return 1
+  fi
+
+  # `Runner.rc` 把 CMake 注进来的 FLUTTER_VERSION 写成 FileVersion 字符串
+  # (`1.0.34+35`),数字四段那份则是 `1.0.34.35`。两种呈现都认 —— 这里不挑
+  # 系统怎么渲染版本串,只要求它**就是这个 pubspec 版本**,不是上一个。
+  exe_win="$(cygpath -w "$exe")"
+  vinfo="$(powershell -NoProfile -Command \
+    "(Get-Item '${exe_win}').VersionInfo.FileVersion" | tr -d '\r')"
+  alt="${version%%+*}.${version##*+}"
+  if [ "$vinfo" != "$version" ] && [ "$vinfo" != "$alt" ]; then
+    echo "exe 里的版本 '$vinfo' 与 pubspec 的 '$version' 对不上" >&2
+    return 1
+  fi
+
+  zip_name="Nordic-${version}-windows-x64.zip"
+  out="build/dist/${zip_name}"
+  out_abs="$PWD/build/dist/${zip_name}"
+  mkdir -p build/dist
+  rm -f "$out"
+  ( cd "$built" && powershell -NoProfile -Command \
+      "Compress-Archive -Path '.\\*' -DestinationPath '$(cygpath -w "$out_abs")' -Force" ) \
+    || return 1
+
+  echo "✓ $out"
+  echo "  版本 ${version} · 整目录打包(exe + flutter_windows.dll + data/)"
+  echo "  (flutter 默认那个 $built 照旧保留,flutter run -d windows 认的是它)"
+}
+
 case "${1:-debug}" in
   run)
     shift
@@ -84,6 +149,11 @@ case "${1:-debug}" in
     shift
     flutter build apk --release "$@"
     standardize_apk build/app/outputs/flutter-apk/app-release.apk
+    ;;
+  windows|win)
+    shift
+    flutter build windows --release "$@"
+    standardize_windows build/windows/x64/runner/Release
     ;;
   debug|apk)
     shift
