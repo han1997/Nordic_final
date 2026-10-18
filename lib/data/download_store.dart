@@ -2,7 +2,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'media_files.dart';
@@ -163,20 +163,39 @@ class DownloadStore {
       final store = DownloadStore._(dir, []);
       await store._load();
       return store;
-    } catch (_) {
+    } catch (e) {
       // 目录建不出来(存储满 / 权限诡异)不该让应用起不来 ——
       // 退化成一块「不可用」的存储,下载入口给出人话,别的地方照常用。
+      //
+      // **但要留一行日志**:这条 catch 什么都接,而「下载整块用不了」在界面上
+      // 只是一句人话,查不出为什么。上一版就是这么把一个平台相关的 `Error`
+      // 吞成了静默的功能消失(桌面取外部目录抛 `UnimplementedError`)——
+      // 别的静默(索引坏了、写不进)各有各的理由,这一条没有。
+      debugPrint('[Nordic] 下载存储不可用，这一轮关掉下载：$e');
       return DownloadStore._(null, []);
     }
   }
 
+  /// 拿一个能写的根。
+  ///
+  /// **不能只接 `MissingPluginException`**:`getExternalStorageDirectory()`
+  /// 在桌面与 iOS / macOS 上根本没有被实现 —— path_provider 的平台层直接抛
+  /// `UnimplementedError`,而它继承的是 `Error`、**不是 `Exception`**:只接
+  /// `MissingPluginException` 接不住,`on Exception` 同样接不住。接不住的后果
+  /// 不是「退到应用支持目录」,而是冒到 [open] 的兜底里,把整块下载判成不可用
+  /// —— 桌面上就是这个现象,而且不响。所以这里**一律接**:拿不到外部目录,
+  /// 就当作它不存在。
+  ///
+  /// 第二次 [getApplicationSupportDirectory] 留在 catch **里面**:支持目录也
+  /// 拿不到时照旧往上抛,由 [open] 统一判成「这块存储用不了」—— 两条路都不通
+  /// 才是真的不通,不该在这儿假装拿到了。
   static Future<Directory> _resolveRoot() async {
     Directory base;
     try {
-      final external = await getExternalStorageDirectory();
-      base = external ?? await getApplicationSupportDirectory();
-    } on MissingPluginException {
-      // 平台没有这个插件(测试 / 不支持的平台)。
+      base = await getExternalStorageDirectory() ??
+          await getApplicationSupportDirectory();
+    } catch (_) {
+      // 平台没有外部目录(桌面 / iOS / macOS),或者压根没这个插件(测试)。
       base = await getApplicationSupportDirectory();
     }
     return Directory('${base.path}${Platform.pathSeparator}Nordic'

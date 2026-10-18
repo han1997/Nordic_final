@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.33+34
+version: 1.0.34+35
 
 environment:
   sdk: ^3.12.1
@@ -63,6 +63,10 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+
+  # 用例里要换掉 path_provider 的平台实现,好复现「桌面没有外部存储目录」那个
+  # 现场(见 test/data/download_store_test.dart 的「目录归属」一组)。
+  path_provider_platform_interface: ^2.1.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nordic/data/download_store.dart';
 import 'package:nordic/data/models.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 /// 下载内容的落盘处。
 ///
@@ -179,4 +180,41 @@ void main() {
     expect(store.isAvailable, isFalse);
     expect(store.records, isEmpty);
   });
+
+  group('目录归属', () {
+    late PathProviderPlatform original;
+
+    setUp(() => original = PathProviderPlatform.instance);
+    tearDown(() => PathProviderPlatform.instance = original);
+
+    test('平台没有外部存储目录时退到应用支持目录，而不是把整块下载判成用不了', () async {
+      // 桌面(Windows)与 iOS / macOS 的平台实现都**没有覆写**
+      // `getExternalStoragePath` —— 于是平台接口抛 `UnimplementedError`。
+      // 它继承的是 `Error` 不是 `Exception`:只接 `MissingPluginException`
+      // 接不住,一路冒到 open() 的兜底,把整块下载判成「用不了」,而且不响。
+      PathProviderPlatform.instance = _NoExternalStorageProvider(root.path);
+
+      final store = await DownloadStore.open();
+
+      expect(store.isAvailable, isTrue,
+          reason: '拿不到外部目录不等于这块存储用不了 —— 支持目录一直在');
+      expect(
+        store.rootPath,
+        endsWith(
+            '${Platform.pathSeparator}Nordic${Platform.pathSeparator}Music'),
+      );
+    });
+  });
+}
+
+/// 只实现了应用支持目录的平台 —— 正是 `path_provider_windows` /
+/// `path_provider_foundation` 的样子:它们都没覆写 `getExternalStoragePath`,
+/// 于是基类抛 `UnimplementedError`。**故意不覆写那一个**,这就是现场。
+class _NoExternalStorageProvider extends PathProviderPlatform {
+  _NoExternalStorageProvider(this.support);
+
+  final String support;
+
+  @override
+  Future<String?> getApplicationSupportPath() async => support;
 }
