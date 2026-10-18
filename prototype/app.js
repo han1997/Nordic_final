@@ -50,6 +50,11 @@ const ICONS = {
   /* 缓存:两层叠起来的盘 —— 「本机还留着一份」 */
   stack:   '<ellipse cx="12" cy="6.4" rx="7" ry="2.9"/><path d="M5 6.4v11.2c0 1.6 3.13 2.9 7 2.9s7-1.3 7-2.9V6.4"/><path d="M5 12c0 1.6 3.13 2.9 7 2.9s7-1.3 7-2.9"/>',
   trash:   '<path d="M5.4 7.4h13.2"/><path d="M9.8 7.4V5.7a1.3 1.3 0 0 1 1.3-1.3h1.8a1.3 1.3 0 0 1 1.3 1.3v1.7"/><path d="M7.4 7.4l.75 11.3A1.4 1.4 0 0 0 9.55 20h4.9a1.4 1.4 0 0 0 1.4-1.3l.75-11.3"/>',
+  /* 扫码同步:二维码、摄像头、粘贴、复制 —— 这四个原先一个都没有。 */
+  qr:      '<rect x="3.6" y="3.6" width="6.8" height="6.8" rx="1.6"/><rect x="13.6" y="3.6" width="6.8" height="6.8" rx="1.6"/><rect x="3.6" y="13.6" width="6.8" height="6.8" rx="1.6"/><path d="M13.6 13.6h3v3h-3zM20.4 13.6v3.2M13.6 20.4h6.8"/>',
+  camera:  '<path d="M4 8.6h3l1.5-2.4h7l1.5 2.4h3v9.8H4z"/><circle cx="12" cy="13.2" r="3.1"/>',
+  paste:   '<rect x="5.6" y="5.2" width="12.8" height="14.8" rx="2.2"/><path d="M9.6 5.2V4a1.6 1.6 0 0 1 1.6-1.6h1.6A1.6 1.6 0 0 1 14.4 4v1.2"/><path d="M9 11.4h6M9 15h4"/>',
+  copy:    '<rect x="8.6" y="8.6" width="10.8" height="10.8" rx="2.2"/><path d="M15.4 5.6H6.6A1.8 1.8 0 0 0 4.8 7.4v8.8"/>',
 };
 
 function ic(name, size = 22, cls = '') {
@@ -285,6 +290,19 @@ const STATE = {
   routeTag: '内网',
   /* 上下文菜单:点「⋯」弹出的那张纸,内容随来源不同 */
   menuFor: 'song',
+  /* 扫码同步:导入那一屏的模式、粘贴框里那段文本、读出来了没有、这段载带不带密码。
+     文本**预填**一段 —— 与搜索页预填「程响」同一个理由:可点原型一进门就走得通
+     那条路,不必先手打一串 base64 才有东西看。结尾那个 `#pw` 是**原型自己的记号**,
+     表示这段载荷带了密码(真解码在 lib/data/config_transfer.dart)。 */
+  syncMode: 'scan',
+  syncText: syncDemoPayload(false),
+  syncRead: false,
+  syncHasPw: false,
+  /* 导出弹层那颗「包含密码」—— **默认关**,与「落盘不带密码」是同一口径。 */
+  syncIncludePw: false,
+  /* 这台设备有没有相机。原型默认跑在手机上(有);置真之后那一屏退成纯粘贴 ——
+     设计板上单独铺一格的就是这个状态,因为 Windows 桌面与浏览器看到的是它。 */
+  syncNoCamera: false,
 };
 
 /* 进度换算:秒 → 百分比(夹在 0..100) */
@@ -460,6 +478,11 @@ const bottom = (song, pct, active) => {
     ${tabbar(active)}
   </div></div>`;
 };
+
+/* 托盘里没有歌可显示时的那一版:只留标签栏。外框、玻璃与分隔线照旧 ——
+   少了播放坞不等于少了一颗托盘,未连接的首页要的正是「还站在这儿,只是没东西可放」。 */
+const trayNoDock = (active) =>
+  `<div class="bottomstack"><div class="tray">${tabbar(active)}</div></div>`;
 
 /* ---------------- 服务器与线路 ---------------- */
 
@@ -681,7 +704,34 @@ function songRow(s, playing = false, trail = null) {
    三条货架都是服务器口径:**本地算不出「最近播放 / 最常播放」**
    (那要播放次数与时间,只有服务器有),所以真实客户端各拉一份
    (`getAlbumList2` 的 recent / frequent;最近添加是 newest)。 */
-function screenHome() {
+/* 「还没有连接服务器」那一块。首页与音乐库共用一份 —— 两屏都在等同一件事,
+   各写一份必然走形。两个入口并排:手填是原有的路,扫码是这一轮新开的那条。 */
+function notConnectedState() {
+  return `<div class="empty">
+    <span style="color:var(--fg-4);display:grid;place-items:center">${ic('server', 34)}</span>
+    <div class="big">还没有连接服务器</div>
+    <div class="small">扫码带走另一台设备的配置,或者手动填上地址与账号。</div>
+    <div style="display:flex;flex-direction:column;gap:var(--s3);width:210px;margin-top:var(--s3)">
+      <button class="btn primary" data-go="add-server" style="height:46px">连接服务器</button>
+      <button class="btn ghost" data-go="sync" style="height:46px">${ic('qr', 17)} 扫码同步</button>
+    </div>
+  </div>`;
+}
+
+function screenHome(notConnected = false) {
+  /* 未连接那一支的状态来自设置页的「移除该服务器」(STATE.removed)。
+     托盘里此时没有歌可显示,所以只留标签栏 —— 外框与那条分隔线照旧,
+     那是这颗托盘的本体(见 trayNoDock)。 */
+  if (notConnected) {
+    return `<div class="appbar">
+        <div>
+          <div class="h1">首页</div>
+          <div class="sub">还没有连接服务器</div>
+        </div>
+      </div>
+      <div class="scroll">${notConnectedState()}</div>
+      ${trayNoDock('home')}`;
+  }
   const s = currentSong();
   const a = albumOf(s);
   const pct = progressOf(s, STATE.elapsed);
@@ -775,8 +825,20 @@ function screenHome() {
     ${bottom(s, pct, 'home')}`;
 }
 
-function screenLibrary(tab = 'songs') {
+function screenLibrary(tab = 'songs', notConnected = false) {
   const segs = [['albums', '专辑'], ['artists', '艺人'], ['songs', '歌曲'], ['playlists', '歌单']];
+  /* 未连接时库也是空的,铺的是与首页**同一块**空态(见 notConnectedState)——
+     两屏各写一份必然走形。那一栏的分段控件也就不必出现:没有栏可切。 */
+  if (notConnected) {
+    return `<div class="appbar">
+        <div>
+          <div class="h1">音乐库</div>
+          <div class="sub">还没有连接服务器</div>
+        </div>
+      </div>
+      <div class="scroll">${notConnectedState()}</div>
+      ${trayNoDock('library')}`;
+  }
   const cur = currentSong();
   let body = '';
 
@@ -1337,6 +1399,197 @@ function screenAddRoute() {
     </div>`;
 }
 
+/* ---------------- 扫码同步 ----------------
+   两半共用**同一串文本**:二维码里那串,与「复制文本」复制走的那串,是同一个东西。
+   真格式在 lib/data/config_transfer.dart(`nordic://config/1/<base64url>`)。
+
+   原型里的载荷是**假的 base64** —— 格式按真的写,内容只是给那两屏一点能看的东西。
+   结尾那个 `#pw` 是**原型自己的记号**,表示这段载荷带了密码:原型没有真解码器,
+   而「带不带密码」正好是那一屏上唯一分岔的地方(按钮是「填上密码」还是「连接并替换」)。 */
+function syncDemoPayload(includePw) {
+  const json = `{"v":1,"kind":"navidrome","name":"${SERVER.name}","user":"${SERVER.user}",`
+    + `"routes":[${SERVER.routes.map((r) => `{"n":"${r.name}","u":"${r.url}","t":"${r.tag}"}`).join(',')}]`
+    + (includePw ? ',"pw":"..."' : '') + '}';
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  let blob = '';
+  for (let i = 0; i < json.length; i++) {
+    blob += alphabet[(json.charCodeAt(i) + i * 7) % 64];
+  }
+  return `nordic://config/1/${blob}${includePw ? '#pw' : ''}`;
+}
+
+/* 占位二维码。**三个定位角 + 一层按种子算的伪随机模块**,密度照真实载荷估
+   (3 条线路约 73×73 模块,见 config_transfer 那张体积表)。
+
+   **必须按种子算,不能 Math.random()**:播放时 render() 每秒跑一次
+   (见下面的播放计时),每帧重抽的话这块会闪 —— 与「随机排序用 randomSeed、
+   不是每帧重抽」是同一条理由。 */
+function qrPlaceholder(seed, modules = 25) {
+  const n = modules + 8;                          // 四周各 4 模块静区,扫描器要它
+  let s = (seed >>> 0) || 1;
+  const bits = [];
+  for (let i = 0; i < modules * modules; i++) {
+    s = (s * 1664525 + 1013904223) >>> 0;         // 线性同余:同一个种子永远同一张码
+    bits.push((s >>> 16) & 1);
+  }
+  const near = (v) => v >= modules - 8;           // 定位角连分隔符占 8 格
+  const inFinder = (x, y) => (x < 8 && y < 8) || (near(x) && y < 8) || (x < 8 && near(y));
+  let cells = '';
+  for (let y = 0; y < modules; y++) {
+    for (let x = 0; x < modules; x++) {
+      if (inFinder(x, y) || !bits[y * modules + x]) continue;
+      cells += `<rect x="${x + 4}" y="${y + 4}" width="1" height="1"/>`;
+    }
+  }
+  /* 定位角:7×7 实心 + 5×5 反色 + 3×3 实心。 */
+  const finder = (x, y) =>
+    `<rect x="${x + 4}" y="${y + 4}" width="7" height="7"/>`
+    + `<rect x="${x + 5}" y="${y + 5}" width="5" height="5" fill="#fff"/>`
+    + `<rect x="${x + 6}" y="${y + 6}" width="3" height="3"/>`;
+  const far = modules - 7;
+  return `<svg viewBox="0 0 ${n} ${n}" width="${n}" height="${n}">
+    <rect width="${n}" height="${n}" fill="#fff"/>
+    <g fill="#000">${cells}${finder(0, 0)}${finder(far, 0)}${finder(0, far)}</g>
+  </svg>`;
+}
+
+/* 导入那一屏。
+
+   noCamera 为真时**整条扫码那一支都不出现**:没有相机就没有第二个选项,
+   留一个只有一项的分段控件只是噪音 —— 那一版换成一句说明加粘贴框。
+   (应用那边同一条判据,见 lib/data/scan_capability.dart。) */
+function screenSync(noCamera = STATE.syncNoCamera) {
+  const mode = noCamera ? 'paste' : STATE.syncMode;
+  const text = STATE.syncText.trim();
+  const ok = text.startsWith('nordic://config/1/');
+
+  const scanPane = `
+    <div class="viewfinder">
+      <span class="corner tl"></span><span class="corner tr"></span>
+      <span class="corner bl"></span><span class="corner br"></span>
+      <span class="scanline"></span>
+      <div class="vf-hint">把另一台设备上的二维码放进这个框里。</div>
+    </div>
+    <div class="list-note" style="padding:var(--s4) var(--s5) 0">
+      扫到之后先读出配置给你看一眼,不会直接连上去。
+    </div>`;
+
+  const pastePane = `
+    <div style="padding:0 var(--s5)">
+      <div class="field">
+        <label>配置文本</label>
+        <div class="input is-multiline">
+          <textarea id="sync-text" spellcheck="false" autocomplete="off"
+            placeholder="nordic://config/1/...">${STATE.syncText}</textarea>
+        </div>
+        <div class="hint">从另一台设备的「导出配置」复制过来,或者直接扫它的二维码。</div>
+      </div>
+      <!-- 这句话**预渲染在这儿、平时藏着**:打字那一支不重绘(重绘会打掉焦点与
+           中文输入法组合),所以它的显隐只能由输入那一支原地翻,见 #sync-text 分支。 -->
+      <div class="note" data-sync-error style="margin:var(--s5) 0 0${text && !ok ? '' : ';display:none'}">
+        这段文本不是 Nordic 的配置 —— 检查一下有没有复制完整。</div>
+    </div>`;
+
+  /* 读出来之后那段预览:服务器一行 + 逐条线路,与「服务器与线路」那一屏同一套行。
+     两句话按「带没带密码」分岔 —— 那正是接下来要用户做的事不一样的地方。
+     整块包在 data-sync-preview 里:改一下文本就等于把这次「读出来」作废,
+     那一支会原地把它收掉(见 #sync-text 分支),而不是留着让人以为还算数。 */
+  const preview = STATE.syncRead ? `<div data-sync-preview>
+    <div class="section"><h2>读出来的配置</h2><span class="trail">1 台服务器</span></div>
+    <div class="card" style="margin:0 var(--s5)">
+      <div class="row">
+        <span class="set-icon">${ic('server', 18)}</span>
+        <div class="grow">
+          <div class="line1">${SERVER.name}</div>
+          <div class="line2">${SERVER.kind} · ${SERVER.user}</div>
+        </div>
+      </div>
+      ${SERVER.routes.map((r) => `
+        <div class="divider"></div>
+        <div class="row">
+          <span class="dot ${r.state}"></span>
+          <div class="grow">
+            <div class="line1">${r.name}<span class="tag">${r.tag}</span></div>
+            <div class="line2">${r.url}</div>
+          </div>
+          ${r.ping == null ? '' : `<span class="trail">${r.ping} ms</span>`}
+        </div>`).join('')}
+    </div>
+    ${STATE.syncHasPw
+      ? `<div class="note" style="margin-top:var(--s4)">
+          这段配置带着密码 —— 连上之后它就是本机唯一一份凭据,别把这张二维码留在别人手机上。</div>`
+      : `<div class="list-note" style="padding:var(--s4) var(--s5) 0">
+          这段配置没带密码,接下来会落到录入表单 —— 地址与账号都填好了,只差密码。</div>`}
+    <div class="note" style="margin-top:var(--s4)">
+      导入会替换当前这台服务器,本机留着的曲库快照与缓存会一起清掉。</div>
+    <div style="padding:var(--s5)">
+      <button class="btn primary" data-act="sync-connect" style="width:100%;height:48px">
+        ${STATE.syncHasPw ? '连接并替换' : '填上密码'}</button>
+    </div></div>` : '';
+
+  return `<div class="appbar nav">
+      <button class="icon-btn" data-back>${ic('back', 22)}</button>
+      <span class="h1">扫码同步</span>
+      <span class="spacer"></span>
+      ${mode === 'paste'
+        ? `<button class="pill-btn solid" data-act="sync-read" ${ok ? '' : 'disabled style="opacity:.45;cursor:default"'}>读取</button>`
+        : ''}
+    </div>
+    <div class="scroll">
+      ${noCamera ? '' : `<div style="padding:var(--s3) var(--s5) var(--s4)">
+        <div class="segmented">
+          ${[['scan', '扫码'], ['paste', '粘贴']].map(([id, label]) =>
+            `<button data-sync-mode="${id}" aria-selected="${mode === id}">${label}</button>`).join('')}
+        </div>
+      </div>`}
+      ${noCamera ? `<div style="padding:0 var(--s5) var(--s4)">
+        <div class="note" style="margin:0">这台设备没有摄像头 —— 用粘贴文本一样能同步。</div>
+      </div>` : ''}
+      ${mode === 'scan' ? scanPane : pastePane}
+      ${preview}
+      <div style="height:var(--s6)"></div>
+    </div>`;
+}
+
+/* 导出配置 —— 走弹层而不是新开一屏:它是「看一眼 / 复制一下」,
+   不是走进去再走出来的一段路(这样新屏数也就保持在一屏)。 */
+function sheetExportConfig() {
+  const withPw = STATE.syncIncludePw;
+  const payload = syncDemoPayload(withPw);
+  return `<div class="sheet-scrim">
+    <div class="sheet">
+      <div class="handle"></div>
+      <h2>导出配置 <span>扫码带走,或复制成文本</span></h2>
+      <div class="sheet-body">
+        <div class="qr-tile"><div class="qr">${qrPlaceholder(withPw ? 19 : 17, 25)}</div></div>
+        <div class="card" style="margin:var(--s5) var(--s5) 0">
+          <div class="row" data-toggle="syncIncludePw" role="switch" aria-checked="${withPw}">
+            <span class="set-icon">${ic('shield', 18)}</span>
+            <div class="grow">
+              <div class="line1">包含密码</div>
+              <div class="line2">${withPw
+                ? '扫到的人可以直接连上'
+                : '只带地址与账号,新设备补一次密码'}</div>
+            </div>
+            <span class="switch${withPw ? ' on' : ''}"><i></i></span>
+          </div>
+        </div>
+        ${withPw ? `<div class="note" style="margin-top:var(--s4)">
+          打开之后,这张二维码与这段文本就等于密码本身 —— 别截图、别发群里。</div>` : ''}
+        <div class="qr-payload">${payload}</div>
+        <div style="padding:var(--s4) var(--s5) 0">
+          <button class="btn ghost" data-act="sync-copy" style="width:100%;height:46px">
+            ${ic('copy', 17)} 复制文本</button>
+        </div>
+        <div class="sheet-note" style="padding-top:var(--s4)">
+          没有摄像头的设备(桌面 / 浏览器)扫不了码 —— 把这段文本复制过去,
+          粘进「扫码同步」那一屏,一样能带过去。
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
 /* ---------------- 歌词 ---------------- */
 
 function screenLyrics() {
@@ -1510,6 +1763,20 @@ function screenSettings() {
           <span class="set-icon">${ic('plus', 18)}</span>
           <div class="grow"><div class="line1">添加服务器</div></div>${ic('chevron', 18)}
         </div>
+        <div class="divider"></div>
+        <div class="row" data-go="sync">
+          <span class="set-icon">${ic('qr', 18)}</span>
+          <div class="grow"><div class="line1">扫码同步</div>
+            <div class="line2">扫码或粘贴,把服务器与线路带到这台设备</div></div>
+          ${ic('chevron', 18)}
+        </div>
+        <div class="divider"></div>
+        <div class="row" data-sheet="exportConfig">
+          <span class="set-icon">${ic('qr', 18)}</span>
+          <div class="grow"><div class="line1">导出配置</div>
+            <div class="line2">二维码 · 可复制成一段文本</div></div>
+          ${ic('chevron', 18)}
+        </div>
       </div>
 
       <div class="section"><h2>缓存</h2></div>
@@ -1643,7 +1910,7 @@ function screenIcon() {
 
 /* ---------------- 视图表 ---------------- */
 
-const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort, cache: sheetCache };
+const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort, cache: sheetCache, exportConfig: sheetExportConfig };
 
 /* 弹层是叠在当前屏上的，不是某一屏专属 —— 专辑页的「队列」、设置里的
    「默认转码质量」、音乐库的「排序」都要能把同一张面板揭起来。之前只有
@@ -1656,11 +1923,14 @@ const VIEWS = {
   'server-config':() => shell(withOverlay(screenServerConfig())),
   'add-server':   () => shell(withOverlay(screenAddServer())),
   'add-route':    () => shell(withOverlay(screenAddRoute())),
+  sync:           () => shell(withOverlay(screenSync())),
   downloads:      () => shell(withOverlay(screenDownloads())),
   'new-playlist': () => shell(withOverlay(screenNewPlaylist())),
-  home:           () => shell(withOverlay(screenHome())),
+  /* 首页与音乐库的未连接态同一个开关:设置页点过「移除该服务器」之后
+     (STATE.removed),这两屏铺的就是应用那边 `EmptyState('还没有连接服务器')` 那一支。 */
+  home:           () => shell(withOverlay(screenHome(STATE.removed))),
   /* 默认落在「歌曲」:打开音乐库多半是想找一首具体的歌(2026-10-17 用户要求)。 */
-  library:        (p) => shell(withOverlay(screenLibrary((p && p.lib) || 'songs'))),
+  library:        (p) => shell(withOverlay(screenLibrary((p && p.lib) || 'songs', STATE.removed))),
   album:          (p) => { const a = ALBUM_BY_ID((p && p.album) || STATE.albumId); return shell(withOverlay(screenAlbum(a.id)), { home: true, accent: a.accent, c1: a.c1 }); },
   artist:         (p) => { const ar = ARTIST_BY_ID((p && p.artist) || STATE.artistId); return shell(withOverlay(screenArtist(ar.id)), { home: true, accent: ar.accent, c1: ar.c1 }); },
   player:         () => shell(withOverlay(screenPlayer()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
@@ -1680,6 +1950,8 @@ const BOARD = [
   ['服务器设置',      '一个账号，多个地址',    () => shell(screenServerConfig())],
   ['添加服务器',      '选择接入类型',         () => shell(screenAddServer())],
   ['首页',           '正在播放 + 三条货架',  () => shell(screenHome())],
+  /* 未连接是首页的一个状态,不是另一屏 —— 挨着铺,与「音乐库」四栏同一套摆法。 */
+  ['首页 · 未连接',  '空态 + 两个入口',      () => shell(screenHome(true))],
   ['音乐库 · 专辑',   '封面网格 + 排序',      () => shell(screenLibrary('albums'))],
   ['音乐库 · 艺人',   '方块头像 + 常听',      () => shell(screenLibrary('artists'))],
   ['音乐库 · 歌曲',   '全部歌曲',             () => shell(screenLibrary('songs'))],
@@ -1700,6 +1972,11 @@ const BOARD = [
   ['下载管理',        '队列 + 进度',          () => shell(screenDownloads())],
   ['新建歌单',        '命名 + 封面色',        () => shell(screenNewPlaylist())],
   ['添加线路',        '地址 + 标记',          () => shell(screenAddRoute())],
+  /* 扫码同步的三格:「没有摄像头」那一格是**必须铺的** —— 它铺的是 Windows 桌面与
+     浏览器真正看到的那个样子,只在 .cjs 截图里存在的话,设计板上就没人核对得到。 */
+  ['扫码同步',        '扫码 / 粘贴 + 预览',    () => shell(screenSync())],
+  ['扫码同步 · 没有摄像头', '退成纯粘贴',      () => shell(screenSync(true))],
+  ['导出配置',        '二维码 + 复制文本',    () => shell(screenSettings() + sheetExportConfig())],
   ['上下文菜单',      '歌曲的「⋯」',          () => shell(screenPlayer() + sheetMenu(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   /* 最后一格不是应用里的页面,是**设计交付物**:图标的候选与定稿。
      放最后是因为它不参与上面那条「服务器 → 首页 → 库 → 详情 → 播放」的链路
@@ -1727,7 +2004,7 @@ function renderBoard(root) {
     <div class="board-wrap">
       <div class="board-head">
         <h1>Nordic — 音乐播放器原型</h1>
-        <p>手机竖屏，22 格（21 屏 + 应用图标），<b>深色 / 浅色两套</b>。强调色<b>从当前封面里提取</b> —— 每张专辑驱动界面的光晕、进度条与选中态，
+        <p>手机竖屏，26 格（25 屏 + 应用图标），<b>深色 / 浅色两套</b>。强调色<b>从当前封面里提取</b> —— 每张专辑驱动界面的光晕、进度条与选中态，
           所以每张专辑有自己的气质。深色靠发光撑层次，浅色把发光几乎关掉、改用留白与描边；两套共用同一份结构，差异全部落在 token 上。
           这是并排铺开的设计板；<b>要点击走完整条链路，请开 <a href="player.html">player.html</a></b>，那边的搜索、开关、进度都能直接上手点。</p>
       </div>
@@ -1885,6 +2162,7 @@ function renderStage(root) {
           <li>搜索页可以直接打字，结果是实时筛出来的</li>
           <li>播放页里拖动进度条；歌词随进度逐句走高亮</li>
           <li>设置里的开关都能点，主题能在深色 / 浅色之间切</li>
+          <li>设置里的「扫码同步 / 导出配置」把服务器与线路变成一张二维码(密码默认不带)</li>
         </ol>
         <div style="border-top:1px solid var(--line);padding-top:16px">
           <h2 style="margin-bottom:8px">主题</h2>
@@ -1977,7 +2255,7 @@ function renderStage(root) {
        <body> 上，而 body 是所有点击的祖先。closest() 在没命中更近的 [data-*] 元素时
        会一路匹配到 body，于是「点遮罩关闭弹层」这条分支永远走不到（点遮罩会变成
        重新应用一次主题）。所以主题按钮改用独立属性 data-set-theme。 */
-    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-seek-line],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-dl-del],[data-hue],[data-route-tag],[data-sort-for],[data-sort],[data-cache]');
+    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-seek-line],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-dl-del],[data-hue],[data-route-tag],[data-sync-mode],[data-sort-for],[data-sort],[data-cache]');
     if (t) {
       const d = t.dataset;
       if (d.back !== undefined) return back();
@@ -2002,7 +2280,19 @@ function renderStage(root) {
       if (d.route) { STATE.routeId = d.route; return render(); }
       if (d.scope) { STATE.scope = d.scope; return render(); }
       if (d.pickKind) { STATE.kind = d.pickKind; return render(); }
-      if (d.toggle) { STATE[d.toggle] = STATE[d.toggle] === false; return render(); }
+      /* 扫码 / 粘贴换过去时把上一份预览收掉 —— 那份预览说的是**另一种**输入方式
+         读出来的结果,留着会让人以为换模式也换了内容。 */
+      if (d.syncMode) { STATE.syncMode = d.syncMode; STATE.syncRead = false; return render(); }
+      if (d.toggle) {
+        STATE[d.toggle] = STATE[d.toggle] === false;
+        /* 导出那张纸上的「包含密码」一翻,粘贴框里那段也跟着换一份:
+           复制走的那串与二维码里那串本来就是同一个东西,不跟着换就自相矛盾了。 */
+        if (d.toggle === 'syncIncludePw') {
+          STATE.syncText = syncDemoPayload(STATE.syncIncludePw);
+          STATE.syncRead = false;
+        }
+        return render();
+      }
       if (d.setTheme) { applyTheme(d.setTheme); return render(); }
       if (d.kindCfg) { STATE.serverKindCfg = d.kindCfg; STATE.serverDirty = true; return render(); }
       if (d.quality) { STATE.quality = d.quality; STATE.overlay = ''; return render(); }
@@ -2156,6 +2446,33 @@ function renderStage(root) {
         /* 移除后退出到服务器列表 —— 停在已移除的设置页里没有意义 */
         return go('servers');
       }
+      /* ---- 扫码同步 ----
+         「读取」只在文本看着像 Nordic 配置时才出现(见 screenSync),所以走到这儿
+         已经过了那道前缀检查;结尾那个 `#pw` 是原型自己的记号,见 syncDemoPayload。 */
+      if (d.act === 'sync-read') {
+        const text = STATE.syncText.trim();
+        STATE.syncRead = text.startsWith('nordic://config/1/');
+        STATE.syncHasPw = STATE.syncRead && text.endsWith('#pw');
+        return render();
+      }
+      if (d.act === 'sync-connect') {
+        /* 原型不真连服务器 —— 但它真把「连上了」这件事做出来:
+           未连接那两块空态收掉,回到首页。 */
+        STATE.removed = false;
+        toast('已连接(原型)');
+        return go('home');
+      }
+      /* 复制真的调剪贴板,不拿一个假气泡搪塞 —— 而拷贝不出来时那句话是真的有用:
+         浏览器的剪贴板 API 在非安全上下文里就是会被拒。 */
+      if (d.act === 'sync-copy') {
+        const payload = syncDemoPayload(STATE.syncIncludePw);
+        (navigator.clipboard && navigator.clipboard.writeText
+          ? navigator.clipboard.writeText(payload)
+          : Promise.reject(new Error('no clipboard'))
+        ).then(() => toast('已复制到剪贴板'))
+          .catch(() => toast('复制不了,选中下面那段文本手动复制'));
+        return;
+      }
       if (d.act === 'clear-cache') {
         const freed = STATE.cacheUsedMb;
         if (!freed) return;
@@ -2228,6 +2545,26 @@ function renderStage(root) {
         btn.style.opacity = on ? '' : '.45';
         btn.style.cursor = on ? '' : 'default';
       }
+      return;
+    }
+    /* 扫码同步的粘贴框 —— 与上面几个输入框同一条纪律:**只改状态与那颗按钮,不重绘**。
+       一重绘,焦点、中文输入法组合、光标位置全没,打一个字就得重新点一下。 */
+    if (e.target.id === 'sync-text') {
+      STATE.syncText = e.target.value;
+      const text = STATE.syncText.trim();
+      const ok = text.startsWith('nordic://config/1/');
+      const btn = slot().querySelector('[data-act="sync-read"]');
+      if (btn) {
+        btn.disabled = !ok;
+        btn.style.opacity = ok ? '' : '.45';
+        btn.style.cursor = ok ? '' : 'default';
+      }
+      const err = slot().querySelector('[data-sync-error]');
+      if (err) err.style.display = (text && !ok) ? '' : 'none';
+      /* 文本一改,上一次「读出来」就作废 —— 把预览收掉,别让它挂着一份旧结果
+         骗人(那句说明与那颗按钮都在块内,跟着一起走)。 */
+      const pv = slot().querySelector('[data-sync-preview]');
+      if (pv) { STATE.syncRead = false; pv.remove(); }
       return;
     }
     if (e.target.id === 'route-url') {

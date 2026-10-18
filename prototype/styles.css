@@ -1944,3 +1944,95 @@ html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
   text-align: center; max-width: 104px;
 }
 .icon-cap b { display: block; color: #FBFBFD; font-weight: 700; margin-bottom: 2px; }
+
+/* ============================================================
+   扫码同步
+   ============================================================ */
+
+/* 二维码那块方形底:**固定浅底深码,不跟主题走**。
+   深色主题下拿 --fg 画码会变成白码黑底,扫描器读不出来 —— 这是全应用唯一
+   一处故意与主题反过来的地方,所以这儿的白与黑都是写死的,不引 token。 */
+.qr-tile {
+  width: max-content;
+  margin: var(--s2) auto 0;
+  padding: var(--s4);
+  border-radius: var(--r-lg);
+  background: #fff;
+  box-shadow: 0 16px 38px -18px var(--depth-2);
+}
+.qr { width: 216px; height: 216px; }
+.qr svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+
+/* 那串能复制走的载荷。**桌面与浏览器没有相机,这条路是它们的正路**,
+   所以它得能选中、能看清,不能只是一块装饰性文字。 */
+.qr-payload {
+  margin: var(--s4) var(--s5) 0;
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r-md);
+  background: var(--fill-1);
+  border: 1px solid var(--line);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--fg-3);
+  word-break: break-all;
+  max-height: 76px;
+  overflow-y: auto;
+  user-select: text;
+}
+
+/* 取景框:四角括号 + 一条来回走的扫描线。
+   相机画面还没接进来,这块说的是「把二维码放进这个框里」。
+   底色固定黑 —— 那是相机画面该有的样子,不是界面的一部分。 */
+.viewfinder {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  margin: 0 var(--s5);
+  border-radius: var(--r-lg);
+  background: #000;
+  overflow: hidden;
+}
+.viewfinder .corner {
+  position: absolute;
+  width: 33px; height: 33px;
+  border: 3px solid var(--accent-safe);
+  border-radius: 7px;
+}
+.viewfinder .corner.tl { left: 8%; top: 8%; border-right: 0; border-bottom: 0; }
+.viewfinder .corner.tr { right: 8%; top: 8%; border-left: 0; border-bottom: 0; }
+.viewfinder .corner.bl { left: 8%; bottom: 8%; border-right: 0; border-top: 0; }
+.viewfinder .corner.br { right: 8%; bottom: 8%; border-left: 0; border-top: 0; }
+.viewfinder .scanline {
+  position: absolute; left: 7%; right: 7%; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-safe), transparent);
+  animation: scanline 2.4s var(--ease) infinite;
+}
+/* 名字与上面那个 .scan-dots 的 `scan` 区分开 —— 那个是透明度呼吸,不是扫描线。 */
+@keyframes scanline {
+  0%   { top: 11%; }
+  50%  { top: 85%; }
+  100% { top: 11%; }
+}
+.viewfinder .vf-hint {
+  position: absolute; left: var(--s4); right: var(--s4); bottom: var(--s4);
+  text-align: center;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: rgba(251, 251, 253, 0.74);
+}
+
+/* 粘贴框 —— 原型里唯一一个 textarea:载荷是一整串,单行框看不全也选不全。 */
+.field .input.is-multiline { height: auto; align-items: stretch; padding: 0; }
+.field .input.is-multiline textarea {
+  flex: 1 1 auto;
+  min-height: 108px;
+  resize: none;
+  padding: 13px 17px;
+  background: none; border: 0; outline: 0;
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  word-break: break-all;
+}
+.field .input.is-multiline textarea::placeholder { color: var(--fg-4); }
