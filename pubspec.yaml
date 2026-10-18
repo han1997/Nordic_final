@@ -48,6 +48,16 @@ dependencies:
   # 下载落盘要一个本应用可写的目录 —— Android 上取外部私有目录,
   # 桌面 / iOS 退回应用支持目录(见 data/download_store.dart)。
   path_provider: ^2.1.5
+  # Windows 上的 just_audio 后端。它是个**纯原生**包(没有 lib/):直接顶掉
+  # just_audio 用的那几个平台通道(`com.ryanheise.just_audio.methods*`),
+  # 所以加完依赖、跑一次 Windows 构建就生效 —— **没有 Dart 侧要初始化**,
+  # 也不需要任何 `Platform.isWindows` 判断。底层是系统自带的 Media Foundation,
+  # 不引任何要下载的原生二进制(media_kit 那条路要,而本机下不动 GitHub ——
+  # 它的 CMake 在构建期去 github.com 抓 libmpv 并做 MD5 校验,必然 FATAL_ERROR)。
+  #
+  # 不会影响 Android / iOS:它没有 Dart 代码,`platforms` 只有 windows,
+  # 别的平台构建根本不会编它。
+  just_audio_windows: ^0.2.3
   provider: ^6.1.5+1
   crypto: ^3.0.7
   meta: ^1.18.0
