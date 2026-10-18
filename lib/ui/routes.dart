@@ -62,8 +62,13 @@ abstract final class AppRoutes {
         return slide(settings, const NewPlaylistScreen());
       case addRoute:
         return slide(settings, const AddRouteScreen());
-      case album:
-        return slide(settings, AlbumScreen(albumId: settings.arguments as String));
+      case album: {
+        final args = settings.arguments as ({String id, String? heroTag});
+        return slide(
+          settings,
+          AlbumScreen(albumId: args.id, heroTag: args.heroTag),
+        );
+      }
       case artist:
         return slide(settings,
             ArtistScreen(artistId: settings.arguments as String));
@@ -129,8 +134,22 @@ abstract final class AppRoutes {
   static Future<void> openLyrics(BuildContext context) =>
       Navigator.of(context).pushNamed(lyrics);
 
-  static Future<void> openAlbum(BuildContext context, String albumId) =>
-      Navigator.of(context).pushNamed(album, arguments: albumId);
+  /// 打开专辑页。
+  ///
+  /// [heroTag] 是**起点那张封面**的共享元素 tag。它必须跟着路由走,不能写死:
+  /// 专辑页的封面只能挂一个 `Hero`,而来源不止一处 —— 音乐库的网格用的是
+  /// `cover-{id}`,首页那两条货架用的是各自的前缀(`cover-rail-recent-` /
+  /// `cover-rail-frequent-`)。前缀逐条不同是硬要求:同一张专辑常常同时在两条
+  /// 货架上,同一条路由里重名 `Hero` 会直接断言失败(见 `docs/performance.md`)。
+  ///
+  /// 不传就退回网格那个 tag —— 从艺人页 / 播放页 / 歌单菜单进来时来路本身
+  /// 没有 `Hero`,挂什么都无所谓。
+  static Future<void> openAlbum(BuildContext context, String albumId,
+          {String? heroTag}) =>
+      Navigator.of(context).pushNamed(
+        album,
+        arguments: (id: albumId, heroTag: heroTag),
+      );
 
   static Future<void> openArtist(BuildContext context, String artistId) =>
       Navigator.of(context).pushNamed(artist, arguments: artistId);

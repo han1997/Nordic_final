@@ -8,8 +8,10 @@ import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/theme_mode.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/routes.dart';
+import 'package:nordic/ui/screens/album_screen.dart';
 import 'package:nordic/ui/screens/lyrics_screen.dart';
 import 'package:nordic/ui/shell/bottom_stack.dart';
+import 'package:nordic/ui/widgets/album_rail.dart';
 import 'package:nordic/ui/widgets/components.dart';
 import 'package:nordic/ui/widgets/playback_controls.dart';
 import 'package:nordic/ui/shell/shell.dart';
@@ -414,15 +416,83 @@ void main() {
     });
 
     test('专辑 / 艺人 / 歌单仍是滑入 —— 它们不是「翻面」而是进另一个页面', () {
-      for (final name in [AppRoutes.album, AppRoutes.artist, AppRoutes.playlist]) {
-        final route = AppRoutes.generate(
-          RouteSettings(name: name, arguments: 'x'),
-        );
+      final settings = [
+        RouteSettings(
+            name: AppRoutes.album, arguments: (id: 'a1', heroTag: null)),
+        RouteSettings(name: AppRoutes.artist, arguments: 'x'),
+        RouteSettings(name: AppRoutes.playlist, arguments: 'x'),
+      ];
+      for (final s in settings) {
+        final route = AppRoutes.generate(s);
         expect(route, isA<PageRouteBuilder<dynamic>>());
         expect((route! as PageRouteBuilder).transitionDuration,
             greaterThan(Duration.zero),
-            reason: '$name 该滑入');
+            reason: '${s.name} 该滑入');
       }
+    });
+
+    /// **起点那张封面的 tag 要随路由传到专辑页。**
+    ///
+    /// 专辑页的封面只能挂一个 `Hero`,而来源不止一处:音乐库的网格用
+    /// `cover-{id}`,首页那两条货架各用各的前缀 —— 前缀必须逐条不同,否则同一张
+    /// 专辑同时在两条货架上时,同一条路由里重名 `Hero` 会直接断言失败
+    /// (见 `docs/performance.md`,真机表现是「从首页点进任何一页都崩」)。
+    /// 两边要对上,唯一的办法是**起点把 tag 交给终点**。
+    testWidgets('专辑路由把起点那张封面的 tag 带过去', (tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(builder: (c) {
+          ctx = c;
+          return const SizedBox();
+        }),
+      ));
+
+      AlbumScreen pageFor(String? heroTag) {
+        final route = AppRoutes.generate(RouteSettings(
+          name: AppRoutes.album,
+          arguments: (id: 'a1', heroTag: heroTag),
+        ))! as PageRouteBuilder<dynamic>;
+        const still = AlwaysStoppedAnimation<double>(0);
+        return route.pageBuilder(ctx, still, still) as AlbumScreen;
+      }
+
+      expect(pageFor('cover-rail-recent-a1').heroTag, 'cover-rail-recent-a1');
+      expect(
+          pageFor('cover-rail-frequent-a1').heroTag, 'cover-rail-frequent-a1');
+      expect(pageFor(null).heroTag, isNull, reason: '不传就退回网格那个 tag');
+      expect(pageFor('x').albumId, 'a1');
+    });
+
+    testWidgets('货架把她自己显示的那个 tag 原样带进专辑路由', (tester) async {
+      const album = Album(id: 'a1', name: '可能', artist: '某人', artistId: 'ar-1');
+      Object? pushed;
+
+      await tester.pumpWidget(MaterialApp(
+        theme: NordicTheme.dark,
+        onGenerateRoute: (settings) {
+          pushed = settings.arguments;
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (_) => const SizedBox(),
+          );
+        },
+        home: Scaffold(
+          body: AlbumRail(
+            albums: const [album],
+            repo: null,
+            heroPrefix: 'cover-rail-recent',
+          ),
+        ),
+      ));
+
+      final shown = tester.widget<Hero>(find.byType(Hero)).tag;
+      await tester.tap(find.byType(Hero));
+      await tester.pumpAndSettle();
+
+      final args = pushed as ({String id, String? heroTag});
+      expect(args.id, 'a1');
+      expect(args.heroTag, shown,
+          reason: '起点显示的那个 tag 与终点拿到的必须字字相同，否则飞不起来');
     });
 
     /// 滑入**只有位移,没有整页淡入**。
@@ -440,7 +510,7 @@ void main() {
       ));
 
       final route = AppRoutes.generate(
-        const RouteSettings(name: AppRoutes.album, arguments: 'a1'),
+        RouteSettings(name: AppRoutes.album, arguments: (id: 'a1', heroTag: null)),
       )! as PageRouteBuilder<dynamic>;
 
       // 过渡中间那一帧:这里刻意取 0.5,免得 0 / 1 两端把这个区别盖掉。

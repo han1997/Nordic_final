@@ -22,9 +22,17 @@ import '../widgets/states.dart';
 /// 而我们一次可能只拉到其中一部分 —— 两者不一致时页脚必须说清楚,
 /// 否则用户会以为是漏数据。
 class AlbumScreen extends StatefulWidget {
-  const AlbumScreen({super.key, required this.albumId});
+  const AlbumScreen({super.key, required this.albumId, this.heroTag});
 
   final String albumId;
+
+  /// 进来那条路上**起点那张封面**的共享元素 tag,由 [AppRoutes.openAlbum] 带过来。
+  ///
+  /// 不传就退回网格那个 `cover-{id}`。为什么不能写死一个:来源不止一处 ——
+  /// 网格用 `cover-{id}`,首页两条货架各用各的前缀(前缀必须逐条不同,否则同一张
+  /// 专辑同时在两条货架上时,同一条路由里重名 `Hero` 会直接断言失败)。
+  /// 详见 `lib/ui/routes.dart` 的 `openAlbum` 与 `docs/performance.md`。
+  final String? heroTag;
 
   @override
   State<AlbumScreen> createState() => _AlbumScreenState();
@@ -137,6 +145,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
           child: _AlbumHead(
             album: album,
             repoCoverUri: _coverUri(album.coverArtId, 512),
+            heroTag: widget.heroTag,
           ),
         ),
         SliverToBoxAdapter(
@@ -314,10 +323,17 @@ class _AlbumScreenState extends State<AlbumScreen> {
 /// 向歌词页看齐:那一屏之所以清爽,一半在「舍得空、只有一件主事」。
 /// **音质不往这里写** —— 它是每首曲子的事(曲目行里已经有了),头部再说一遍是重复。
 class _AlbumHead extends StatelessWidget {
-  const _AlbumHead({required this.album, required this.repoCoverUri});
+  const _AlbumHead({
+    required this.album,
+    required this.repoCoverUri,
+    this.heroTag,
+  });
 
   final Album album;
   final Uri? repoCoverUri;
+
+  /// 起点那张封面的共享元素 tag(见 [AlbumScreen.heroTag])。空则用网格那个。
+  final String? heroTag;
 
   @override
   Widget build(BuildContext context) {
@@ -335,7 +351,7 @@ class _AlbumHead extends StatelessWidget {
       child: Column(
         children: [
           Hero(
-            tag: 'cover-${album.id}',
+            tag: heroTag ?? 'cover-${album.id}',
             child: Cover(
               coverArtId: album.coverArtId,
               seed: album.id,

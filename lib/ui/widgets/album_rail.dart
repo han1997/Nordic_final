@@ -31,6 +31,9 @@ class AlbumRail extends StatelessWidget {
   /// 框架按 tag 在整条来源路由里找起点(`heroes.dart` 的 `_allHeroesFor`),
   /// 同一个 tag 出现两次会直接断言失败。而首页上「最近播放」与「最常播放」
   /// 常有一张专辑同时在,写死同一个前缀就是「从首页点进任何一页都可能崩」。
+  ///
+  /// **这个前缀还决定起点与终点对不对得上**:它拼出来的 tag 会随路由传到专辑页
+  /// (见 [AppRoutes.openAlbum] 的 `heroTag`),那边照它挂 `Hero` —— 两边一致才飞。
   final String heroPrefix;
 
   @override
@@ -46,8 +49,11 @@ class AlbumRail extends StatelessWidget {
         separatorBuilder: (_, _) => const SizedBox(width: NordicSpace.s4),
         itemBuilder: (context, index) {
           final album = albums[index];
+          final tag = '$heroPrefix-${album.id}';
           return Pressable(
-            onTap: () => AppRoutes.openAlbum(context, album.id),
+            // **这张卡片的 tag 跟着路由一起走** —— 专辑页照传进去的那个挂 Hero,
+            // 这条货架才飞得起来。写死一个 tag 的话两条货架会撞名(见 heroPrefix)。
+            onTap: () => AppRoutes.openAlbum(context, album.id, heroTag: tag),
             scale: 0.97,
             child: SizedBox(
               width: 142,
@@ -55,7 +61,7 @@ class AlbumRail extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Hero(
-                    tag: '$heroPrefix-${album.id}',
+                    tag: tag,
                     child: Cover(
                       coverArtId: album.coverArtId,
                       seed: album.id,
