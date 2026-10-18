@@ -93,7 +93,6 @@ class Cover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    final accent = NordicAccent.derived(seed);
     final w = width ?? size;
     final h = height ?? size;
 
@@ -129,13 +128,13 @@ class Cover extends StatelessWidget {
                     uri: uri!,
                     coverArtId: coverArtId,
                     displaySize: measured ?? _displayEdge(w, h),
-                    fallback: _Fallback(accent: accent),
+                    fallback: () => _Fallback(accent: NordicAccent.derived(seed)),
                     gaplessPlayback: gaplessPlayback,
                   );
                 },
               )
             else
-              _Fallback(accent: accent),
+              _Fallback(accent: NordicAccent.derived(seed)),
             // 斜向高光。压在图上也在渐变上,给封面一层「塑料」的厚度。
             IgnorePointer(
               child: DecoratedBox(
@@ -186,7 +185,11 @@ class _CoverArt extends StatelessWidget {
   });
 
   final Uri uri;
-  final Widget fallback;
+
+  /// 兜底那一块(**惰性**):大多数专辑都有真封面,而兜底配色要从种子算一遍
+  /// (哈希 + 三次 HSL 换算)—— 每次建封面都先算一份再扔掉,是列表滚动的热路径上
+  /// 白花的账。
+  final Widget Function() fallback;
 
   /// 换图时留住上一帧(见 [Cover.gaplessPlayback])。
   final bool gaplessPlayback;
@@ -231,7 +234,7 @@ class _CoverArt extends StatelessWidget {
       int? frame,
       bool wasSynchronouslyLoaded,
     ) =>
-        wasSynchronouslyLoaded || frame != null ? child : fallback;
+        wasSynchronouslyLoaded || frame != null ? child : fallback();
 
     final decode = _decodeEdge(context, displaySize);
 
@@ -242,7 +245,7 @@ class _CoverArt extends StatelessWidget {
         cacheWidth: decode,
         cacheHeight: decode,
         gaplessPlayback: gaplessPlayback,
-        errorBuilder: (_, _, _) => fallback,
+        errorBuilder: (_, _, _) => fallback(),
         frameBuilder: placeholder,
       );
     }
@@ -260,7 +263,7 @@ class _CoverArt extends StatelessWidget {
       ),
       fit: BoxFit.cover,
       gaplessPlayback: gaplessPlayback,
-      errorBuilder: (_, _, _) => fallback,
+      errorBuilder: (_, _, _) => fallback(),
       frameBuilder: placeholder,
     );
   }

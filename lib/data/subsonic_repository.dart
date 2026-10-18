@@ -181,7 +181,11 @@ class SubsonicRepository {
     for (var page = 0; page < maxPages; page++) {
       final batch = await allSongs(size: pageSize, offset: page * pageSize);
       songs.addAll(batch.where((s) => _isBy(s, artist)));
-      if (batch.length < pageSize) break;
+      // **空页才算到底**:服务器可能把 `search3` 卡在比这个更低的条数上
+      // (常见的是 500),按「不满一页」判会当场收摊 —— 大库里的用户点
+      // 「下载这位艺人的全部歌曲」就会默默少下后半截。代价是每个艺人
+      // 多一趟空请求(翻页本来就是按需的活)。
+      if (batch.isEmpty) break;
     }
     return songs;
   }
@@ -392,6 +396,12 @@ class SubsonicRepository {
   /// 那种情况下退回去 `getPlaylists` 里按名字找最新的一条 —— 建完却拿不到
   /// 对象会让调用方以为失败,而服务器上其实已经有了。
   Future<Playlist> createPlaylist(String name, {List<String> songIds = const []}) async {
+    // 先记下手上这份名单:服务器**不返回新建对象**时(有的实现就是空响应体),
+    // 建完之后要靠「哪一条是新的」认出来。同名歌单早就存在是常事 ——
+    // 按名字取第一条可能取回一条旧歌单,调用方于是以为新建成功、还跳进了旧的那条。
+    // 代价是建歌单这个动作多一趟 `getPlaylists`(用户点一次的事,不是热路径)。
+    final before = {for (final p in await playlists()) p.id};
+
     final body = await client.call('createPlaylist', {
       'name': name,
       if (songIds.isNotEmpty) 'songId': songIds.join(','),
@@ -401,12 +411,14 @@ class SubsonicRepository {
       return SubsonicMapper.playlist(SubsonicPayload.playlist(body));
     }
 
-    final all = await playlists();
-    final match = all.where((p) => p.name == name).toList();
-    if (match.isEmpty) {
+    final fresh = [
+      for (final p in await playlists())
+        if (!before.contains(p.id) && p.name == name) p,
+    ];
+    if (fresh.isEmpty) {
       throw SubsonicException('歌单「$name」创建后没有返回，请下拉刷新看看');
     }
-    return match.first;
+    return fresh.first;
   }
 
   /// 把一首歌加进歌单。
