@@ -111,6 +111,9 @@ class AppState extends ChangeNotifier {
     required String password,
     required List<ServerRoute> routes,
   }) async {
+    // 是不是换了一台 —— 按「类型 + 账号 + 第一条线路」判(与库缓存那把键同口径)。
+    final previousKey = _server == null ? null : _serverKey(_server!);
+
     final config = ServerConfig(
       id: _server?.id ?? 'server-1',
       name: name.trim().isEmpty ? kind.label : name.trim(),
@@ -121,6 +124,14 @@ class AppState extends ChangeNotifier {
 
     await credentialStore.savePassword(password);
     await configStore.saveServer(config);
+
+    if (previousKey != null && previousKey != _serverKey(config)) {
+      // 换到另一台了:上一台留下的收藏 / 歌词 / 测速 / 音频缓存一件都不该跟着走
+      // (见 [_resetServerScopedState])。
+      await libraryCache.clear();
+      await mediaCache.clear();
+      await _resetServerScopedState();
+    }
 
     _server = config;
     _repository = SubsonicRepository(
@@ -145,14 +156,45 @@ class AppState extends ChangeNotifier {
     await configStore.clearServer();
     // 缓存也清掉 —— 那台机器的库不再属于这里。
     await libraryCache.clear();
-    // 音频缓存同理:留着的是那台服务器上的曲子,换一台之后既听不到也用不上。
+    // 音频缓存同理:留着的是那台服务器上的曲子,换一台之后既听不到也用不上
+    // (缓存槽位只按「曲目 id + 档位」算,两台服务器上 id 撞上就会播错歌)。
     await mediaCache.clear();
+    await _resetServerScopedState();
     _server = null;
     _repository = null;
     _library = LibrarySnapshot.empty;
     _phase = LoadPhase.idle;
     _error = null;
     notifyListeners();
+  }
+
+  /// 清掉**属于某一台服务器**的那些状态。
+  ///
+  /// 移除服务器、以及**换到另一台**时都要走一遍。不清的话,上一台的心形状态、
+  /// 歌词、测速数字会跟着进新那台:曲目 id 撞上时直接是错的(收藏显示成已收藏、
+  /// 歌词页给的是另一首的),而歌词磁盘缓存是按**裸曲目 id** 存的,跨服务器
+  /// 撞车的概率一点都不低。
+  Future<void> _resetServerScopedState() async {
+    _starredSongs.clear();
+    _starredAlbums.clear();
+    _starredArtists.clear();
+    _lyricsCache.clear();
+    _lyricsDisk = {};
+    _lyricsDiskLoaded = false;
+    _loadingLyricsDisk = null;
+    try {
+      final file = await _lyricsCacheFile();
+      if (file.existsSync()) await file.delete();
+    } catch (_) {
+      // 删不掉只是留着占地方(下一次写会盖掉它)。
+    }
+    _pings = const {};
+    _fromCache = false;
+    _cachedAt = null;
+    _refreshError = null;
+    _errorIsAuth = false;
+    _errorIsNetwork = false;
+    _completing = null;
   }
 
   /// 更新线路(增删 / 改名 / 锁定)。
@@ -481,7 +523,11 @@ class AppState extends ChangeNotifier {
       // 500/1000,二是「最近添加」必须排全量才对得上服务器。取完落进缓存,
       // 下次冷启动直接从缓存拿全,不必再翻。
       if (!_library.songsComplete) {
-        _completing = _completeSongs().whenComplete(() => _completing = null);
+        // **已经有一轮在跑就别换**:换掉的话,先那一轮结束时会把 `_completing`
+        // 清成 null,而新的那一轮还在跑 —— 等 `songsSettled` 的(测试与
+        // 静默刷新)于是提前拿到 future 完成,翻页还没落地就往下断言。
+        _completing ??=
+            _completeSongs().whenComplete(() => _completing = null);
         unawaited(_completing);
       }
     } on SubsonicException catch (e) {
@@ -614,18 +660,25 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// 切换收藏。**乐观更新**:先改本地再发请求,失败时回滚并报错。
+  /// 切换收藏。**乐观更新**:先改本地再发请求,失败时回滚。
   /// 等服务器回来再变的话,点一下心形要愣半秒,手感很差。
-  Future<void> toggleSongStar(String songId) =>
+  ///
+  /// 返回的东西是给界面看的:失败时**不能一声不响** —— 心形自己弹回来,
+  /// 用户分不出是「没点上」还是「没存上」。所以调用点拿到失败就去弹一条提示
+  /// (顶层的 `_error` 在这里没用:界面只在 `phase == failed` 时读它,
+  /// 而收藏失败时库是好好的)。
+  Future<bool> toggleSongStar(String songId) =>
       _toggleStar(_starredSongs, songId, songId: songId);
 
-  Future<void> toggleAlbumStar(String albumId) =>
+  Future<bool> toggleAlbumStar(String albumId) =>
       _toggleStar(_starredAlbums, albumId, albumId: albumId);
 
-  Future<void> toggleArtistStar(String artistId) =>
+  Future<bool> toggleArtistStar(String artistId) =>
       _toggleStar(_starredArtists, artistId, artistId: artistId);
 
-  Future<void> _toggleStar(
+  /// 返回**存上了没有**。取不到仓库(还没连服务器)也算没成 —— 那时本地这份
+  /// 收藏状态服务器根本不知道,说「成功了」是撒谎。
+  Future<bool> _toggleStar(
     Set<String> bucket,
     String id, {
     String? songId,
@@ -633,7 +686,7 @@ class AppState extends ChangeNotifier {
     String? artistId,
   }) async {
     final repo = _repository;
-    if (repo == null) return;
+    if (repo == null) return false;
 
     final wasStarred = bucket.contains(id);
     wasStarred ? bucket.remove(id) : bucket.add(id);
@@ -646,12 +699,12 @@ class AppState extends ChangeNotifier {
         artistId: artistId,
         starred: !wasStarred,
       );
-    } catch (e) {
+      return true;
+    } catch (_) {
       // 回滚 —— 界面上不能停在一个服务器并不认的状态。
       wasStarred ? bucket.add(id) : bucket.remove(id);
-      _error = '$e';
-      _errorIsAuth = false;
       notifyListeners();
+      return false;
     }
   }
 
@@ -677,10 +730,24 @@ class AppState extends ChangeNotifier {
     return File('${dir.path}${Platform.pathSeparator}lyrics.json');
   }
 
-  /// 读一次磁盘歌词缓存。读不到就当空 —— 歌词拿不到不该阻断播放。
-  Future<void> _loadLyricsDisk() async {
-    if (_lyricsDiskLoaded) return;
-    _lyricsDiskLoaded = true;
+  /// 正在读的那一趟 —— 同一时刻只许有一趟。
+  Future<void>? _loadingLyricsDisk;
+
+  /// 把磁盘那份歌词读进来(只读一次)。
+  ///
+  /// **读的过程中 `_lyricsDiskLoaded` 还是 false**:先立起来再去 await 的话,
+  /// 同时进来的第二个调用会以为「已经读完了」而看到一个**空的** `_lyricsDisk`,
+  /// 接着把那一份空的写回盘上 —— 整份歌词缓存就这么没了(两个 `lyricsFor`
+  /// 撞在一起就会走到:比如歌词页与「预取」同时开跑)。
+  Future<void> _loadLyricsDisk() {
+    if (_lyricsDiskLoaded) return Future.value();
+    return _loadingLyricsDisk ??= _readLyricsDisk().whenComplete(() {
+      _lyricsDiskLoaded = true;
+      _loadingLyricsDisk = null;
+    });
+  }
+
+  Future<void> _readLyricsDisk() async {
     try {
       final file = await _lyricsCacheFile();
       if (!file.existsSync()) return;
@@ -692,7 +759,11 @@ class AppState extends ChangeNotifier {
   }
 
   /// 把内存里的一份歌词补写进磁盘。失败不影响这次显示。
+  ///
+  /// **磁盘那份还没读进来就不写**:手上是空的 `_lyricsDisk`,写下去等于把
+  /// 已有的一整份歌词缓存抹掉(抹掉的那一份下次还得重新打服务器)。
   Future<void> _saveLyricsDisk(String songId, Lyrics lyrics) async {
+    if (!_lyricsDiskLoaded) return;
     _lyricsDisk[songId] = {
       'synced': lyrics.synced,
       'lines': [

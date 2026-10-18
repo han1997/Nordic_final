@@ -412,7 +412,17 @@ class _SongInfo extends StatelessWidget {
             icon: starred ? Icons.favorite : Icons.favorite_border,
             iconSize: 26,
             color: starred ? context.accentSafe : t.fg2,
-            onPressed: () => context.read<AppState>().toggleSongStar(song.id),
+            onPressed: () async {
+              final state = context.read<AppState>();
+              // 没存上就说一句:心形自己弹回来,用户分不出是没点上还是没存上
+              // (收藏失败时库是好的,顶栏那一套错误态不会出现)。
+              if (await state.toggleSongStar(song.id)) return;
+              if (!context.mounted) return;
+              ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+                content: Text('没能存到服务器，收藏状态已退回 —— 检查网络后再试'),
+                duration: Duration(seconds: 3),
+              ));
+            },
           ),
         ],
       ),

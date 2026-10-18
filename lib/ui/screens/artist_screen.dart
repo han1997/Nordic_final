@@ -272,10 +272,13 @@ class _ArtistScreenState extends State<ArtistScreen> {
 
   Future<void> _toggleStar() async {
     final state = context.read<AppState>();
-    await state.toggleArtistStar(widget.artistId);
+    final ok = await state.toggleArtistStar(widget.artistId);
     if (!mounted) return;
     setState(() => _starred = state.isArtistStarred(widget.artistId));
-    _toast(_starred ? '已收藏这位艺人' : '已取消收藏');
+    // 同专辑页:失败时那句「已收藏」会是假的(状态已经滚回去了)。
+    _toast(ok
+        ? (_starred ? '已收藏这位艺人' : '已取消收藏')
+        : '没能存到服务器，收藏状态已退回 —— 检查网络后再试');
   }
 
   void _showMenu() {

@@ -121,6 +121,27 @@ void main() {
             .having((e) => e.message, 'message', contains('Subsonic'))),
       );
     });
+
+    test('答的是合法 JSON，但没有 subsonic-response —— 不该再试别的线路', () async {
+      // 换线路是给「这条连不上」用的。服务器明明答了(只是答的不是 Subsonic),
+      // 把剩下的线路挨个试一遍等于每条都白等一次超时,最后报的还是同一句话。
+      // 判据是 `isNetworkFailure`(见 `subsonic_payload.dart` 里那一处 statusCode)。
+      final hits = <String>[];
+      final client = SubsonicClient(
+        auth: SubsonicAuth(username: 'u', password: 'p'),
+        routes: const [
+          ServerRoute(id: 'a', name: 'A', url: 'http://a.example.com'),
+          ServerRoute(id: 'b', name: 'B', url: 'http://b.example.com'),
+        ],
+        dio: rawRecordingDio(hits, body: '{"hello":"world"}'),
+      );
+
+      await expectLater(
+        client.call('ping'),
+        throwsA(isA<SubsonicException>()),
+      );
+      expect(hits, ['http://a.example.com'], reason: '这不是「线路不通」');
+    });
   });
 
   group('手动锁定（关掉线路自动择优）', () {

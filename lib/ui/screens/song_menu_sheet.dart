@@ -59,9 +59,16 @@ Future<void> showSongMenu(
               NordicMenuRow(
                 icon: starred ? Icons.favorite : Icons.favorite_border,
                 label: starred ? '取消收藏' : '收藏这首歌',
-                onTap: () {
+                onTap: () async {
+                  // 弹层先收掉,提示交给**页面上**那条通道(弹层自己的 context
+                  // 在这时就没了,而「没存上」这件事必须说出口)。
+                  final messenger = ScaffoldMessenger.maybeOf(context);
                   close();
-                  appState.toggleSongStar(song.id);
+                  if (await appState.toggleSongStar(song.id)) return;
+                  messenger?.showSnackBar(const SnackBar(
+                    content: Text('没能存到服务器，收藏状态已退回 —— 检查网络后再试'),
+                    duration: Duration(seconds: 3),
+                  ));
                 },
               ),
               NordicMenuRow(

@@ -27,7 +27,14 @@ class SubsonicEnvelope {
   static SubsonicEnvelope parse(Map<String, dynamic> body) {
     final envelope = body['subsonic-response'];
     if (envelope is! Map) {
-      throw const SubsonicException('响应里没有 subsonic-response，可能不是 Subsonic 服务');
+      // **带上 statusCode**:这是「服务器答了,但答的不是 Subsonic」——
+      // 协议不对,不是这条线路不通。不标的话 `isNetworkFailure` 为真,客户端会把
+      // 剩下的每一条线路都试一遍(每条都要等到超时),最后才把真正的原因报出来。
+      // 隔壁「JSON 都解析不了」那一条就是这么标的。
+      throw const SubsonicException(
+        '响应里没有 subsonic-response，可能不是 Subsonic 服务',
+        statusCode: 200,
+      );
     }
     final errorJson = envelope['error'];
     return SubsonicEnvelope(

@@ -197,10 +197,14 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
   Future<void> _toggleStar() async {
     final state = context.read<AppState>();
-    await state.toggleAlbumStar(widget.albumId);
+    final ok = await state.toggleAlbumStar(widget.albumId);
     if (!mounted) return;
     setState(() => _starred = state.isAlbumStarred(widget.albumId));
-    _toast(_starred ? '已收藏这张专辑' : '已取消收藏');
+    // 没存上的时候**不能说「已收藏」** —— 状态已经滚回去了,那句提示就成了
+    // 假的;用户也才分得出「没点上」与「没存上」。
+    _toast(ok
+        ? (_starred ? '已收藏这张专辑' : '已取消收藏')
+        : '没能存到服务器，收藏状态已退回 —— 检查网络后再试');
   }
 
   void _showQueue() {
