@@ -111,9 +111,18 @@ class TransferResult {
 ///
 /// 抽成可注入的函数,是为了让排队 / 门控 / 续传 / 状态这些**管理器自己的
 /// 逻辑**能脱离网络单测 —— 那些才是容易写错的部分。
+///
+/// [resumeFrom] 是「这首歌的半截 `.part` 里已经有几个字节」。实现要么从那个
+/// 偏移接着写,要么在服务器不认 `Range` 时**截断重来** —— 但绝不能把整段接在
+/// 半截后面,那会让文件前段重复、整首损坏(而它不响:播放器照放)。
+///
+/// [onProgress] 是**累计口径**:`received` 含 `resumeFrom`,`total` 是这一首的
+/// 全长(不知道时为 -1)。调用方直接拿它算进度,不必自己再加偏移 —— 加了会在
+/// 「服务器不认 Range、从头重来」那一步多算一次。
 typedef TransferFn = Future<TransferResult> Function({
   required Uri uri,
   required String savePath,
+  required int resumeFrom,
   void Function(int received, int total)? onProgress,
   CancelToken? cancelToken,
 });
@@ -411,13 +420,11 @@ class DownloadManager extends ChangeNotifier {
 
     try {
       final dir = await _store.directoryFor(job.request.id);
-      // 上一次可能被系统杀掉进程,留下半截的 .part。续传只认完整的文件,
-      // 这些既不参与续传又占地方 —— 开工前先清掉。
-      await for (final leftover in dir.list()) {
-        if (leftover is File && leftover.path.endsWith('.part')) {
-          await leftover.delete();
-        }
-      }
+      // **半截的 .part 留着** —— 它是这首歌的续传起点,不是垃圾:下一次(乃至
+      // 下一次启动)从它的长度接着下(见 [_resumableFrom])。这里以前会把它们
+      // 全清掉,于是「按曲目续传」就成了能拿到的最好结果。现在不作数的半截
+      // 由传输层那几条判据处理(服务器不认 Range / Content-Range 对不上 →
+      // 截断重来;硬失败 → 当场删掉,免得错误体被当成起点)。
 
       var completedBytes = 0;
       final files = <String, String>{};
@@ -429,9 +436,13 @@ class DownloadManager extends ChangeNotifier {
         final relative = '${job.request.id}/$name';
 
         // 续传:上一次中断前已经落盘的那几首不重下。
-        // 半截的文件不在这里 —— 它们写的是 .part,失败时已被清掉。
+        // 半截的不走这条 —— 它们写的是 .part,由下面那一路按字节接着下。
         if (file.existsSync() && file.lengthSync() > 0) {
           final size = file.lengthSync();
+          // 这首已经整首在盘上了,旁边不该再躺一份半截:留着会被当成这首的
+          // 续传起点,而它其实已经下完了。
+          _deleteQuietly('${file.path}.part');
+          _deleteQuietly('${file.path}.part.restart');
           completedBytes += size;
           files[song.id] = relative;
           _report(job, completedBytes, i + 1, 1);
@@ -501,11 +512,18 @@ class DownloadManager extends ChangeNotifier {
     while (true) {
       attempt++;
       final uri = repo.downloadUri(song.id);
+      // 这首的半截 `.part` 是本次续传的起点。**每次尝试都重读一遍** —— 上一次
+      // 失败前可能已经又多落了一些字节,而那正是该接着下的地方。
+      final resumeFrom = _resumableFrom(file, song.sizeBytes);
       try {
         final result = await _doTransfer(
           uri: uri,
           savePath: file.path,
+          resumeFrom: resumeFrom,
+          expectedBytes: song.sizeBytes,
           cancelToken: cancel,
+          // received 已是**累计口径**(含 resumeFrom,由传输层补上),这里不加
+          // 偏移 —— 加了会在「服务器不认 Range、从头重来」那一步多算一遍。
           onProgress: (received, total) => _report(
             job,
             baseBytes + received,
@@ -541,6 +559,8 @@ class DownloadManager extends ChangeNotifier {
       final result = await _doTransfer(
         uri: repo.coverUri(artId, size: 1024),
         savePath: temp,
+        // 封面不续传:一张图几百 KB,重下一遍比维护它的半截划算。
+        resumeFrom: 0,
       );
       final ext = _imageExtension(result.contentType);
       final name = 'cover.$ext';
@@ -549,8 +569,9 @@ class DownloadManager extends ChangeNotifier {
       await File(temp).rename(target.path);
       return '${job.request.id}/$name';
     } catch (_) {
-      final tempFile = File(temp);
-      if (tempFile.existsSync()) tempFile.deleteSync();
+      _deleteQuietly(temp);
+      _deleteQuietly('$temp.part');
+      _deleteQuietly('$temp.part.restart');
       return null;
     }
   }
@@ -606,19 +627,40 @@ class DownloadManager extends ChangeNotifier {
     return total;
   }
 
+  /// 一首曲子可用的**续传起点**(字节)。返回 0 表示从头下。
+  ///
+  /// **半截为空、或比整首还长,都当 0** —— 前者没什么可续;后者多半是服务器上
+  /// 那份已经换过了,接着写会把两段来源不同的内容拼成一个坏文件,而坏文件不响
+  /// (播放器照放)。宁可重下一遍。
+  static int _resumableFrom(File target, int? expectedBytes) {
+    final part = File('${target.path}.part');
+    if (!part.existsSync()) return 0;
+    final length = part.lengthSync();
+    if (length <= 0) return 0;
+    if (expectedBytes != null && expectedBytes > 0 && length >= expectedBytes) {
+      return 0;
+    }
+    return length;
+  }
+
   // ---------------- 传输 ----------------
 
   Future<TransferResult> _doTransfer({
     required Uri uri,
     required String savePath,
+    required int resumeFrom,
+    int? expectedBytes,
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) {
     final transfer = _transfer;
     if (transfer != null) {
+      // 注入的那一层只用得上 resumeFrom;`expectedBytes` 是给真 dio 那条路
+      // 校验 `Content-Range` 用的(见 [_parseContentRange])。
       return transfer(
         uri: uri,
         savePath: savePath,
+        resumeFrom: resumeFrom,
         onProgress: onProgress,
         cancelToken: cancelToken,
       );
@@ -626,15 +668,23 @@ class DownloadManager extends ChangeNotifier {
     return _dioTransfer(
       uri: uri,
       savePath: savePath,
+      resumeFrom: resumeFrom,
+      expectedBytes: expectedBytes,
       onProgress: onProgress,
       cancelToken: cancelToken,
     );
   }
 
   /// 真下载。先写 `.part` 再改名 —— 文件管理器与播放器都只会看到完整的文件。
+  ///
+  /// **续传**:`resumeFrom > 0` 时发 `Range: bytes=<n>-`,往 `.part` 后面接。
+  /// 服务器不认 Range(回 200 而不是 206)或 `Content-Range` 对不上时**当场
+  /// 截断重来** —— 把整段接在半截后面会让文件前段重复、整首损坏,而那不响。
   Future<TransferResult> _dioTransfer({
     required Uri uri,
     required String savePath,
+    required int resumeFrom,
+    int? expectedBytes,
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
@@ -646,16 +696,59 @@ class DownloadManager extends ChangeNotifier {
       validateStatus: (_) => true,
     ));
 
-    final tempPath = '$savePath.part';
+    final partPath = '$savePath.part';
+    // 「服务器无视了 Range」时另起一个**干净**文件,不去动已经写下的半截。
+    final restartPath = '$savePath.part.restart';
+    final resuming = resumeFrom > 0;
+    var writtenPath = partPath;
+    var offset = resuming ? resumeFrom : 0;
+
+    // dio 先按响应头定文件名、再决定怎么开它(`File(await savePath(headers))`
+    // 之后才 `openSync(mode:)`,见 dio_for_native.dart),所以这里能在**写盘
+    // 之前**看清服务器认没认 Range —— 这是「换个文件从头写」能成立的原因。
+    FutureOr<String> choosePath(Headers headers) {
+      writtenPath = partPath;
+      offset = 0;
+      if (!resuming) return partPath;
+
+      final range = _parseContentRange(headers.value('content-range'));
+      final trusted = range != null &&
+          range.start == resumeFrom &&
+          (expectedBytes == null ||
+              expectedBytes <= 0 ||
+              range.total == null ||
+              range.total == expectedBytes);
+      if (trusted) {
+        writtenPath = partPath;
+        offset = resumeFrom;
+        return partPath;
+      }
+
+      // 半截不可信:连旧的那份一起扔掉,换一个不存在的空文件从头写。
+      // (append 模式打开一个刚建出来的空文件,就等于从 0 写。)
+      _deleteQuietly(partPath);
+      _deleteQuietly(restartPath);
+      writtenPath = restartPath;
+      return restartPath;
+    }
+
     Response<dynamic> response;
     try {
       response = await dio.downloadUri(
         uri,
-        tempPath,
-        onReceiveProgress: onProgress,
+        choosePath,
+        onReceiveProgress: (received, total) {
+          // 换成**累计口径**:dio 的 received 只是这一次调用收到的字节,续传时
+          // 不含半截里已有的那部分 —— 原样上报会让进度条先退再爬。
+          onProgress?.call(offset + received, total > 0 ? offset + total : total);
+        },
         cancelToken: cancelToken,
-        // 失败时把半截文件删掉:留下的 .part 对任何一方都没有意义。
-        deleteOnError: true,
+        // 半截**留着** —— 下一次(乃至下次启动)从它接着下,那才是续传的意思。
+        // 真正不该留的那些由下面几处显式删掉。
+        deleteOnError: false,
+        fileAccessMode: resuming ? FileAccessMode.append : FileAccessMode.write,
+        options:
+            resuming ? Options(headers: {'Range': 'bytes=$resumeFrom-'}) : null,
       );
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) rethrow;
@@ -663,7 +756,10 @@ class DownloadManager extends ChangeNotifier {
     }
 
     final status = response.statusCode ?? 0;
-    if (status != 200) {
+    // 200 = 整段;206 = 从 resumeFrom 起的剩余段。**两个都要认** ——
+    // 只认 200 会把每一次续传都判成失败。
+    if (status != 200 && status != 206) {
+      _deleteQuietly(writtenPath);
       throw DownloadFailure('服务器返回 HTTP $status');
     }
 
@@ -671,18 +767,20 @@ class DownloadManager extends ChangeNotifier {
     if (_looksLikeErrorBody(contentType)) {
       // Subsonic 出错时**照样回 200**,错误在响应体里。若不当心,
       // 一个几百字节的 JSON 会被当成音频存下来 —— 「下载完成」就是假的。
-      final message = await _readErrorMessage(tempPath);
-      _deleteQuietly(tempPath);
+      // 206 同理一起挡,而且这份错误体必须删掉:留着它,下一次的续传起点
+      // 就成了「错误信息」。
+      final message = await _readErrorMessage(writtenPath);
+      _deleteQuietly(writtenPath);
       throw DownloadFailure(message);
     }
 
-    final temp = File(tempPath);
-    if (!temp.existsSync()) {
+    final written = File(writtenPath);
+    if (!written.existsSync()) {
       throw const DownloadFailure('服务器没有返回内容');
     }
     final target = File(savePath);
     if (target.existsSync()) target.deleteSync();
-    await temp.rename(savePath);
+    await written.rename(savePath);
     return TransferResult(
       bytes: await target.length(),
       statusCode: status,
@@ -702,6 +800,21 @@ class DownloadManager extends ChangeNotifier {
   static String _describe(DioException e) {
     if (_isNetworkFailure(e)) return '连接失败，检查网络或线路';
     return '下载中断：${e.message ?? e.type.name}';
+  }
+
+  /// 从 `Content-Range: bytes <起点>-<末>/<总量>` 里取两头。总量写成 `*` 时为
+  /// null(那种响应里服务器自己也没说整段有多大)。解析不出来就返回 null ——
+  /// 调用方按「半截不可信」处理,也就是从头重下,这是安全的那一侧。
+  static ({int start, int? total})? _parseContentRange(String? value) {
+    if (value == null) return null;
+    final match =
+        RegExp(r'bytes\s+(\d+)-(\d+)/(\d+|\*)').firstMatch(value.trim());
+    if (match == null) return null;
+    final total = match.group(3)!;
+    return (
+      start: int.parse(match.group(1)!),
+      total: total == '*' ? null : int.tryParse(total),
+    );
   }
 
   static bool _looksLikeErrorBody(String? contentType) {

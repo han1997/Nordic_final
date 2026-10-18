@@ -80,12 +80,15 @@ void main() {
       ({
         required Uri uri,
         required String savePath,
+        required int resumeFrom,
         void Function(int received, int total)? onProgress,
         CancelToken? cancelToken,
       }) async {
         calls.add(uri);
         final failure = failWith?.call(uri);
         if (failure != null) throw DownloadFailure(failure, network: network);
+
+        // 假的这一层不做续传:写满一整份,等价于「从头下」。
 
         final bytes = Uint8List(size)..fillRange(0, size, 7);
         await File(savePath).writeAsBytes(bytes, flush: true);
@@ -213,6 +216,7 @@ void main() {
         fn: ({
           required Uri uri,
           required String savePath,
+          required int resumeFrom,
           void Function(int received, int total)? onProgress,
           CancelToken? cancelToken,
         }) async {
@@ -245,6 +249,7 @@ void main() {
         fn: ({
           required Uri uri,
           required String savePath,
+          required int resumeFrom,
           void Function(int received, int total)? onProgress,
           CancelToken? cancelToken,
         }) async {
@@ -279,6 +284,7 @@ void main() {
         fn: ({
           required Uri uri,
           required String savePath,
+          required int resumeFrom,
           void Function(int received, int total)? onProgress,
           CancelToken? cancelToken,
         }) async {
@@ -491,33 +497,39 @@ void main() {
     });
   });
 
-  group('真传输（dio)', () {
-    /// 假 Dio:回一个**流式**响应。dio 的 download 要的是 ResponseBody,
-    /// 不能像别的用例那样回一个字符串。
-    Dio streamingDio({
-      required int status,
-      required String contentType,
-      required List<int> body,
-    }) {
-      final headers = {'content-type': [contentType]};
-      final dio = Dio(BaseOptions(validateStatus: (_) => true));
-      dio.interceptors.add(InterceptorsWrapper(
-        onRequest: (options, interceptor) => interceptor.resolve(
+  /// 假 Dio:回一个**流式**响应。dio 的 download 要的是 ResponseBody,
+  /// 不能像别的用例那样回一个字符串。
+  Dio streamingDio({
+    required int status,
+    required String contentType,
+    required List<int> body,
+    Map<String, List<String>> headers = const {},
+    List<RequestOptions>? seen,
+  }) {
+    final all = {'content-type': [contentType], ...headers};
+    final dio = Dio(BaseOptions(validateStatus: (_) => true));
+    dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, interceptor) {
+        // 记下这次**真正发出去**的请求 —— 续传那几条要断言 `Range` 头在不在。
+        seen?.add(options);
+        return interceptor.resolve(
           Response<ResponseBody>(
             requestOptions: options,
             statusCode: status,
-            headers: Headers.fromMap(headers),
+            headers: Headers.fromMap(all),
             data: ResponseBody(
               Stream.value(Uint8List.fromList(body)),
               status,
-              headers: headers,
+              headers: all,
             ),
           ),
-        ),
-      ));
-      return dio;
-    }
+        );
+      },
+    ));
+    return dio;
+  }
 
+  group('真传输（dio)', () {
     test('正常响应把字节落到磁盘，不留半截文件', () async {
       final manager = managerWith(
         dio: streamingDio(
@@ -575,6 +587,218 @@ void main() {
 
       expect(job.state, DownloadState.failed);
       expect(job.error, contains('404'));
+    });
+  });
+
+  /// 断点续传从「按曲目」升级到「按字节」。
+  ///
+  /// 这些用例钉的是那几处**不响**的错误:接在半截后面写出前段重复的文件
+  /// (播放器照放)、进度条先退再爬、错误体被当成下一次的续传起点。
+  group('按字节续传', () {
+    /// 这首曲子最终会落在哪 —— 与 DownloadManager 用同一套命名规则算,
+    /// 用例才好抢在下载之前把半截摆好。
+    Future<String> finalPathOf(DownloadRequest request, Song s) async {
+      final dir = await store.directoryFor(request.id);
+      return '${dir.path}${Platform.pathSeparator}'
+          '${DownloadStore.trackFileName(0, s)}';
+    }
+
+    Future<void> seedPart(String finalPath, int length, int fill) async {
+      final bytes = Uint8List(length);
+      if (length > 0) bytes.fillRange(0, length, fill);
+      await File('$finalPath.part').writeAsBytes(bytes, flush: true);
+    }
+
+    test('半截就是续传起点,进度按累计口径算', () async {
+      final s1 = song('s1', size: 4000);
+      final request = DownloadRequest.song(s1);
+      final finalPath = await finalPathOf(request, s1);
+      await seedPart(finalPath, 1000, 7);
+
+      var seenFrom = -1;
+      double? midPct;
+      late DownloadManager manager;
+
+      manager = managerWith(
+        fn: ({
+          required Uri uri,
+          required String savePath,
+          required int resumeFrom,
+          void Function(int received, int total)? onProgress,
+          CancelToken? cancelToken,
+        }) async {
+          seenFrom = resumeFrom;
+          // 按 TransferFn 的约定报**累计**口径:2000/4000 就是 50%。
+          onProgress?.call(resumeFrom + 1000, 4000);
+          midPct = manager.jobs.single.pct;
+          onProgress?.call(resumeFrom + 3000, 4000);
+          await File(savePath).writeAsBytes(Uint8List(4000), flush: true);
+          return TransferResult(bytes: 4000, contentType: 'audio/flac');
+        },
+      );
+
+      await manager.enqueue(request);
+      await settle(manager);
+
+      expect(seenFrom, 1000, reason: '半截那 1000 字节就是起点');
+      expect(midPct, closeTo(50, 1),
+          reason: '不补偏移的话这里会算成 37.5% —— 进度条先退再爬');
+    });
+
+    test('服务器回 206:接着半截写,拼成完整的一首', () async {
+      final s1 = song('s1', size: 4000);
+      final request = DownloadRequest.song(s1);
+      final finalPath = await finalPathOf(request, s1);
+      await seedPart(finalPath, 1000, 7);
+
+      final seen = <RequestOptions>[];
+      final manager = managerWith(
+        dio: streamingDio(
+          status: 206,
+          contentType: 'audio/flac',
+          body: List<int>.filled(3000, 9),
+          headers: {
+            'content-range': ['bytes 1000-3999/4000'],
+            'content-length': ['3000'],
+          },
+          seen: seen,
+        ),
+      );
+
+      final job = await manager.enqueue(request);
+      await settle(manager);
+
+      expect(job.state, DownloadState.done);
+      expect(store.localPathFor('s1'), finalPath);
+      final bytes = await File(finalPath).readAsBytes();
+      expect(bytes.length, 4000);
+      expect(bytes.sublist(0, 1000), everyElement(7),
+          reason: '已经下好的那一段要原样留着,不该重下');
+      expect(bytes.sublist(1000), everyElement(9), reason: '新的接在后面');
+      expect(seen.single.headers['Range'], 'bytes=1000-');
+    });
+
+    test('服务器回 200(无视 Range):截断重来,不在半截后面接整段', () async {
+      final s1 = song('s1', size: 4000);
+      final request = DownloadRequest.song(s1);
+      final finalPath = await finalPathOf(request, s1);
+      await seedPart(finalPath, 1000, 7);
+
+      final seen = <RequestOptions>[];
+      final manager = managerWith(
+        dio: streamingDio(
+          status: 200,
+          contentType: 'audio/flac',
+          body: List<int>.filled(4000, 9),
+          seen: seen,
+        ),
+      );
+
+      final job = await manager.enqueue(request);
+      await settle(manager);
+
+      expect(job.state, DownloadState.done);
+      final bytes = await File(finalPath).readAsBytes();
+      expect(bytes.length, 4000,
+          reason: '接在半截后面会长成 5000 —— 前 1000 字节是重复的');
+      expect(bytes, everyElement(9), reason: '旧的 1000 字节必须已经被扔掉');
+      expect(seen.single.headers['Range'], 'bytes=1000-',
+          reason: '确实试着续传了,只是服务器不认');
+    });
+
+    test('Content-Range 的总量对不上:当半截不可信,重来', () async {
+      final s1 = song('s1', size: 4000);
+      final request = DownloadRequest.song(s1);
+      final finalPath = await finalPathOf(request, s1);
+      await seedPart(finalPath, 1000, 7);
+
+      // 请求里这首歌是 4000 字节,服务器却说整首 5000 —— 盘上那半截不是
+      // 这一份文件的前缀,接上去就是拼一个坏文件。
+      final manager = managerWith(
+        dio: streamingDio(
+          status: 206,
+          contentType: 'audio/flac',
+          body: List<int>.filled(5000, 9),
+          headers: {
+            'content-range': ['bytes 1000-4999/5000'],
+            'content-length': ['5000'],
+          },
+        ),
+      );
+
+      final job = await manager.enqueue(request);
+      await settle(manager);
+
+      expect(job.state, DownloadState.done);
+      final bytes = await File(finalPath).readAsBytes();
+      expect(bytes.length, 5000);
+      expect(bytes, everyElement(9));
+      expect(File('$finalPath.part.restart').existsSync(), isFalse);
+    });
+
+    test('半截是空的:当没有,从 0 下', () async {
+      final s1 = song('s1', size: 4000);
+      final request = DownloadRequest.song(s1);
+      final finalPath = await finalPathOf(request, s1);
+      await seedPart(finalPath, 0, 7);
+
+      var seenFrom = -1;
+      final manager = managerWith(
+        fn: ({
+          required Uri uri,
+          required String savePath,
+          required int resumeFrom,
+          void Function(int received, int total)? onProgress,
+          CancelToken? cancelToken,
+        }) async {
+          seenFrom = resumeFrom;
+          await File(savePath).writeAsBytes(Uint8List(4000), flush: true);
+          return TransferResult(bytes: 4000, contentType: 'audio/flac');
+        },
+      );
+
+      await manager.enqueue(request);
+      await settle(manager);
+
+      expect(seenFrom, 0, reason: '空文件没什么可续的');
+    });
+
+    test('真传输这条路:没有半截时连 Range 都不发', () async {
+      final seen = <RequestOptions>[];
+      final manager = managerWith(
+        dio: streamingDio(
+          status: 200,
+          contentType: 'audio/flac',
+          body: List<int>.filled(4000, 9),
+          seen: seen,
+        ),
+      );
+
+      await manager.enqueue(DownloadRequest.song(song('s1', size: 4000)));
+      await settle(manager);
+
+      expect(seen.single.headers.containsKey('Range'), isFalse);
+    });
+
+    test('硬失败不留半截 —— 否则错误体会变成下一次的续传起点', () async {
+      final s1 = song('s1', size: 4000);
+      final request = DownloadRequest.song(s1);
+      final finalPath = await finalPathOf(request, s1);
+
+      final manager = managerWith(
+        dio: streamingDio(
+          status: 404,
+          contentType: 'text/plain',
+          body: utf8.encode('not found'),
+        ),
+      );
+
+      final job = await manager.enqueue(request);
+      await settle(manager);
+
+      expect(job.state, DownloadState.failed);
+      expect(File('$finalPath.part').existsSync(), isFalse);
+      expect(File('$finalPath.part.restart').existsSync(), isFalse);
     });
   });
 }
