@@ -10,8 +10,8 @@ import 'package:just_audio/just_audio.dart';
 import '../data/download_store.dart';
 import '../data/media_cache.dart';
 import '../data/models.dart';
+import '../data/music_source.dart';
 import '../data/network_status.dart';
-import '../data/subsonic_repository.dart';
 import 'quality.dart';
 
 /// 一首歌该从哪里播 —— 本机有下载就用本机,否则走服务器的流。
@@ -135,7 +135,7 @@ LoopMode loopModeFor(AudioServiceRepeatMode repeatMode) => switch (repeatMode) {
 /// 走网络的那一首会边听边落盘,下一次直接读本机。给了它,播放层还会顺手
 /// 按用户设的上限淘汰。为 null / 关掉时一切照旧走网络。
 Future<NordicAudioHandler> startAudioService({
-  required SubsonicRepository? Function() repository,
+  required MusicSource? Function() repository,
   required QualityController quality,
   DownloadStore? downloads,
   MediaCache? cache,
@@ -262,7 +262,7 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   /// 取值函数而非实例 —— 见 startAudioService 的说明。
-  final SubsonicRepository? Function() _repository;
+  final MusicSource? Function() _repository;
   final QualityController _quality;
 
   /// 本机下载内容。为 null 表示这块存储用不了,一切照旧走网络。
@@ -717,7 +717,7 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// 当前生效的仓库。没配服务器时为 null —— 调用点要自己判,
   /// 不要在这里造一个连不上任何东西的假仓库。
-  SubsonicRepository? get _repo => _repository();
+  MusicSource? get _repo => _repository();
 
   /// 域模型 → 播放源。**先看本机有没有下载,再看有没有缓存,最后才谈转码档位。**
   ///
@@ -935,7 +935,7 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       duration: song.duration,
       artUri: switch ((local, song.hasCover, repo)) {
         (final String path, _, _) => Uri.file(path),
-        (_, true, final SubsonicRepository r) =>
+        (_, true, final MusicSource r) =>
           r.coverUri(song.coverArtId!, size: 512),
         _ => null,
       },

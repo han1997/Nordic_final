@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/music_source.dart';
-import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
@@ -123,7 +122,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
     final currentId = playable.state.song?.id;
     // 订阅的只有「仓库」这一件(拼封面地址用);动作(收藏、下载)走取值函数,
     // 下载进度与缓存淘汰于是不会把这一屏拖着重建。
-    final repo = context.select<AppState, SubsonicRepository?>(
+    final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
 
@@ -261,7 +260,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
     );
   }
 
-  Uri? _cover(SubsonicRepository? repo, String? artId) {
+  Uri? _cover(MusicSource? repo, String? artId) {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: 512);

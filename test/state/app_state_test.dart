@@ -383,7 +383,7 @@ void main() {
     test('改路线路当场落到正在用的客户端上', () async {
       // 真机报的「线路切换无效」:配置改了,而客户端手上还是建库时那份拷贝。
       final state = await buildState(payloadDio([], libraryFixtures()), root);
-      final client = state.repository!.client;
+      final client = state.repository!.connection;
 
       await state.updateRoutes(const [
         ServerRoute(id: 'lan', name: '局域网', url: 'http://nas.example.com'),

@@ -4,8 +4,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'music_source.dart';
 import 'subsonic_auth.dart';
 import 'subsonic_client.dart';
+import 'subsonic_repository.dart';
 
 /// 一个已配置的服务器。
 class ServerConfig {
@@ -240,4 +242,44 @@ SubsonicClient clientFor({
         ? const [ServerRoute(id: 'unset', name: '未配置', url: '')]
         : config.routes,
   );
+}
+
+/// 用已有配置拼一个音源 —— **`ServerConfig` 到 [MusicSource] 的唯一分派点**。
+///
+/// 与 [clientFor] 是两层:那个造的是「怎么连」(客户端),这个造的是
+/// 「有什么」(音源)。`clientFor` 自己也是这里的下位构件。
+///
+/// **今天三个 [ServerKind] 走的是同一条路。** 飞牛音乐那一档写出来是显式的,
+/// 因为按 [ServerKind] 自己的注释,fnOS 也讲 Subsonic 协议(社区逆向),
+/// 只是能力边界不明 —— 所以在拿到真实协议之前,它和另两档一样走 Subsonic。
+/// **拿到之后,分叉就发生在这个 switch 里**:把 fnos 摘出来,让它实现自己的
+/// [MusicSource],别处一个字不用改。
+///
+/// 为什么不做「抛未实现的空壳」:飞牛音乐在服务器页**今天就是可选项**
+/// (见 `servers_screen.dart`),而 `clientFor` 从来不读 `kind` —— 选它的用户
+/// 现在拿到的是一个普通客户端。一个会抛的桩会把**可能能用**的配置变成
+/// **必然失败**,那是回归。
+MusicSource sourceFor({
+  required ServerConfig config,
+  required String password,
+  bool autoRoute = true,
+  Dio? dio,
+  /// 「这张封面在本机有没有」—— 透传给音源,别丢:
+  /// 少了它,断网时已下载内容的封面会从「看得见」变成「没有」。
+  String? Function(String coverArtId)? localCover,
+}) {
+  switch (config.kind) {
+    case ServerKind.navidrome:
+    case ServerKind.subsonic:
+    case ServerKind.fnos:
+      return SubsonicRepository(
+        clientFor(
+          config: config,
+          password: password,
+          autoRoute: autoRoute,
+          dio: dio,
+        ),
+        localCover: localCover,
+      );
+  }
 }

@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../data/models.dart';
 import '../../data/server_config.dart';
 import '../../data/music_source.dart';
-import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
@@ -46,7 +45,7 @@ typedef _HomeView = ({
   bool errorIsNetwork,
   String? refreshError,
   DateTime? cachedAt,
-  SubsonicRepository? repository,
+  MusicSource? repository,
   /// 断网失败时那句「本机已下载的还在」要不要给 —— 由下载列表算出来,
   /// 所以它进表(下载**完成**会让它翻面,进度跳动不会)。
   bool offlineReady,
@@ -331,7 +330,7 @@ class _NowPlayingCard extends StatelessWidget {
     // 这张卡只用 `AppState` 里的一件事:仓库(拼封面地址用)——
     // 所以 select 那一件,而不是 watch 整个 `AppState`(下载进度与缓存淘汰
     // 都会把这张卡连同它的封面一起拖着重建)。
-    final repo = context.select<AppState, SubsonicRepository?>(
+    final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
 
@@ -482,7 +481,7 @@ class _NowPlayingCard extends StatelessWidget {
     );
   }
 
-  static Uri? _cover(SubsonicRepository? repo, String? artId) {
+  static Uri? _cover(MusicSource? repo, String? artId) {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: 256);
@@ -505,7 +504,7 @@ class _Shelf extends StatelessWidget {
   final List<Album> albums;
 
   /// 只取「仓库」这一件(拼封面地址用),不订阅整个 [AppState]。
-  final SubsonicRepository? repo;
+  final MusicSource? repo;
 
   /// 货架之间**唯一**的共享元素前缀 —— 见 [AlbumRail.heroPrefix]:
   /// 首页摆了两条专辑货架,而同一张专辑常常两条都在,写死同一个 tag 会崩。
@@ -543,7 +542,7 @@ class _SongShelf extends StatelessWidget {
   final List<Song> songs;
 
   /// 同 [_Shelf]:只要仓库这一件。
-  final SubsonicRepository? repo;
+  final MusicSource? repo;
   final PlaybackController playable;
 
   static const _artwork = 132.0;
@@ -621,7 +620,7 @@ class _SongShelf extends StatelessWidget {
     );
   }
 
-  static Uri? _coverUri(SubsonicRepository? repo, String? artId) {
+  static Uri? _coverUri(MusicSource? repo, String? artId) {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: 256);
@@ -640,7 +639,7 @@ class _PlaylistShelf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    final repo = context.select<AppState, SubsonicRepository?>(
+    final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
     final shown = playlists.take(10).toList();
@@ -711,7 +710,7 @@ class _PlaylistShelf extends StatelessWidget {
     );
   }
 
-  static Uri? _coverUri(SubsonicRepository? repo, String? artId) {
+  static Uri? _coverUri(MusicSource? repo, String? artId) {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: 128);

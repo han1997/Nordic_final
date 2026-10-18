@@ -8,8 +8,8 @@ import 'package:flutter/foundation.dart';
 
 import 'download_store.dart';
 import 'models.dart';
+import 'music_source.dart';
 import 'network_status.dart';
-import 'subsonic_repository.dart';
 
 /// 一次下载请求 —— 界面发起,管理器接手。
 ///
@@ -242,7 +242,7 @@ class DownloadJob {
 
 /// 下载管理器:排队、门控、续传、落盘登记。
 ///
-/// 与 [SubsonicRepository] 的关系和播放器一样 —— 它每次现取仓库,
+/// 与 [MusicSource] 的关系和播放器一样 —— 它每次现取仓库,
 /// 因为服务器配置可以在运行中变(改地址、换账号、移除服务器)。
 ///
 /// **顺序下**:同一时刻只有一条任务在跑。并行拉多条任务看着热闹,
@@ -265,7 +265,7 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
-  final SubsonicRepository? Function() _repository;
+  final MusicSource? Function() _repository;
   final DownloadStore _store;
   final bool Function() _wifiOnly;
   final NetworkProbe _probe;
@@ -500,7 +500,7 @@ class DownloadManager extends ChangeNotifier {
 
   /// 下一首。线路不通时换一条再试一次 —— 与浏览时的故障切换同一套语义。
   Future<int> _fetchWithFailover({
-    required SubsonicRepository repo,
+    required MusicSource repo,
     required Song song,
     required File file,
     required DownloadJob job,
@@ -536,7 +536,7 @@ class DownloadManager extends ChangeNotifier {
         if (cancel.isCancelled) rethrow;
         if (e.network && attempt < 2) {
           // 重新测速会把当前最快的那条线顶上来,下次拿到的就是它的地址。
-          await repo.client.pingAll();
+          await repo.connection.pingAll();
           continue;
         }
         throw DownloadFailure('『${song.title}』${e.message}', network: e.network);
@@ -547,7 +547,7 @@ class DownloadManager extends ChangeNotifier {
   /// 封面单独取一张,整项共用。**下不到不算失败** ——
   /// 封面是锦上添花,为它把一整张专辑判成失败不划算。
   Future<String?> _fetchCover(
-    SubsonicRepository repo,
+    MusicSource repo,
     DownloadJob job,
     Directory dir,
   ) async {

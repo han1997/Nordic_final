@@ -7,7 +7,6 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../../data/models.dart';
 import '../../data/music_source.dart';
-import '../../data/subsonic_repository.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/grain.dart';
@@ -529,7 +528,7 @@ class _PlayingBarsState extends State<PlayingBars>
 /// 没有封面 id、或者服务器配置还没接上(拼地址会抛)。收成一处,
 /// 免得某处漏了一种情况而整屏报错。
 Uri? albumCoverUri(
-  SubsonicRepository? repo,
+  MusicSource? repo,
   String? coverArtId, {
   int size = 512,
 }) {

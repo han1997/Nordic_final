@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/music_source.dart';
-import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
@@ -174,7 +173,7 @@ class _HeroStack extends StatelessWidget {
     // 见 download_manager 的时间闸)与缓存淘汰而通知 —— 那些与这张封面无关,
     // 却会让这里重跑一遍 `repo.coverUri()`(里头要线性翻一遍下载记录)。
     // 坞早就这么做了(见 bottom_stack 里 `_PlayerDock` 那段)。
-    final repo = context.select<AppState, SubsonicRepository?>(
+    final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
 

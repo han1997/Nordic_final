@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
-import '../../data/subsonic_repository.dart';
+import '../../data/music_source.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../routes.dart';
@@ -24,7 +24,7 @@ class AlbumRail extends StatelessWidget {
   final List<Album> albums;
 
   /// 封面地址由它拼。可为空 —— 还没配服务器时走渐变兜底。
-  final SubsonicRepository? repo;
+  final MusicSource? repo;
 
   /// 共享元素 tag 的前缀 —— **同一条路由上摆两条货架时,两条必须是不同的**。
   ///

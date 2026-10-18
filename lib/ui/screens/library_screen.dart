@@ -7,7 +7,6 @@ import '../../data/models.dart';
 import '../../data/server_config.dart';
 import '../../data/sorting.dart';
 import '../../data/music_source.dart';
-import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
@@ -283,7 +282,7 @@ class _AlbumsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     // 这一栏只用这三件 —— 排序口径、转圈状态、仓库(拼封面地址)。
     final (sort, busy, repo) = context.select<
-        AppState, (AlbumSort, bool, SubsonicRepository?)>(
+        AppState, (AlbumSort, bool, MusicSource?)>(
       (s) => (s.albumSort, s.sortingAlbums, s.repository),
     );
 
@@ -323,7 +322,7 @@ class _AlbumGridSliver extends StatelessWidget {
   const _AlbumGridSliver({required this.albums, required this.repo});
 
   final List<Album> albums;
-  final SubsonicRepository? repo;
+  final MusicSource? repo;
 
   @override
   Widget build(BuildContext context) {
@@ -356,7 +355,7 @@ class AlbumTile extends StatelessWidget {
   final Album album;
 
   /// 封面地址由它拼。可为空 —— 还没配服务器时界面照样能画(走渐变兜底)。
-  final SubsonicRepository? repo;
+  final MusicSource? repo;
 
   @override
   Widget build(BuildContext context) {
@@ -403,7 +402,7 @@ class AlbumTile extends StatelessWidget {
     );
   }
 
-  static Uri? _uri(SubsonicRepository? repo, String? coverArtId) {
+  static Uri? _uri(MusicSource? repo, String? coverArtId) {
     if (repo == null || coverArtId == null) return null;
     try {
       return repo.coverUri(coverArtId, size: 512);
@@ -530,7 +529,7 @@ class _SongsTab extends StatelessWidget {
     // 这一栏要的三件:仓库(拼封面地址)、歌曲排序口径、还在翻页吗。
     // 单独 select 而不是从上面那张表里拿 —— 换歌曲排序不该连专辑网格一起重建。
     final (repo, sort, loadingMore) = context.select<
-        AppState, (SubsonicRepository?, SongSort, bool)>(
+        AppState, (MusicSource?, SongSort, bool)>(
       (s) => (s.repository, s.songSort, s.loadingMoreSongs),
     );
     // 「接着取下一页」是动作,用取值函数即可。
@@ -671,7 +670,7 @@ class _PlaylistsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.nordic;
     // 这一栏只用「仓库」这一件(拼封面地址)—— 别 watch 整个 `AppState`。
-    final repo = context.select<AppState, SubsonicRepository?>(
+    final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
 
@@ -727,7 +726,7 @@ class _PlaylistsTab extends StatelessWidget {
     );
   }
 
-  Uri? _uri(SubsonicRepository? repo, String? coverArtId) {
+  Uri? _uri(MusicSource? repo, String? coverArtId) {
     if (repo == null || coverArtId == null) return null;
     try {
       return repo.coverUri(coverArtId, size: 256);

@@ -16,7 +16,6 @@ import '../data/music_source.dart';
 import '../data/server_config.dart';
 import '../data/subsonic_client.dart';
 import '../data/sorting.dart';
-import '../data/subsonic_repository.dart';
 import '../playback/quality.dart';
 
 /// 加载态。三态而非「数据 + isLoading 标志」—— 后者容易写出
@@ -25,7 +24,7 @@ enum LoadPhase { idle, loading, ready, failed }
 
 /// 应用级状态:服务器连接、音乐库数据、界面偏好。
 ///
-/// 界面读它,不直接碰 [SubsonicRepository] —— 这样「连不上」「还没配服务器」
+/// 界面读它,不直接碰 [MusicSource] —— 这样「连不上」「还没配服务器」
 /// 这类全局状态有唯一定义处,不必每个屏各自判断。
 class AppState extends ChangeNotifier {
   AppState({
@@ -63,8 +62,8 @@ class AppState extends ChangeNotifier {
   /// 测试塞一个假 Dio 进来 —— 写歌单这类操作要验的是「发了什么、本地跟着变了吗」。
   final Dio? _dio;
 
-  SubsonicRepository? _repository;
-  SubsonicRepository? get repository => _repository;
+  MusicSource? _repository;
+  MusicSource? get repository => _repository;
 
   ServerConfig? _server;
   ServerConfig? get server => _server;
@@ -88,14 +87,12 @@ class AppState extends ChangeNotifier {
   /// 存储(前者 SharedPreferences,后者系统密钥库),各有各的失败可能,
   /// 分开之后「配置在但密码读不出来」这种情况有地方表达。
   void attachRepository(ServerConfig config, String password) {
-    _repository = SubsonicRepository(
-      clientFor(
-        config: config,
-        password: password,
-        autoRoute: configStore.loadAutoRoute(),
-        dio: _dio,
-      ),
-      // 封面的本机优先:下过的封面断网也看得见(见 SubsonicRepository.coverUri)。
+    _repository = sourceFor(
+      config: config,
+      password: password,
+      autoRoute: configStore.loadAutoRoute(),
+      dio: _dio,
+      // 封面的本机优先:下过的封面断网也看得见(见 MusicSource.coverUri)。
       localCover: downloadManager.coverPathForArt,
     );
     notifyListeners();
@@ -134,14 +131,12 @@ class AppState extends ChangeNotifier {
     }
 
     _server = config;
-    _repository = SubsonicRepository(
-      clientFor(
-        config: config,
-        password: password,
-        autoRoute: configStore.loadAutoRoute(),
-        dio: _dio,
-      ),
-      // 封面的本机优先:下过的封面断网也看得见(见 SubsonicRepository.coverUri)。
+    _repository = sourceFor(
+      config: config,
+      password: password,
+      autoRoute: configStore.loadAutoRoute(),
+      dio: _dio,
+      // 封面的本机优先:下过的封面断网也看得见(见 MusicSource.coverUri)。
       localCover: downloadManager.coverPathForArt,
     );
     notifyListeners();
@@ -211,7 +206,7 @@ class AppState extends ChangeNotifier {
     final updated = current.copyWith(routes: routes);
     await configStore.saveServer(updated);
     _server = updated;
-    _repository?.client.setRoutes(routes);
+    _repository?.connection.setRoutes(routes);
 
     final ids = routes.map((r) => r.id).toSet();
     _pings = {
@@ -238,7 +233,7 @@ class AppState extends ChangeNotifier {
     _pinging = true;
     notifyListeners();
     try {
-      _pings = await repo.client.pingAll();
+      _pings = await repo.connection.pingAll();
     } finally {
       // 「按下去要等一下才有结果」这个节奏得对上 —— 原型里同样如此
       // (`ping-all` 故意等 800ms 再回),否则个位数毫秒的往返谁也看不见。
@@ -352,7 +347,7 @@ class AppState extends ChangeNotifier {
   /// 生效线路换成别的了就把正在放的那一首挪过去。
   ///
   /// 择优选出来的那条与**这一首的流地址**是绑死的:地址在播放源装载时就拼好了
-  /// (见 `SubsonicRepository.streamUri`),不重新装载的话界面会说「正在走新线路」,
+  /// (见 `MusicSource.streamUri`),不重新装载的话界面会说「正在走新线路」,
   /// 而声音还是从旧那条流里出来的 —— 真机报的「线路切换无效」。
   ///
   /// 走的是**取值函数**而不是 import 播放层:播放层反过来要读这个对象的仓库,
@@ -374,7 +369,7 @@ class AppState extends ChangeNotifier {
   Map<String, RoutePing> _pings = const {};
   Map<String, RoutePing> get pings => _pings;
 
-  ServerRoute? get activeRoute => _repository?.client.activeRoute;
+  ServerRoute? get activeRoute => _repository?.connection.activeRoute;
 
   // ---------------- 音乐库 ----------------
 
@@ -853,7 +848,7 @@ class AppState extends ChangeNotifier {
     // 开关是给**当前**这条连接用的,要立刻生效 —— 只落盘的话得等到
     // 下次重启应用才作数,用户会以为开关没反应。
     final before = activeRoute;
-    _repository?.client.autoRoute = value;
+    _repository?.connection.autoRoute = value;
     // 关掉自动择优等于改点名:生效线路可能当场换成锁定 / 首条那条,
     // 正在放的那一首也要跟着换。
     _routeMaybeChanged(before);
@@ -989,7 +984,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// 取仓库,没有就抛一句人话 —— 写操作「静默失败」比报错糟得多。
-  SubsonicRepository _requireRepository() {
+  MusicSource _requireRepository() {
     final repo = _repository;
     if (repo == null) {
       throw const MusicSourceException('还没有连接服务器');
@@ -1020,7 +1015,7 @@ class AppState extends ChangeNotifier {
   ///
   /// 给「没有服务器也要显示封面」的地方用 —— 下载管理就是那个场景:
   /// 断网时它仍要能列出已下好的内容,而封面本机就有一份。
-  /// 界面其余地方的封面走 [SubsonicRepository.coverUri](同样本机优先)。
+  /// 界面其余地方的封面走 [MusicSource.coverUri](同样本机优先)。
   Uri? coverUriFor(String? coverArtId, {int size = 512}) {
     if (coverArtId == null || coverArtId.isEmpty) return null;
 

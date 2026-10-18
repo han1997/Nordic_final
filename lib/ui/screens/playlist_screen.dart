@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/music_source.dart';
-import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
@@ -127,7 +126,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
     // 订阅的只有「仓库」这一件(拼封面地址用);写操作(加歌、改名、移除)
 // 走取值函数 —— 下载进度与缓存淘汰于是不会把这一屏拖着重建。
-    final repo = context.select<AppState, SubsonicRepository?>(
+    final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
     final playable = context.watch<PlaybackController>();
@@ -301,7 +300,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   /// 拼封面地址。**仓库可为空** —— 服务器在浏览途中被移除时这一屏还在栈上,
 /// 那时给一个空地址(封面走渐变兜底),而不是拿 `repo!` 崩掉整张列表。
   /// 早先曲子那一行是直接 `repo!.coverUri(...)` 的,同一屏里两处口径不一致。
-  Uri? _coverUri(SubsonicRepository? repo, String? artId, {int size = 512}) {
+  Uri? _coverUri(MusicSource? repo, String? artId, {int size = 512}) {
     if (repo == null || artId == null) return null;
     try {
       return repo.coverUri(artId, size: size);
@@ -457,7 +456,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       );
 
   /// 从歌单里移除一首。**按位置移除** —— 同一首歌在歌单里出现两次时,
-  /// 只有位置说得清要移掉哪一次(见 [SubsonicRepository.removeFromPlaylist])。
+  /// 只有位置说得清要移掉哪一次(见 [MusicSource.removeFromPlaylist])。
   Future<void> _removeAt(int index) async {
     final playlist = _playlist;
     if (playlist == null || index < 0 || index >= _songs.length) return;

@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/music_source.dart';
-import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
@@ -216,7 +215,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
     final playable = context.watch<PlaybackController>();
     final currentId = playable.state.song?.id;
-    final repo = context.select<AppState, SubsonicRepository?>(
+    final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
 

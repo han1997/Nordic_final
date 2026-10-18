@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../data/models.dart';
 import '../../data/music_source.dart';
-import '../../data/subsonic_repository.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
@@ -110,7 +109,7 @@ class _PlayerDock extends StatelessWidget {
     // 所以这里 select 那一件,而不是 watch 整个 `AppState` —— 否则下载进度
     // (最多每秒四次,见 download_manager 的时间闸)和缓存淘汰都会把这片
     // `BackdropFilter` 玻璃拖着重建一遍,而坞上没有任何东西跟着变。
-    final repo = context.select<AppState, SubsonicRepository?>(
+    final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
 
@@ -182,7 +181,7 @@ class _PlayerDock extends StatelessWidget {
     );
   }
 
-  static Uri? _coverUriFor(SubsonicRepository? repo, Song song) {
+  static Uri? _coverUriFor(MusicSource? repo, Song song) {
     final id = song.coverArtId;
     if (repo == null || id == null) return null;
     try {
