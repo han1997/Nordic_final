@@ -229,6 +229,8 @@ class MediaCache extends ChangeNotifier {
     // 占用那本是「上次数完目录」时的账,调额度要**按现在的盘上情况**算,
     // 所以这里点名要重扫一遍(否则「调小上限当场淘汰」会漏掉刚写下的那几份)。
     _needsRescan = true;
+    // 调额度会造成成片删除 / 保留,这一格一格的账不值得记 —— 直接整表重来。
+    _forgetAll();
     notifyListeners();
     await prune();
   }
@@ -245,6 +247,8 @@ class MediaCache extends ChangeNotifier {
     // 拿到空位就说明**接下来会有字节往这儿写**(just_audio 边听边写)。
     // 记一笔,换歌那一下的淘汰就知道该重新数一遍目录了。
     _needsRescan = true;
+    // 马上会有字节往这儿写(而且先写 `.part`)—— 这一格的事实已经旧了。
+    _forget(file);
     return file;
   }
 
@@ -258,7 +262,7 @@ class MediaCache extends ChangeNotifier {
     // (判据见 [_maybeEmpty]:不是「账上是 0」,而是「账是 0 而且没欠着重数」)。
     if (!enabled || _maybeEmpty) return null;
     final file = _slotFor(song, qualityId: qualityId, format: format);
-    return file.existsSync() ? file.path : null;
+    return _existsAt(file) ? file.path : null;
   }
 
   /// 这一份**完整**落到本机了吗(不是半截的)。
@@ -269,9 +273,14 @@ class MediaCache extends ChangeNotifier {
   /// 拖动进度条要等一份完整的,见 `audio_handler` 的 `_waitForLocalCopy`。
   ///
   /// 不看 [_usedBytes]:那个数要等下一轮数目录才刷新,刚下完的那一份还不在里头。
+  /// **永远真查**,连「在不在」也不走 [_existsMemo] —— 见那份备忘录上的
+  /// 第三条硬规矩:这条路是「半截写完了没有」的轮询,记忆会让它永远等不到
+  /// 刚冒出来的那一份。
   bool isComplete(Song song, {required String qualityId, String? format}) {
     if (!enabled) return false;
-    return _isCompleteFile(_slotFor(song, qualityId: qualityId, format: format));
+    final file = _slotFor(song, qualityId: qualityId, format: format);
+    if (!existsProbe(file.path)) return false;
+    return !existsProbe('${file.path}$_partialSuffix');
   }
 
   /// 这一首在本机的**更高档**那一份(有才算数)。[candidates] 由播放层按
@@ -305,8 +314,12 @@ class MediaCache extends ChangeNotifier {
 
   /// 「盘上有这一份,而且不是半截」—— [isComplete] 与 [_dropLowerTiers]
   /// 共用这一条口径,免得两处对「完整」的理解不一样。
-  bool _isCompleteFile(File file) =>
-      file.existsSync() && !File('${file.path}$_partialSuffix').existsSync();
+  /// 走「在不在」那一位的备忘录(没有缓存时直接短路,一次盘都不碰),
+  /// 而 `.part` **每次真查** —— 那一半是 just_audio 自己的写入过程。
+  bool _isCompleteFile(File file) {
+    if (!_existsAt(file)) return false;
+    return !existsProbe('${file.path}$_partialSuffix');
+  }
 
   /// 开始放某一首时叫一声:记下「正在听的是哪一份」(淘汰时跳过它),
   /// 命中的话刷新它的「最近听过」,然后按上限淘汰一轮。
@@ -335,6 +348,12 @@ class MediaCache extends ChangeNotifier {
     final slot = _slotFor(song, qualityId: qualityId, format: format);
     final playing = File(playingPath ?? slot.path);
     _playingPath = playing.path;
+
+    // **换一次歌就把存在性备忘录整表清掉**:那是「盘上有没有这一份」的记忆,
+    // 而盘会被我们之外的东西改(用户在系统文件管理器里删、系统在存储吃紧时
+    // 清掉应用缓存目录、just_audio 下完改名)。清在换歌这一下,窗口就**最多
+    // 一首歌**;不清的话最坏情况是拿一条早就不在的路径去装载。
+    _forgetAll();
 
     if (playing.existsSync() && _isInCache(playing)) {
       // 命中就刷新 mtime —— LRU 的「最近听过」就是文件时间,不刷的话
@@ -450,6 +469,7 @@ class MediaCache extends ChangeNotifier {
   /// 正开着的文件不会掐断声音:平台手上那个文件句柄还活着)。
   Future<int> clear() async {
     if (_root == null) return 0;
+    _forgetAll();
     final freed = await _deleteAll(keepPlaying: false);
     notifyListeners();
     return freed;
@@ -464,6 +484,64 @@ class MediaCache extends ChangeNotifier {
   /// 要算两次 SHA-1(一次看有没有缓存、一次看能不能写缓存位)。
   static const _slotMemoLimit = 4096;
   final Map<String, File> _slotMemo = {};
+
+  /// 「盘上这一份在不在 / 完不完整」的备忘录,键是**绝对路径**。
+  ///
+  /// 为什么值得记:一次 `setQueue` / 重排 / 换档 / 换线路会把**整条队列**的播放源
+  /// 都拼一遍,而每一首要在「所选档」与「至多三档更高档」上各问一遍盘 ——
+  /// 一千首的队列就是几千次**同步** `existsSync`,全压在按下去那一帧的 UI 线程上。
+  ///
+  /// 三条硬规矩:
+  ///  - **只对缓存目录里的路径记**([_isInCache])。点名下载的那一份在
+  ///    `Nordic/Music` 里,可能被用户在系统文件管理器里删掉 —— 那条路必须每次
+  ///    真查,它是 [playbackOriginFor]「下载 > 缓存 > 网络」那条优先级的前提。
+  ///  - **记的只有「在不在」这一位,不记「完不完整」**:半截那个 `.part` 是
+  ///    just_audio 边听边写时自己造、下完自己改名的,那条路我们插不上手(没有
+  ///    失效钩子)。把它记下来,要么会把正在写的半截当完整的(拿它播会播到
+  ///    一半没了),要么会把刚写完的那一份藏住。于是完整那一位**每次真查**。
+  ///  - **`isComplete` 连「在不在」也绕开**(`useMemo: false`):那是「半截写完
+  ///    了没有」的轮询路(见 `audio_handler` 的 `_waitForLocalCopy`),文件随时
+  ///    可能冒出来,记忆会让它永远等不到。
+  ///
+  /// 正负都记:缓存槽位在常见情况下就是「没有」,只记正结果等于每次整队拼源都
+  /// 重新 stat 一遍那些不存在的路径 —— 那条路比命中还多。
+  static const _existsMemoLimit = 8192;
+  final Map<String, bool> _existsMemo = {};
+
+  /// 存在性探针。**测试换成计数的那个**,用来钉「少查了盘」这件事本身;
+  /// 生产路径上它就是一句 [File.existsSync]。
+  @visibleForTesting
+  bool Function(String path) existsProbe = _statExists;
+
+  static bool _statExists(String path) => File(path).existsSync();
+
+  /// 「在不在」这一位 —— 记的就是它。缓存目录外一律真查。
+  bool _existsAt(File file) {
+    if (!_isInCache(file)) return existsProbe(file.path);
+    final hit = _existsMemo[file.path];
+    if (hit != null) return hit;
+    final exists = existsProbe(file.path);
+    // 满了整体清掉:多算一遍只是慢一点,记错才是问题(与 [_slotMemo] 同一条口径)。
+    if (_existsMemo.length >= _existsMemoLimit) _existsMemo.clear();
+    _existsMemo[file.path] = exists;
+    return exists;
+  }
+
+  /// 盘上这一份的事实变了(刚发出写入位 / 刚删掉)—— 把那一格扔掉。
+  /// 整表清的理由有两条:**换歌**([markPlaying],把窗口压到一首歌以内)、
+  /// 以及 [_scan] 已经把整个目录数过一遍了(清完立刻回填)。
+  void _forget(File file) {
+    if (_existsMemo.isNotEmpty) _existsMemo.remove(file.path);
+  }
+
+  void _forgetAll() {
+    if (_existsMemo.isNotEmpty) _existsMemo.clear();
+  }
+
+  /// 「这个路径上真有文件吗」—— 播放层的存在性判据接的就是这一条
+  /// (见 `audio_handler` 的 `_sourceFor` 把 [playbackOriginFor] 的 `pathExists`
+  /// 指过来)。缓存目录外的路径在这里**照旧真查**。
+  bool existsAt(String path) => _existsAt(File(path));
 
   /// 这个路径是不是**缓存目录里的**文件。
   ///
@@ -549,6 +627,13 @@ class MediaCache extends ChangeNotifier {
 
     _lastScanAt = DateTime.now();
     _needsRescan = false;
+    // 这一趟把整个目录都 stat 过了:备忘录**整表清掉,再用这趟扫到的回填**
+    // (进来的都是完整文件 —— `.part` 上面就跳过了)。于是淘汰之后那份账
+    // 立刻是对的,不必等下一次查询重新问盘。
+    _forgetAll();
+    for (final (_, file) in stamped) {
+      _existsMemo[file.path] = true;
+    }
     // **只在数字真的变了的时候播报。** 这一趟挂在每次换歌的淘汰上
     // (见 [markPlaying]),而 `AppState` 把这个通知转发给了全应用
     // (`app_state.dart`)—— 无条件播报等于让每一屏跟着每一次切歌重建一遍,
@@ -586,6 +671,7 @@ class MediaCache extends ChangeNotifier {
       // 量不到就算了,它反正要没了。
     }
     await _deleteQuietly(file);
+    _forget(file);
 
     final mime = File('${file.path}$_mimeSuffix');
     if (mime.existsSync()) await _deleteQuietly(mime);

@@ -689,6 +689,124 @@ void main() {
     });
   });
 
+  group('装载：整队那一趟只造一份、重排不重建', () {
+    // 「播放全部 / 随机播整库」点下去那一帧:整队每首都要拼一次播放源,
+    // 而那条路上有几件事是**白做**的 —— 同一份 `MediaItem` 造两遍(一遍给
+    // 队列与通知栏、一遍当播放源的 tag),以及重排时把整队重拼一遍。
+    // 重排那一件尤其贵:它还会把正在听的那一份(位置、缓冲、边听边写的那半截
+    // 缓存)整个作废,再从头装载 seek 回去。
+
+    late Directory root;
+    late MediaCache cache;
+    late _FakePlayer player;
+    late NordicAudioHandler handler;
+
+    const songs = [
+      Song(id: 's1', title: '一', artist: '甲', album: 'A', albumId: 'al-1', suffix: 'flac'),
+      Song(id: 's2', title: '二', artist: '乙', album: 'A', albumId: 'al-1', suffix: 'flac'),
+      Song(id: 's3', title: '三', artist: '丙', album: 'A', albumId: 'al-1', suffix: 'flac'),
+    ];
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('nordic-load');
+      cache = await MediaCache.open(
+        limitBytes: CacheLimit.gb1.bytes,
+        root: Directory('${root.path}${Platform.pathSeparator}audio'),
+      );
+      player = _FakePlayer();
+      handler = NordicAudioHandler(
+        () => null,
+        QualityController(QualityOption.medium),
+        cache: cache,
+        player: player,
+      );
+    });
+
+    tearDown(() async {
+      await player.dispose();
+      cache.dispose();
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+
+    /// 给这一首落一份**本机缓存**(按所选档)。这里要的是「每一首都能拼出
+    /// 播放源」,走本机文件就不必去拼网络地址(这一组没有服务器)。
+    Future<void> cacheFor(Song song) async {
+      final file = cache.fileFor(
+        song,
+        qualityId: QualityOption.medium.id,
+        format: QualityOption.medium.format,
+      )!;
+      await file.writeAsBytes(List<int>.filled(16, 1));
+      await cache.prune();
+    }
+
+    Future<void> cacheAll() async {
+      for (final song in songs) {
+        await cacheFor(song);
+      }
+    }
+
+    test('每首歌只造一个 MediaItem —— 播放源的 tag 就是队列里那一份', () async {
+      await cacheAll();
+      await handler.setQueue(songs, index: 0);
+
+      expect(player.setAudioSourcesCalls, 1);
+      for (var i = 0; i < songs.length; i++) {
+        final source = player.loaded[i] as ProgressiveAudioSource;
+        expect(identical(source.tag, handler.queue.value[i]), isTrue,
+            reason: '同一份 MediaItem 既当 tag 又进队列流；'
+                '两处各算一遍就是每首白造一个对象');
+      }
+    });
+
+    test('重排就地挪一位，不重建整队', () async {
+      await cacheAll();
+      await handler.setQueue(songs, index: 0);
+      final loads = player.setAudioSourcesCalls;
+      final playing = player.loaded.first;
+
+      await handler.reorder(0, 2);
+
+      expect(player.moveCalls, 1, reason: '重排该走 moveAudioSource');
+      expect(player.setAudioSourcesCalls, loads,
+          reason: '重排不该把每一首的播放源重拼一遍 —— 那会连带把正在听的那一份作废');
+      expect(identical(player.loaded.last, playing), isTrue,
+          reason: '正在听的那一份要原样搬过去，不是重造一个');
+      expect(handler.songs.map((s) => s.id).toList(), ['s2', 's3', 's1']);
+      expect(handler.queue.value.map((i) => i.title).toList(), ['二', '三', '一'],
+          reason: '队列流与 songs 一直同步，重排也要一起挪');
+    });
+
+    test('同一批歌同一档再装一遍，一次盘都不查', () async {
+      await cacheAll();
+      await handler.setQueue(songs, index: 0);
+
+      var calls = 0;
+      cache.existsProbe = (path) {
+        calls++;
+        return File(path).existsSync();
+      };
+
+      // 再拼一遍整队(换线路重载、再来一次「播放全部」都是这条路)。
+      await handler.setQueue(songs, index: 0);
+
+      expect(calls, 0,
+          reason: '同一批歌同一档、盘上什么都没有变 —— 这一整趟该被备忘录全接住');
+    });
+
+    test('换档照旧整队重装 —— 别把「就地挪」顺手用到别处', () async {
+      await cacheAll();
+      await handler.setQueue(songs, index: 0);
+      final loads = player.setAudioSourcesCalls;
+
+      await handler.applyQuality(QualityOption.low);
+
+      expect(player.setAudioSourcesCalls, greaterThan(loads),
+          reason: '换档要按新档位重拼每一首，这就得整队重装');
+      expect(player.moveCalls, 0);
+    });
+  });
+
   group('缓存接管：同一首只留最高那一份', () {
     // 路径里带着档位,同一首在 192 与 原音 本来各留一份、永远并存。这一组从
     // **处理器那一头**钉住整条链路:本机已有更高档那份 → 装载的就是那个文件
@@ -800,6 +918,11 @@ class _FakePlayer extends AudioPlayer {
   /// 最近一次装载进去的播放源 —— 用来断言「装的是哪一份」。
   List<AudioSource> loaded = const [];
 
+  /// 整队重装了几次 / 就地挪了几次。重排**只该**走后者 ——
+  /// 走前者等于把每一首的播放源重拼一遍(整队一次盘查询),再把听众那一份作废。
+  int setAudioSourcesCalls = 0;
+  int moveCalls = 0;
+
   int seekToNextCalls = 0;
   int playCalls = 0;
   int pauseCalls = 0;
@@ -861,8 +984,18 @@ class _FakePlayer extends AudioPlayer {
     Duration? initialPosition,
     ShuffleOrder? shuffleOrder,
   }) async {
+    setAudioSourcesCalls++;
     loaded = audioSources;
     return null;
+  }
+
+  /// 下标语义与 just_audio 的 `move` 一致:先摘掉,再插到新位置。
+  @override
+  Future<void> moveAudioSource(int currentIndex, int newIndex) async {
+    moveCalls++;
+    final next = [...loaded];
+    next.insert(newIndex, next.removeAt(currentIndex));
+    loaded = next;
   }
 
   @override

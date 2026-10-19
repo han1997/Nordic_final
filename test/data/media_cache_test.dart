@@ -683,4 +683,111 @@ void main() {
       expect(CacheLimit.gb1.label, '1 GB');
     });
   });
+
+  group('本机存在性的备忘录', () {
+    // 「播放全部」按下去那一帧:整队每首都要问一遍盘 —— 所选档一次,至多三档
+    // 更高档各一两次 —— 一千首的队列就是几千次**同步** stat,全压在那一帧的
+    // UI 线程上。这一组钉的是「少查了盘」本身:行为面那些用例分不出 1 次和 5 次,
+    // 所以用计数探针。
+    //
+    // 三条不能碰的线也在这儿钉住:目录外(下载那份)不许记、`isComplete` 那条
+    // 轮询路不许记、刚发出写入位的那一格要马上作废。
+
+    /// 让这一份缓存之后每次真查盘都计数,返回「现在查了几次」的读法。
+    int Function() countProbes(MediaCache cache) {
+      var calls = 0;
+      cache.existsProbe = (path) {
+        calls++;
+        return File(path).existsSync();
+      };
+      return () => calls;
+    }
+
+    test('同一个路径问两次，只查一次盘', () async {
+      final cache = await open();
+      // 直接往缓存槽位写一份,**不** prune:数目录那一趟会把备忘录一起回填,
+      // 那样第一次查询就已经是命中,看不出「少查了盘」这件事。
+      final slot = cache.fileFor(song, qualityId: 'medium', format: 'mp3')!;
+      await slot.writeAsBytes(List<int>.filled(16, 7));
+      final calls = countProbes(cache);
+
+      final first = cache.cachedPathFor(song, qualityId: 'medium', format: 'mp3');
+      final afterFirst = calls();
+      final second =
+          cache.cachedPathFor(song, qualityId: 'medium', format: 'mp3');
+
+      expect(first, slot.path);
+      expect(second, first);
+      expect(afterFirst, 1, reason: '第一次要真查一遍盘');
+      expect(calls(), afterFirst,
+          reason: '第二次该命中备忘录 —— 整队拼源省下的几千次 stat 就是它');
+    });
+
+    test('「没有」也要记 —— 整队里绝大多数曲子都是这一种', () async {
+      final cache = await open();
+      // 先塞一份别的曲子,不然整份缓存是空的,走的是「一个文件都没有」那条
+      // 快路([_maybeEmpty]),压根不问盘 —— 那样这一条就白测了。
+      await seed(cache, other, qualityId: 'medium', listenedAt: DateTime.now());
+      final calls = countProbes(cache);
+
+      expect(cache.cachedPathFor(song, qualityId: 'medium', format: 'mp3'),
+          isNull);
+      final afterFirst = calls();
+      expect(afterFirst, 1);
+      cache.cachedPathFor(song, qualityId: 'medium', format: 'mp3');
+      expect(calls(), afterFirst, reason: '负结果也要记');
+    });
+
+    test('刚发出写入位的那一格马上作废', () async {
+      final cache = await open();
+      final slot = cache.fileFor(song, qualityId: 'medium', format: 'mp3')!;
+      await slot.writeAsBytes(List<int>.filled(16, 7));
+      final calls = countProbes(cache);
+
+      // 先命中一次(备忘录里记下「在」),再一次走备忘录。
+      cache.cachedPathFor(song, qualityId: 'medium', format: 'mp3');
+      cache.cachedPathFor(song, qualityId: 'medium', format: 'mp3');
+      final afterHit = calls();
+      expect(afterHit, 1);
+
+      // 拿到写入位:字节马上要往那儿写,盘上的事实已经不是刚才那样了。
+      cache.fileFor(song, qualityId: 'medium', format: 'mp3');
+      cache.cachedPathFor(song, qualityId: 'medium', format: 'mp3');
+
+      expect(calls(), greaterThan(afterHit), reason: '那一格不能再信');
+    });
+
+    test('缓存目录外的路径一律真查 —— 下载那份可能被用户删掉', () async {
+      final cache = await open();
+      final outside = File(
+          '${root.parent.path}${Platform.pathSeparator}nordic-outside.flac');
+      await outside.writeAsBytes(const [1]);
+      addTearDown(() async {
+        if (outside.existsSync()) await outside.delete();
+      });
+      final calls = countProbes(cache);
+
+      expect(cache.existsAt(outside.path), isTrue);
+      expect(cache.existsAt(outside.path), isTrue);
+      expect(calls(), 2,
+          reason: '「下载 > 缓存 > 网络」那条优先级的前提就是下载那份**每次都真查**');
+    });
+
+    test('isComplete 永远真查 —— 「半截变完整」那一刻要等得到', () async {
+      final cache = await open();
+      final path =
+          await seed(cache, song, qualityId: 'medium', listenedAt: DateTime.now());
+      expect(cache.isComplete(song, qualityId: 'medium', format: 'mp3'), isTrue);
+
+      // 背地里变成半截(just_audio 边听边写就是这么个中间态)。
+      await File('$path.part').writeAsString('half');
+      expect(cache.isComplete(song, qualityId: 'medium', format: 'mp3'), isFalse,
+          reason: '「半截」这一位不许记 —— 它随时会被 just_audio 改掉');
+
+      // 反过来:半截没了 = 刚写完。
+      await File('$path.part').delete();
+      expect(cache.isComplete(song, qualityId: 'medium', format: 'mp3'), isTrue,
+          reason: '写完那一刻要看得见，不然永远切不到本机文件');
+    });
+  });
 }

@@ -25,18 +25,26 @@ import 'quality.dart';
 /// 三个来源有**先后**:下载 > 缓存 > 网络。
 /// 下载那份永远优先:它是用户点名要的原文件,而缓存那份可能是转码档的音频
 /// (缓存的键里带着档位,见 [MediaCache])。
+/// [pathExists] 是**存在性判据**,缺省是真身 [File.existsSync]。
+/// 传进来的那个只该把它换成一层备忘录(见 `MediaCache.existsAt`)——
+/// 一次整队拼源要在几千个路径上问一遍「在不在」,而那是**同步**盘操作;
+/// 判据本身(在才算数)不变,坏文件 / 被删掉的文件照旧回退网络。
 ({Uri uri, bool local}) playbackOriginFor(
   Song song, {
   required Uri Function() remote,
   String? localPath,
   String? cachedPath,
+  bool Function(String path)? pathExists,
 }) {
-  if (localPath != null && File(localPath).existsSync()) {
+  bool exists(String path) =>
+      pathExists != null ? pathExists(path) : File(path).existsSync();
+
+  if (localPath != null && exists(localPath)) {
     return (uri: Uri.file(localPath), local: true);
   }
   // 缓存其次:**听过的**那一首。它也是本机文件,于是顺带离线可听 ——
   // 不需要网络地址,离线时也就不会走到下面那句 remote()。
-  if (cachedPath != null && File(cachedPath).existsSync()) {
+  if (cachedPath != null && exists(cachedPath)) {
     return (uri: Uri.file(cachedPath), local: true);
   }
   return (uri: remote(), local: false);
@@ -436,8 +444,13 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     mediaItem.add(items[start]);
     queue.add(items);
 
+    // 上面那份 `items` 既给 `queue` / 通知栏,也当播放源的 tag ——
+    // 每首只造一个 `MediaItem`(两条路的封面推导本来就落在同一个值上)。
     await _player.setAudioSources(
-      songs.map(_sourceFor).toList(),
+      [
+        for (var i = 0; i < songs.length; i++)
+          _sourceFor(songs[i], item: items[i]),
+      ],
       initialIndex: start,
       initialPosition: Duration.zero,
     );
@@ -449,8 +462,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_queue.isEmpty) return setQueue([song]);
     await _syncCachePolicy();
     _queue = [..._queue, song];
-    await _player.addAudioSource(_sourceFor(song));
-    queue.add([...queue.value, _mediaItemFor(song)]);
+    final item = _mediaItemFor(song);
+    await _player.addAudioSource(_sourceFor(song, item: item));
+    queue.add([...queue.value, item]);
   }
 
   /// 「下一首播放」:插到当前曲目之后。
@@ -459,8 +473,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     await _syncCachePolicy();
     final at = ((_player.currentIndex ?? 0) + 1).clamp(0, _queue.length);
     _queue = [..._queue]..insert(at, song);
-    await _player.insertAudioSource(at, _sourceFor(song));
-    queue.add([...queue.value]..insert(at, _mediaItemFor(song)));
+    final item = _mediaItemFor(song);
+    await _player.insertAudioSource(at, _sourceFor(song, item: item));
+    queue.add([...queue.value]..insert(at, item));
   }
 
   /// 跳转到队列中的第 [index] 首并开始播放。
@@ -493,27 +508,22 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (oldIndex < 0 || oldIndex >= _queue.length) return;
     await _syncCachePolicy();
 
-    final playingSong = currentSong;
-    final position = _player.position;
-    final wasPlaying = _player.playing;
-
     final target = newIndex.clamp(0, _queue.length - 1);
     final next = [..._queue];
     next.insert(target, next.removeAt(oldIndex));
     _queue = next;
 
-    await _player.setAudioSources(
-      _queue.map(_sourceFor).toList(),
-      initialIndex: 0,
-      initialPosition: position,
-    );
-    queue.add(_queue.map(_mediaItemFor).toList());
-
-    final resumeAt = playingSong == null
-        ? 0
-        : _queue.indexWhere((s) => s.id == playingSong.id);
-    await _player.seek(position, index: resumeAt < 0 ? 0 : resumeAt);
-    if (wasPlaying) await play();
+    // **就地挪一位,不重建整队。** 重建等于把每一首的播放源重拼一遍(整队一次
+    // 盘查询),再从 0 装载、seek 回原处 —— 正在听的那一份(位置、缓冲、边听边
+    // 写的那半截缓存)全部作废。`moveAudioSource` 的下标语义与上面那句
+    // `insert(target, removeAt(oldIndex))` 逐字相同(just_audio 的 `move` 就是
+    // 这么实现的),当前这一份不动,位置与缓冲都交给平台自己搬。
+    await _player.moveAudioSource(oldIndex, target);
+    // 通知栏 / 队列流拿到的那份也照同一套下标挪(队列流与 `_queue` 一直是同步的,
+    // 别处几处改动也都是这么从 `queue.value` 派生的)。
+    final nextItems = [...queue.value];
+    nextItems.insert(target, nextItems.removeAt(oldIndex));
+    queue.add(nextItems);
   }
 
   /// 切换转码档位。当前这首会以新档位重新加载;**位置尽量保住** ——
@@ -732,7 +742,11 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   ///
   /// 拿不到仓库说明配置在播放途中被清掉了(用户移除了服务器)。
   /// 那种情况下没有本机文件的曲子给不出地址 —— 由 [setQueue] 提前拦下。
-  AudioSource _sourceFor(Song song) {
+  ///
+  /// [item] 是**已经算好的**那一份 `MediaItem`(`setQueue` / `reorder` / 追加
+  /// 那几处已经把同一份交给 `queue` 与通知栏了)。不传就自己算一份 —— 一次装载
+  /// 里每首歌只该有一个 MediaItem,两处各算一遍就是每首白造一个对象。
+  AudioSource _sourceFor(Song song, {MediaItem? item}) {
     final quality = _quality.value;
     final cached = _cache?.cachedPathFor(
       song,
@@ -759,6 +773,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       // 更高档那一份**优先**:两份都在盘上时(先按高档听过、又落了原音档),
       // 播的该是更好的那一份。
       cachedPath: better?.path ?? cached,
+      // 缓存那一份的「在不在」走缓存自己的备忘录(上面那两个查询刚问过它);
+      // **下载那一份永远真查** —— 它可能被用户在系统里删掉。
+      pathExists: _cache?.existsAt,
       remote: () {
         final repo = _repo;
         if (repo == null) {
@@ -788,19 +805,21 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     // 装完整条队列之后会攒下成千上万条(每次 setQueue 都会重记一遍)——
     // 满了整体清掉,下一次查询退回保守判断即可(见 [_localLoadedLimit])。
     if (_localLoaded.length > _localLoadedLimit) _localLoaded.clear();
-    final item = _mediaItemFor(
-      song,
-      // 本机文件配本机的封面 —— 离线时通知栏不该只剩一块灰。
-      localCover: origin.local
-          ? _downloads?.coverPathForArt(song.coverArtId)
-          : null,
-    );
+    final mediaItem = item ??
+        _mediaItemFor(
+          song,
+          // 本机文件配本机的封面 —— 离线时通知栏不该只剩一块灰。
+          localCover: origin.local
+              ? _downloads?.coverPathForArt(song.coverArtId)
+              : null,
+        );
 
     // 我们只可能是 progressive:`/rest/stream.view` 永远不会命中 mpd / m3u8,
     // 而 `AudioSource.uri` 对这两种之外本来就是返回 `ProgressiveAudioSource` ——
     // 直接构造同一个类型,只是为了能把 `duration` 传进去。
     if (origin.local) {
-      return ProgressiveAudioSource(origin.uri, tag: item, duration: declared);
+      return ProgressiveAudioSource(origin.uri,
+          tag: mediaItem, duration: declared);
     }
 
     final slot = _cacheWanted
@@ -816,7 +835,7 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       final source = LockCachingAudioSource(
         origin.uri,
         cacheFile: slot,
-        tag: item,
+        tag: mediaItem,
       );
       // 与 [ProgressiveAudioSource] 同一个理由 —— 而且**更要紧**:
       // 第一次听的那一首正是走这条路,进度条不能没有时长。
@@ -824,7 +843,8 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       return source;
     }
 
-    return ProgressiveAudioSource(origin.uri, tag: item, duration: declared);
+    return ProgressiveAudioSource(origin.uri,
+        tag: mediaItem, duration: declared);
   }
 
   /// 换歌了(真的换到某一首在放,而不是「拼出了某首歌的播放源」)。
