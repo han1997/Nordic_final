@@ -15,7 +15,7 @@ import '../../theme/tokens.dart';
 /// (`--bg` 近黑):拿 `t.fg` 来画会得到一张白码黑底,大多数扫描器直接读不出来。
 /// 这是全应用唯一一处**故意与主题反过来的地方** —— 外面那一圈标题 / 开关 /
 /// 按钮照旧全用 token,只有这块方形底是写死的白与黑。
-class QrView extends StatelessWidget {
+class QrView extends StatefulWidget {
   const QrView({super.key, required this.data, this.size = 280});
 
   final String data;
@@ -28,11 +28,35 @@ class QrView extends StatelessWidget {
   static const quietZone = NordicSpace.s4;
 
   @override
+  State<QrView> createState() => _QrViewState();
+}
+
+class _QrViewState extends State<QrView> {
+  /// 编好的矩阵与它对应的那串载荷。
+  ///
+  /// 编码是**真有活**要干的(纠错码 + 建矩阵,几百个模块),而它原先在 `build`
+  /// 里现算:父级每一次重建(切「包含密码」开关、软键盘 inset 变化)都会把同一串
+  /// 载荷重编一遍。按载荷记一份,变了才重编。
+  QrImage? _matrix;
+
+  @override
+  void initState() {
+    super.initState();
+    _matrix = _matrixOf(widget.data);
+  }
+
+  @override
+  void didUpdateWidget(QrView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.data != widget.data) _matrix = _matrixOf(widget.data);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final matrix = _matrixOf(data);
+    final matrix = _matrix;
 
     return Container(
-      padding: const EdgeInsets.all(quietZone),
+      padding: const EdgeInsets.all(QrView.quietZone),
       decoration: BoxDecoration(
         // 写死的白与黑,理由见类文档。
         color: const Color(0xFFFFFFFF),
@@ -50,7 +74,7 @@ class QrView extends StatelessWidget {
               ),
             )
           : CustomPaint(
-              size: Size.square(size),
+              size: Size.square(widget.size),
               painter: _QrMatrixPainter(matrix),
             ),
     );

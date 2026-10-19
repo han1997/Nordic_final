@@ -69,13 +69,28 @@ class _ExportSheetState extends State<_ExportSheet> {
     setState(() => _password = (saved == null || saved.isEmpty) ? null : saved);
   }
 
-  String get _payload => ConfigTransfer.encode(
-    kind: widget.server.kind,
-    name: widget.server.name,
-    username: widget.server.username,
-    routes: widget.server.routes,
-    password: _withPassword ? _password : null,
-  );
+  /// 编好的载荷 + 它是按哪一组输入编的。
+  ///
+  /// `ConfigTransfer.encode` 要把整张配置拼成 JSON 再压成一段文本,而它原先
+  /// 是个 getter:切一下「包含密码」开关(那会 `setState`)就要重编一遍,
+  /// 下面那个二维码还得跟着重编一次。载荷只由这三样决定,记一份就够。
+  String? _payloadCache;
+  (bool, String?)? _payloadCacheFor;
+
+  String get _payload {
+    final key = (_withPassword, _password);
+    if (_payloadCacheFor == key) return _payloadCache!;
+    final encoded = ConfigTransfer.encode(
+      kind: widget.server.kind,
+      name: widget.server.name,
+      username: widget.server.username,
+      routes: widget.server.routes,
+      password: _withPassword ? _password : null,
+    );
+    _payloadCacheFor = key;
+    _payloadCache = encoded;
+    return encoded;
+  }
 
   Future<void> _copy() async {
     final messenger = ScaffoldMessenger.maybeOf(context);

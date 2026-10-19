@@ -62,6 +62,14 @@ class _SearchScreenState extends State<SearchScreen> {
   /// 否则慢的那次会覆盖掉快的那次,结果与输入框不一致。
   String _pendingQuery = '';
 
+  /// 问过的词 → 结果。**只留最近几条**(`Map` 保序,满了丢最旧的那条)。
+  ///
+  /// 「删一个字再打回来」是最常见的改字方式:`ab → a → ab`,而那样会为**同一个
+  /// 词**再打一次 `search3` —— 服务器白跑一趟、用户白等一次往返。只记「上一次」
+  /// 是不够的(中间那次 `a` 会把它顶掉),所以记一张小表。
+  static const _cacheLimit = 8;
+  final Map<String, SearchHits> _cache = {};
+
   @override
   void dispose() {
     _debounce?.cancel();
@@ -98,11 +106,28 @@ class _SearchScreenState extends State<SearchScreen> {
       return;
     }
 
+    // 这个词刚问过:直接铺那份结果,不再打一次服务器。
+    final cached = _cache[query];
+    if (cached != null) {
+      setState(() {
+        _hits = cached;
+        _searching = false;
+        _error = null;
+        _pendingQuery = query;
+      });
+      return;
+    }
+
     _pendingQuery = query;
     try {
       final hits = await repo.search(query);
       // 输入已经变了,这次结果作废。
       if (!mounted || _pendingQuery != query) return;
+      // 满了丢最旧的那条 —— 搜索页是推入的短命页面,记太多只是占内存。
+      while (_cache.length >= _cacheLimit) {
+        _cache.remove(_cache.keys.first);
+      }
+      _cache[query] = hits;
       setState(() {
         _hits = hits;
         _searching = false;

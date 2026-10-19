@@ -386,10 +386,6 @@ class PlaybackController extends ChangeNotifier {
     _emit(_state.copyWith(error: null, clearError: true));
   }
 
-  /// 队列里全部曲目的总时长 —— 队列面板的标题要用。
-  Duration get queueDuration =>
-      queue.fold(Duration.zero, (sum, s) => sum + s.duration);
-
   /// 当前曲目之后还剩多久。队列面板的「还有约 …」。
   Duration get remaining {
     final index = _handler.player.currentIndex;
