@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nordic/data/download_manager.dart';
 import 'package:nordic/data/download_store.dart';
@@ -866,6 +867,123 @@ void main() {
           reason: '认证失败时让用户去下载管理是答非所问');
     });
   });
+
+  group('歌词的磁盘缓存', () {
+    // 原先每存一首歌词就把**累积的全部歌词**重新编码一遍、整份重写一遍(还带
+    // flush)—— 听过的歌越多,每存一首越贵,合起来是平方级的活。这一组钉的就是
+    // 「合并写」:判据是**落盘跑了几趟**(`lyricsDiskWrites`),而行为面那几条
+    // 用例分不出 1 趟和 12 趟。
+
+    late Directory root;
+    late AppState state;
+
+    File lyricsFile() => File('${root.path}${Platform.pathSeparator}cache'
+        '${Platform.pathSeparator}lyrics.json');
+
+    /// 假歌词服务:返回的文本里带着曲目 id,于是「读到的是哪一首」看得出来。
+    Dio lyricsDio({String prefix = ''}) {
+      final dio = Dio(BaseOptions(validateStatus: (_) => true));
+      dio.interceptors.add(InterceptorsWrapper(
+        onRequest: (options, interceptor) {
+          final id = options.uri.queryParameters['id'] ?? '';
+          interceptor.resolve(Response<String>(
+            requestOptions: options,
+            statusCode: 200,
+            data: jsonEncode(_ok({
+              'lyricsList': {
+                'structuredLyrics': [
+                  {
+                    'line': [
+                      {'value': '$prefix$id 第一句', 'start': 0},
+                      {'value': '$prefix$id 第二句', 'start': 1000},
+                    ],
+                  },
+                ],
+              },
+            })),
+          ));
+        },
+      ));
+      return dio;
+    }
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      root = await Directory.systemTemp.createTemp('nordic-lyrics-disk');
+
+      // 歌词的磁盘缓存要找 path_provider 的「应用支持目录」。这个插件在测试里
+      // **既不给结果也不抛错**(回执要真事件循环才送得回来),所以给它一个真目录,
+      // 并把 `cache/` 先建出来(与 `lyrics_screen_test` 同一处说明)。
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (call) async => root.path,
+      );
+      Directory('${root.path}${Platform.pathSeparator}cache').createSync();
+
+      // `disconnect()` 第一件事是清系统密钥库里的密码,而那个插件在测试里
+      // 没有实现(会抛 MissingPluginException,把后面几步全带走)。
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+        (call) async => null,
+      );
+
+      state = await buildState(lyricsDio(), root);
+    });
+
+    tearDown(() async {
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+
+    test('连着取十二首，只落一两次盘 —— 不是每首一趟', () async {
+      final ids = [for (var i = 0; i < 12; i++) 's-$i'];
+
+      await Future.wait([for (final id in ids) state.lyricsFor(id)]);
+      await state.settleLyricsWrites();
+
+      expect(state.lyricsDiskWrites, greaterThan(0), reason: '该落盘的时候要落');
+      expect(state.lyricsDiskWrites, lessThanOrEqualTo(2),
+          reason: '合并写：十二首该落成一两次，而不是十二次（O(n²) 的病根就在这儿）');
+    });
+
+    test('两首同时进来谁也不丢 —— 空表不许写回盘', () async {
+      await Future.wait([state.lyricsFor('a'), state.lyricsFor('b')]);
+      await state.settleLyricsWrites();
+
+      final raw = jsonDecode(await lyricsFile().readAsString()) as Map;
+      expect(raw.keys, containsAll(<String>['a', 'b']),
+          reason: '磁盘那份还没读进来就写，会把已有的一整份歌词抹掉');
+    });
+
+    test('存进去的读得回来 —— 重启之后不必再打一次服务器', () async {
+      for (final id in ['s-1', 's-2', 's-3']) {
+        await state.lyricsFor(id);
+      }
+      await state.settleLyricsWrites();
+      expect(lyricsFile().existsSync(), isTrue);
+
+      // 换一个实例(同一个目录):它的「服务器」返回的是另一套文本 ——
+      // 读回来的是磁盘那一份还是网络那一份,一眼能分出来。
+      final fresh = await buildState(lyricsDio(prefix: '网络 '), root);
+      final lyrics = await fresh.lyricsFor('s-3');
+
+      expect(lyrics.lines.map((l) => l.text), ['s-3 第一句', 's-3 第二句']);
+      expect(lyrics.synced, isTrue);
+    });
+
+    test('移除服务器：盘上那份要删掉，而且不许被飘着的那一趟写回来', () async {
+      await state.lyricsFor('s-1'); // 起一趟写
+      await state.disconnect(); // 里面先等写盘落地,再删文件
+
+      expect(lyricsFile().existsSync(), isFalse);
+      // 再多等一会儿:要是「先删后写」,这会儿文件就又冒出来了。
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(lyricsFile().existsSync(), isFalse,
+          reason: '删文件之前必须先等写盘落地 —— 不然那趟会把刚删的又写回来');
+    });
+  });
+
 }
 
 Map<String, dynamic> _ok(Map<String, dynamic> body) => {
@@ -916,4 +1034,5 @@ Map<String, dynamic> _song(String id, String title, String artist, String create
       'suffix': 'flac',
       'size': 1024,
       'created': created,
+    
     };

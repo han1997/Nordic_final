@@ -170,6 +170,9 @@ class AppState extends ChangeNotifier {
   /// 歌词页给的是另一首的),而歌词磁盘缓存是按**裸曲目 id** 存的,跨服务器
   /// 撞车的概率一点都不低。
   Future<void> _resetServerScopedState() async {
+    // **先等写盘落地再删文件**:飘着的那一趟会把刚删掉的文件又写回来
+    // (顺序与 `LibraryCache.clear` 同一条)。
+    await _settleLyricsWrites();
     _starredSongs.clear();
     _starredAlbums.clear();
     _starredArtists.clear();
@@ -710,13 +713,32 @@ class AppState extends ChangeNotifier {
 
   /// 取歌词。按歌曲 id 缓存 —— 歌词页来回进出很频繁,
   /// 每次都打一次服务器没必要。
+  ///
+  /// **有上限**:长会话里听过的每一首都会留一份歌词在内存里。满了按**插入顺序**
+  /// 丢最旧的那几条(命中时把那一首挪到队尾,于是常听的那几首留得住)。
+  static const _lyricsLimit = 512;
   final Map<String, Lyrics> _lyricsCache = {};
 
   /// 磁盘歌词缓存,键是歌曲 id。与 LibraryCache 同目录,文件叫 lyrics.json。
   Map<String, dynamic> _lyricsDisk = {};
   bool _lyricsDiskLoaded = false;
 
-  Future<File> _lyricsCacheFile() async {
+  /// 路径只解析一次 —— 原先每读一首 / 存一首都走一遍平台通道加一次
+  /// `existsSync`,而那条路每首歌都走。
+  Future<File>? _lyricsFileFuture;
+
+  Future<File> _lyricsCacheFile() {
+    final cached = _lyricsFileFuture;
+    if (cached != null) return cached;
+    return _lyricsFileFuture = _resolveLyricsCacheFile().onError<Object>((e, _) {
+      // 解析不出来(目录建不出来 / 平台通道没有)不把这**一次失败留在缓存上**:
+      // 放掉它,下一次重新试一遍(与 `GrainTexture.ensure` 同一条口径)。
+      _lyricsFileFuture = null;
+      throw e;
+    });
+  }
+
+  Future<File> _resolveLyricsCacheFile() async {
     Directory base;
     try {
       base = await getApplicationSupportDirectory();
@@ -750,18 +772,32 @@ class AppState extends ChangeNotifier {
       final file = await _lyricsCacheFile();
       if (!file.existsSync()) return;
       final json = jsonDecode(await file.readAsString());
-      if (json is Map) _lyricsDisk = json.cast<String, dynamic>();
+      if (json is Map) {
+        _lyricsDisk = json.cast<String, dynamic>();
+        // 顺手把盘上历史遗留的超额条目收掉(上限是这一版才有的)。
+        _trimLyrics(_lyricsDisk);
+      }
     } catch (_) {
       // 坏文件 / 没权限:当作没有缓存。
     }
   }
 
+  /// 正在跑的那一趟写盘 / 「这一趟跑的时候又攒下了新的」。
+  Future<void>? _lyricsWriting;
+  bool _lyricsDirty = false;
+
   /// 把内存里的一份歌词补写进磁盘。失败不影响这次显示。
   ///
   /// **磁盘那份还没读进来就不写**:手上是空的 `_lyricsDisk`,写下去等于把
   /// 已有的一整份歌词缓存抹掉(抹掉的那一份下次还得重新打服务器)。
-  Future<void> _saveLyricsDisk(String songId, Lyrics lyrics) async {
-    if (!_lyricsDiskLoaded) return;
+  ///
+  /// 落盘走**合并写**:原先每存一首就把**累积的全部歌词**重新编码一遍再整份
+  /// 重写(还带 flush)—— 听过的歌越多,每存一首越贵,合起来是平方级的活。
+  /// 这里只保证「最新那一版最终落盘」,中间那几版没人要 —— 与
+  /// `LibraryCache.write` 同一条口径。写者每跑一轮都**重读一遍当前的**
+  /// `_lyricsDisk`,所以一批预取只会落成一两次编码 + 写。
+  Future<void> _saveLyricsDisk(String songId, Lyrics lyrics) {
+    if (!_lyricsDiskLoaded) return Future.value();
     _lyricsDisk[songId] = {
       'synced': lyrics.synced,
       'lines': [
@@ -769,12 +805,76 @@ class AppState extends ChangeNotifier {
           {'text': line.text, 'start': line.start?.inMilliseconds},
       ],
     };
+    _trimLyrics(_lyricsDisk);
+
+    final running = _lyricsWriting;
+    if (running != null) {
+      _lyricsDirty = true;
+      return running;
+    }
+    final run = _writeLyricsOnce();
+    _lyricsWriting = run;
+    return run;
+  }
+
+  Future<void> _writeLyricsOnce() async {
+    try {
+      do {
+        _lyricsDirty = false;
+        await _writeLyricsAtomically();
+      } while (_lyricsDirty);
+    } finally {
+      _lyricsWriting = null;
+    }
+  }
+
+  /// 落盘跑了几个来回。**只给用例看** —— 「合并写」这件事的判据就是它:
+  /// 存 N 首歌词该落成一两次,而不是 N 次(O(n²) 的病根)。
+  @visibleForTesting
+  int lyricsDiskWrites = 0;
+
+  /// 先写临时文件再改名 —— 写到一半被杀掉不会留下半截 JSON
+  /// (下一次读它会被判成「坏了」而白丢一份)。
+  Future<void> _writeLyricsAtomically() async {
+    lyricsDiskWrites++;
     try {
       final file = await _lyricsCacheFile();
-      await file.writeAsString(jsonEncode(_lyricsDisk), flush: true);
+      final temp = File('${file.path}.tmp');
+      await temp.writeAsString(jsonEncode(_lyricsDisk), flush: true);
+      await temp.rename(file.path);
     } catch (_) {
       // 写不进就算了 —— 下次还走网络。
     }
+  }
+
+  /// 等写盘落地的**公开入口**,只给用例用(判据是「落了几趟」,而不是
+  /// 「最后那一份对不对」—— `lyricsFor` 那边是 unawaited 的)。
+  @visibleForTesting
+  Future<void> settleLyricsWrites() => _settleLyricsWrites();
+
+  /// 等到手上那一趟写落盘为止。**删文件之前必须调它** ——
+  /// 不然飘着的那一趟会把刚删掉的文件又写回来。
+  Future<void> _settleLyricsWrites() async {
+    while (_lyricsWriting != null) {
+      await _lyricsWriting;
+    }
+  }
+
+  /// 超过上限就按**插入顺序**丢掉最旧的那几条(Dart 的 `Map` 保序)。
+  void _trimLyrics(Map<String, dynamic> disk) {
+    while (disk.length > _lyricsLimit) {
+      disk.remove(disk.keys.first);
+    }
+  }
+
+  /// 命中时把这一首挪到队尾 —— 上限淘汰按插入顺序走,不挪的话
+  /// 天天听的那几首反而先被丢掉。
+  void _touchLyrics(Map<String, Lyrics> cache, String songId, Lyrics lyrics) {
+    cache.remove(songId);
+    while (cache.length >= _lyricsLimit) {
+      cache.remove(cache.keys.first);
+    }
+    cache[songId] = lyrics;
   }
 
   static Lyrics? _lyricsFromJson(Object? raw) {
@@ -797,13 +897,16 @@ class AppState extends ChangeNotifier {
 
   Future<Lyrics> lyricsFor(String songId) async {
     final cached = _lyricsCache[songId];
-    if (cached != null) return cached;
+    if (cached != null) {
+      _touchLyrics(_lyricsCache, songId, cached);
+      return cached;
+    }
 
     // 磁盘那份先看一眼:重启之后再来听同一首,不必再打一次服务器。
     await _loadLyricsDisk();
     final disk = _lyricsFromJson(_lyricsDisk[songId]);
     if (disk != null) {
-      _lyricsCache[songId] = disk;
+      _touchLyrics(_lyricsCache, songId, disk);
       return disk;
     }
 
@@ -811,7 +914,7 @@ class AppState extends ChangeNotifier {
     if (repo == null) return Lyrics.empty;
 
     final lyrics = await repo.lyrics(songId);
-    _lyricsCache[songId] = lyrics;
+    _touchLyrics(_lyricsCache, songId, lyrics);
     // 空歌词不落盘 —— 下次服务器上有了要能重新取到。
     if (!lyrics.isEmpty) unawaited(_saveLyricsDisk(songId, lyrics));
     return lyrics;
