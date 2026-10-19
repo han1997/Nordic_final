@@ -443,8 +443,9 @@ class _SongInfo extends StatelessWidget {
           ),
 
           // 「这一首是什么(源文件)+ 此刻按什么在放」。左边是**歌曲自己**的格式,
-          // 右边是**这一趟**实际用的档位与来源;点右边那枚胶囊直接开转码面板 ——
-          // 档位收进「⋯」菜单之后,播放页就没有能改档的地方了。
+          // 右边是**这一趟**实际用的档位与来源 —— 那是一条附注,不是一颗按钮
+          // (见 [_OriginNote]);点它直接开转码面板 —— 档位收进「⋯」菜单之后,
+          // 播放页就没有别的改档入口了。
           const SizedBox(height: 9),
           Row(
             children: [
@@ -460,18 +461,61 @@ class _SongInfo extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: NordicSpace.s3),
-              NordicChip(
+              _OriginNote(
                 label: playbackOriginLabel(
                   loaded ?? selected,
                   local: loaded == null ? null : local,
                 ),
-                icon: Icons.graphic_eq,
-                height: 28,
                 onTap: () => showQualitySheet(context),
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 播放页那行右侧的「按什么在放」 —— **附注,不是按钮**。
+///
+/// 原先这颗是 `NordicChip`(玻璃底 + 发丝边 + 全圆角)。摆在 `FLAC · 780 kbps`
+/// 旁边,它读起来是一块贴上去的控件 —— 而这一行左边是「这首歌的格式」,
+/// 右边突然冒出一个可以按的东西,读法就乱了(用户原话:「加了按钮即边框,
+/// 看起来有点丑」)。
+///
+/// 现在只剩一枚强调色的小图标 + 三级前景的小字。**唯一提示「可点」的就是那点
+/// 颜色** —— 按下去仍然开转码面板,行为一点没变。按下去缩一点点,别的一点动静
+/// 都不给(fg3 已经退到能读的底线,再暗 hover 就没有反馈了)。
+class _OriginNote extends StatelessWidget {
+  const _OriginNote({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Pressable(
+      onTap: onTap,
+      scale: 0.94,
+      child: Padding(
+        // 竖着留 2px:按下去那点缩放不至于贴到上下两行的字。
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.graphic_eq, size: 13, color: context.accentSafe),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: t.fg3,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }

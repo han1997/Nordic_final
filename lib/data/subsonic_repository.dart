@@ -421,6 +421,28 @@ class SubsonicRepository implements MusicSource {
     return route;
   }
 
+  // ---------------- 播放状态 ----------------
+
+  /// 播放状态回报 —— `scrobble`。
+  ///
+  /// 参数只有三件:`id` 必有;`submission` 用**字符串** `true` / `false`
+  /// (Subsonic 那边就是这么收的,`'0'` 一律当成「正在播放」);
+  /// `time` 只在「听过一次」时给 —— 那是**那一刻**的墙上时间(毫秒),
+  /// 而不是「服务器收到的时间」:请求可能排了一会儿队才发出去。
+  @override
+  Future<void> reportPlayback(
+    String songId, {
+    required bool submission,
+    DateTime? at,
+  }) async {
+    await client.call('scrobble', {
+      'id': songId,
+      'submission': submission ? 'true' : 'false',
+      if (submission && at != null)
+        'time': '${at.millisecondsSinceEpoch}',
+    });
+  }
+
   // ---------------- 歌单写操作 ----------------
 
   /// 建一个空歌单。返回新建的歌单。

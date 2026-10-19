@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nordic/data/media_cache.dart';
 import 'package:nordic/data/models.dart';
+import 'package:nordic/data/music_source.dart';
 import 'package:nordic/data/network_status.dart';
 import 'package:nordic/data/server_config.dart';
 import 'package:nordic/playback/audio_handler.dart';
@@ -901,6 +902,103 @@ void main() {
       expect(File(original).existsSync(), isTrue, reason: '正在听的是它，动不得');
     });
   });
+
+  /// 播放层的**回报接线**:换歌事件推一次 → 「正在播放」;位置越过阈值
+  /// → 「听过一次」。上面 scrobble_test 钉的是判据本身,这一条钉的是
+  /// 「那两条流真的接到了判据上」—— 接线漏一处,判据再对也没人用。
+  group('播放状态回报', () {
+    late _FakePlayer player;
+    late _ScrobbleSpy source;
+    late NordicAudioHandler handler;
+
+    const song = Song(
+      id: 'song-9',
+      title: '可能',
+      artist: '程响',
+      album: '可能',
+      albumId: 'al-1',
+      duration: Duration(minutes: 2),
+    );
+    const other = Song(
+      id: 'song-10',
+      title: '人间烟火',
+      artist: '程响',
+      album: '可能',
+      albumId: 'al-1',
+      duration: Duration(minutes: 4),
+    );
+
+    setUp(() {
+      player = _FakePlayer();
+      source = _ScrobbleSpy();
+      handler = NordicAudioHandler(
+        () => source,
+        QualityController(QualityOption.medium),
+        player: player,
+      );
+    });
+
+    tearDown(() async {
+      await player.dispose();
+    });
+
+    test('换歌报「正在播放」，听到一半报「听过」', () async {
+      await handler.setQueue(const [song, other], index: 0);
+      player.currentIndex = 0;
+      player.events.add(PlaybackEvent(currentIndex: 0));
+      await pumpEventQueue();
+
+      expect(source.sent, [('song-9', false)]);
+
+      // 走一半之前不报。
+      player.positions.add(const Duration(seconds: 30));
+      await pumpEventQueue();
+      expect(source.sent.length, 1);
+
+      // 越过一半(2 分钟 → 60 秒)。
+      player.positions.add(const Duration(seconds: 61));
+      await pumpEventQueue();
+      expect(source.sent, [('song-9', false), ('song-9', true)]);
+
+      // 同一首再往后走不重复报。
+      player.positions.add(const Duration(seconds: 100));
+      await pumpEventQueue();
+      expect(source.sent.length, 2);
+    });
+
+    test('切到下一首：重新报一次「正在播放」', () async {
+      await handler.setQueue(const [song, other], index: 0);
+      player.events.add(PlaybackEvent(currentIndex: 0));
+      await pumpEventQueue();
+
+      player.currentIndex = 1;
+      player.events.add(PlaybackEvent(currentIndex: 1));
+      await pumpEventQueue();
+
+      expect(source.sent, [('song-9', false), ('song-10', false)]);
+    });
+
+    test('仓库没了（服务器被移除）时一条都不发', () async {
+      // 装载要仓库拼流地址,所以先带着仓库装好,再把仓库抽走 —— 那正是
+      // 「用户在设置里把服务器移除了」之后的样子:播放层还在放,但没有地方
+      // 可以报。这时**一条都不该发**,也不该抛。
+      MusicSource? repo = source;
+      final handler = NordicAudioHandler(
+        () => repo,
+        QualityController(QualityOption.medium),
+        player: player,
+      );
+      await handler.setQueue(const [song], index: 0);
+      repo = null;
+
+      player.events.add(PlaybackEvent(currentIndex: 0));
+      player.positions.add(const Duration(minutes: 1));
+      await pumpEventQueue();
+
+      expect(source.sent, isEmpty);
+    });
+  });
+
 }
 
 /// 可摆布的播放器 —— 位置监察那条护栏只吃这几样(位置流、下标、循环模式、
@@ -1023,4 +1121,31 @@ class _FakePlayer extends AudioPlayer {
     await loopModes.close();
     await shuffles.close();
   }
+}
+
+/// 只记下「报了什么」的音源 —— 其余方法这一组用不到。
+class _ScrobbleSpy implements MusicSource {
+  final sent = <(String, bool)>[];
+
+  /// 装载队列要一个流地址 —— 这一组只关心「报了什么」,地址给个假的即可
+  /// (不接网络:假播放器拿到源也不会真的去取)。
+  @override
+  Uri streamUri(String songId, {int? maxBitRate, String? format}) =>
+      Uri.parse('http://nas.example.com/rest/stream.view?id=$songId');
+
+  @override
+  Uri coverUri(String coverArtId, {int size = 512}) =>
+      Uri.parse('http://nas.example.com/rest/getCoverArt.view?id=$coverArtId');
+
+  @override
+  Future<void> reportPlayback(
+    String songId, {
+    required bool submission,
+    DateTime? at,
+  }) async {
+    sent.add((songId, submission));
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -1,36 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:provider/provider.dart';
 
-import '../../data/server_config.dart';
-import '../../playback/quality.dart';
-import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
-import '../routes.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 
 /// 关于 —— 设置里「关于」那一栏的落地页。
 ///
-/// 它回答的是「这是什么软件、什么版本、我的东西在哪儿」,而这三件事原先在设置里
-/// 一个字都没有(版本号只存在于产物文件名里,隐私那两条陈述和一堆开关混在一屏)。
+/// 它回答的是「这是什么软件、什么版本、我的东西在哪儿」。**只写真的**:
+/// 版本号从**装上的那个包**里读([PackageInfo] 读出的就是 `pubspec.yaml`
+/// 那一行落进包里的结果,不是另存的一份);名字、图标与启动器里那颗同源;
+/// 隐私那两条是**陈述不是开关** —— 原先它们和一堆开关挨着,读起来像可以关掉。
 ///
-/// **这一屏只写真的**:版本号从**装上的那个包**里读([PackageInfo] 读出的就是
-/// `pubspec.yaml` 那一行落进包里的结果,不是另存的一份);服务器那行读当前配置;
-/// 隐私那两条是**陈述不是开关** —— 原先它们和开关挨着读起来像可以关掉的东西。
+/// **这一屏只有三件东西,是故意的**:版本在顶上、许可一条、隐私两条。
+/// 早先这里还摆过「版本」「服务器」「默认转码质量」三行,后来全删了 ——
+/// 它们分别与顶部、设置页「服务器」那一栏、设置页第一行说同一件事,
+/// 摆在这里既不解释「这是什么软件」,又让这一页显得啰嗦。**别再加回来。**
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final t = context.nordic;
-    // 只订「服务器」这一件:别的通知(下载进度、缓存淘汰)与这一屏无关。
-    final server = context.select<AppState, ServerConfig?>((s) => s.server);
-    final quality = context.select<QualityController, QualityOption>(
-      (c) => c.value,
-    );
-
     return ImmersiveScaffold(
       accent: context.accent,
       showAmbient: false,
@@ -51,27 +42,6 @@ class AboutScreen extends StatelessWidget {
                 const _Hero(),
                 _Card(
                   children: [
-                    const _VersionRow(),
-                    Divider(height: 1, thickness: 1, color: t.line),
-                    _InfoRow(
-                      icon: Icons.dns_outlined,
-                      title: server?.name ?? '还没有连接服务器',
-                      subtitle: server == null
-                          ? '填上地址、账号与密码就能开始'
-                          : '${server.kind.label} · ${server.routes.length} 条线路',
-                      onTap: () => AppRoutes.openServers(context),
-                    ),
-                    Divider(height: 1, thickness: 1, color: t.line),
-                    // 「默认转码质量」当前那一档 —— 与设置页那一行同一件事的另一处
-                    // 来路。**报的是所选档,不是此刻在用哪一档**:后者属于正在放的
-                    // 那一首,在播放页上(见 playbackOriginLabel)。
-                    _InfoRow(
-                      icon: Icons.graphic_eq,
-                      title: '默认转码质量',
-                      subtitle: quality.description,
-                      trailing: quality.name,
-                    ),
-                    Divider(height: 1, thickness: 1, color: t.line),
                     _InfoRow(
                       icon: Icons.book_outlined,
                       title: '开源许可',
@@ -91,7 +61,7 @@ class AboutScreen extends StatelessWidget {
                 const SectionHeader(title: '隐私'),
                 _Card(
                   children: const [
-                    // 这两条**不是开关**:凭据怎么存、播放记录去哪儿,都是这个应用
+                    // 这两条**不是开关**:凭据怎么存、播放记录发到哪儿,都是这个应用
                     // 已经定死的行为,给一个可以关掉的开关才是骗人。
                     _InfoRow(
                       icon: Icons.shield_outlined,
@@ -99,10 +69,14 @@ class AboutScreen extends StatelessWidget {
                       subtitle: '密码交给系统密钥库加密保存，不上传任何数据',
                     ),
                     Divider(height: 1, thickness: 1),
+                    // 措辞按**实际行为**写(见 playback/scrobble.dart):开播报一次
+                    // 「正在播放」、听够一半报一次「听过」。原先那句「只用于服务器端的
+                    // 播放统计」在真的接了 scrobble 之前是一句空话 —— 现在它说的是真的。
                     _InfoRow(
                       icon: Icons.history,
                       title: '播放记录',
-                      subtitle: '只用于服务器端的播放统计，本机不另存一份',
+                      subtitle: '开播报一次「正在播放」，听够一半报一次「听过」——'
+                          '只发给服务器，本机不另存',
                     ),
                   ],
                 ),
@@ -211,50 +185,29 @@ class _VersionText extends StatelessWidget {
   }
 }
 
-/// 「关于」里那个版本行 —— 与顶部那份同一个值(两处都说同一件事)。
-class _VersionRow extends StatelessWidget {
-  const _VersionRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<PackageInfo>(
-      future: PackageInfo.fromPlatform(),
-      builder: (context, snapshot) {
-        final info = snapshot.data;
-        return _InfoRow(
-          icon: Icons.info_outline,
-          title: '版本',
-          subtitle: '与侧载包的名字同一份 —— 名字是从 pubspec.yaml 拼的',
-          trailing: info == null ? '—' : versionLabel(info),
-        );
-      },
-    );
-  }
-}
-
 /// `1.0.42+43` —— 与产物名里那一份**逐字相同**(tool/build.sh 也是从 pubspec
 /// 拼出来的这个名字)。两处展示共用一份口径,免得一个带 build 号一个不带。
 String versionLabel(PackageInfo info) => info.buildNumber.isEmpty
     ? info.version
     : '${info.version}+${info.buildNumber}';
 
-/// 「关于」里的一行:图标 + 标题 + 说明 + 右侧的值。
+/// 「关于」里的一行:图标 + 标题 + 说明。
 ///
-/// 与设置页那张卡同一副骨架(`_SettingRow`),但没有开关 —— 这一屏上除了两条
-/// 去路(服务器 / 许可),其余都是**只读的陈述**。
+/// 与设置页那张卡同一副骨架(`_SettingRow`),但没有开关、也没有右侧的值 ——
+/// 这一屏上只剩下**陈述**(隐私那两条)与**一条去路**(开源许可),
+/// 而每条陈述要说的话就是它自己那句说明。「版本」那一行删掉之后 `trailing`
+/// 再没人用过,一并去掉,免得留一个永远空着的口子。
 class _InfoRow extends StatelessWidget {
   const _InfoRow({
     required this.icon,
     required this.title,
     this.subtitle,
-    this.trailing,
     this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String? subtitle;
-  final String? trailing;
   final VoidCallback? onTap;
 
   @override
@@ -299,16 +252,6 @@ class _InfoRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (trailing != null) ...[
-              const SizedBox(width: NordicSpace.s3),
-              Text(
-                trailing!,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: t.fg2),
-              ),
-            ],
             if (onTap != null) ...[
               const SizedBox(width: 4),
               Icon(Icons.chevron_right, size: 18, color: t.fg3),

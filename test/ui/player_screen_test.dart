@@ -20,6 +20,7 @@ import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/screens/player_screen.dart';
 import 'package:nordic/ui/screens/lyrics_screen.dart';
 import 'package:nordic/ui/routes.dart';
+import 'package:nordic/ui/widgets/components.dart';
 import 'package:nordic/ui/widgets/cover.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -320,7 +321,7 @@ testWidgets('信息行：左边是源文件的格式，右边是**这一趟实�
     expect(find.text('${QualityOption.fallback.name} · 本机'), findsNothing);
   });
 
-  testWidgets('点那枚档位胶囊直接开转码面板 —— 播放页上仍能改档', (tester) async {
+  testWidgets('点那枚档位附注直接开转码面板 —— 播放页上仍能改档', (tester) async {
     await pumpPlayer(tester);
 
     await tester.tap(find.byIcon(Icons.graphic_eq));
@@ -331,6 +332,38 @@ testWidgets('信息行：左边是源文件的格式，右边是**这一趟实�
     // 四档都在,而且讲的是同一件事(那个面板与「⋯」菜单里那条是一条路)。
     expect(find.text(QualityOption.original.name), findsOneWidget);
     expect(find.text(QualityOption.low.name), findsOneWidget);
+  });
+
+
+  testWidgets('档位那一枚是**附注不是按钮** —— 没有底、没有边框', (tester) async {
+    await pumpPlayer(tester);
+
+    // 它曾是一颗 `NordicChip`(薄玻璃底 + 发丝边 + 全圆角),摆在
+    // `FLAC · 780 kbps` 旁边读起来像一块贴上去的控件 —— 用户原话「加了按钮即边框,
+    // 看起来有点丑」。现在只剩图标 + 小字,任何底/边/圆角都不该有。
+    final note = find.ancestor(
+      of: find.byIcon(Icons.graphic_eq),
+      matching: find.byType(Pressable),
+    );
+    expect(note, findsOneWidget);
+    expect(
+      find.descendant(
+        of: note,
+        matching: find.byType(DecoratedBox, skipOffstage: false),
+      ),
+      findsNothing,
+      reason: '附注上挂了装饰盒 —— 底、边框或圆角就是这么长回来的',
+    );
+    expect(
+      find.descendant(of: note, matching: find.byType(Container, skipOffstage: false)),
+      findsNothing,
+      reason: '附注上挂了 Container —— 同上',
+    );
+    // 字色是三级前景:它比歌名与艺人那两行都退后一档。
+    final text = tester.widget<Text>(find.text(
+      playbackOriginLabel(QualityOption.fallback, local: null),
+    ));
+    expect(text.style?.color, isNotNull);
   });
 
 }

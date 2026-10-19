@@ -91,7 +91,27 @@ abstract interface class MusicSource {
     required bool starred,
   });
 
+  /// 收藏内容。界面用它在设置页显示「我的收藏」入口计数。
   Future<SearchHits> starred();
+
+  // ---------------- 播放状态 ----------------
+
+  /// 播放状态回报 —— Subsonic 的 `scrobble`。
+  ///
+  /// [submission] 为 false 是「正在播放」(**不计数**),为 true 是「听过一次」。
+  /// 谁来报、什么时候报由 `playback/scrobble.dart` 的 `ScrobbleTracker` 判,
+  /// 这一层只管把它落成一个请求。
+  ///
+  /// **本机不另存一份播放记录**:这条记录的去处只有服务器(播放次数 /
+  /// 最近播放 /「正在播放」那一栏)。所以实现**必须容忍失败** —— 离线时这条
+  /// 请求发不出去,那一次就不计入服务器统计,而播放本身不该受影响。
+  ///
+  /// [at] 是「听过一次」那一刻;不给就是服务器收到的时间。
+  Future<void> reportPlayback(
+    String songId, {
+    required bool submission,
+    DateTime? at,
+  });
 
   // ---------------- 地址 ----------------
 

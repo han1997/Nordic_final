@@ -1143,8 +1143,26 @@ Future<T?> showNordicSheet<T>({
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       barrierColor: Colors.transparent,
+      // **显式给曲线**,不靠「框架默认应该也是它」—— 见 [nordicSheetCurve]:
+      // 框架按这条曲线定位整块内容,而 [NordicScrim] 那层补偿要按**同一条**
+      // 把它抵消掉。两边要是各拿各的(一边默认、一边写死),补偿就抵不干净,
+      // 表现是蒙版带着边缘从上方压下来。
+      sheetAnimationStyle: const AnimationStyle(
+        curve: nordicSheetCurve,
+        reverseCurve: nordicSheetCurve,
+      ),
       builder: builder,
     );
+
+/// 弹层升起那条曲线 —— **与框架默认同一条**(`bottom_sheet.dart` 的
+/// `_kModalBottomSheetCurve`),这里只是把它写成显式的。
+///
+/// 为什么非要显式:`_BottomSheetLayout` 按 `size.height - childSize.height *
+/// animationValue` 定位整块内容,而那个 `animationValue` 取自**带曲线的**
+/// `_sheetAnimation`;而 [NordicScrim] 里那层「抵消框架位移」的补偿要按同一条
+/// 曲线求值才抵得干净。两边曲线不一致时净剩一段 `H[v - curve(v)]` 的位移
+/// (中途可达屏高的四分之一),看上去就是**蒙版从上方压下来**。
+const Curve nordicSheetCurve = Easing.legacyDecelerate;
 
 /// 弹层遮罩 —— `.sheet-scrim`。
 ///
@@ -1176,13 +1194,21 @@ class NordicScrim extends StatelessWidget {
     //
     // 补一个等量的反向位移抵消掉,蒙板就成了原地淡入。位移量取 LayoutBuilder 的
     // `maxHeight` —— 它与路由定位用的那个高度是同一个(内容铺满整屏),能精确抵消。
-    // 若哪天真机上反而看到位移,把这一层去掉就退回「跟着纸一起上滑」,不会坏。
+    //
+    // **但补偿必须按同一条曲线求值。** 框架定位用的是**带曲线的** `_sheetAnimation`
+    // (`_kModalBottomSheetCurve`),早先这里错拿了路由的**线性** `animation`:
+    // 两条不等价,补偿只抵消掉一部分,净剩 `H[v - curve(v)]` 的位移 ——
+    // 中途可达屏高的四分之一,看上去就是**一整块蒙版带着边缘从上方压下来**
+    // (原型 `.sheet-scrim` 只淡入、不位移,所以那是 bug 不是设计)。
+    // 现在两边都走 [nordicSheetCurve](`showNordicSheet` 也是显式传的那一条),
+    // 净位移恒为 0。
     final animation = ModalRoute.of(context)?.animation;
+    final curved = animation?.drive(CurveTween(curve: nordicSheetCurve));
 
     return Stack(
       children: [
         Positioned.fill(
-          child: animation == null
+          child: (animation == null || curved == null)
               ? layer
               : LayoutBuilder(
                   builder: (context, constraints) => AnimatedBuilder(
@@ -1190,11 +1216,11 @@ class NordicScrim extends StatelessWidget {
                     builder: (context, child) => Transform.translate(
                       offset: Offset(
                         0,
-                        (animation.value - 1) * constraints.maxHeight,
+                        (curved.value - 1) * constraints.maxHeight,
                       ),
-                      child: FadeTransition(opacity: animation, child: child),
+                      child: child,
                     ),
-                    child: layer,
+                    child: FadeTransition(opacity: curved, child: layer),
                   ),
                 ),
         ),

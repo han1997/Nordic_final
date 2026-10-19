@@ -1943,7 +1943,7 @@ function screenSettings() {
    (`package_info_plus` 读出的那份就是 `pubspec.yaml` 那一行,不是另存的一份);
    服务器那行读当前配置;隐私那两条是**陈述不是开关** —— 原先它们和开关混在
    同一屏里,读起来像可以关掉的东西。 */
-const ABOUT_VERSION = '1.0.42+43';
+const ABOUT_VERSION = '1.0.43+44';
 
 function screenAbout() {
   return `<div class="appbar nav">
@@ -1963,20 +1963,6 @@ function screenAbout() {
 
       <div class="card" style="margin:0 var(--s5)">
         <div class="row" style="cursor:default">
-          <span class="set-icon">${ic('info', 18)}</span>
-          <div class="grow"><div class="line1">版本</div>
-            <div class="line2">与侧载包的名字同一份 —— 名字是从 pubspec.yaml 拼的</div></div>
-          <span class="trail" style="color:var(--fg-2)">${ABOUT_VERSION}</span>
-        </div>
-        <div class="divider"></div>
-        <div class="row" data-go="servers">
-          <span class="set-icon">${ic('server', 18)}</span>
-          <div class="grow"><div class="line1">${SERVER.name}</div>
-            <div class="line2">${SERVER.kind} · ${SERVER.routes.length} 条线路</div></div>
-          ${ic('chevron', 18)}
-        </div>
-        <div class="divider"></div>
-        <div class="row" style="cursor:default">
           <span class="set-icon">${ic('book', 18)}</span>
           <div class="grow"><div class="line1">开源许可</div>
             <div class="line2">Flutter 与各第三方包各自的许可证</div></div>
@@ -1995,13 +1981,13 @@ function screenAbout() {
         <div class="row" style="cursor:default">
           <span class="set-icon">${ic('wave', 18)}</span>
           <div class="grow"><div class="line1">播放记录</div>
-            <div class="line2">只用于服务器端的播放统计,本机不另存一份</div></div>
+            <div class="line2">开播报一次「正在播放」,听够一半报一次「听过」—— 只发给服务器,本机不另存</div></div>
         </div>
       </div>
 
       <div class="list-note" style="padding-top:var(--s4)">
-        这一页上的版本号是原型的示意值;应用里那一份是从**装上的那个包**读出来的,
-        所以换一版装上去,这里跟着变。
+        这一页上版本号只有**顶部那一处**(它是原型的示意值);应用里那一份是从
+        **装上的那个包**读出来的,所以换一版装上去,这里跟着变。
       </div>
       <div style="height:var(--s5)"></div>
     </div>
@@ -2147,7 +2133,7 @@ const BOARD = [
   ['歌词',            '逐句高亮 · 两下才跳', () => shell(screenLyrics(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['搜索',            '输入即筛选',           () => shell(screenSearch())],
   ['设置',            '播放 / 服务器 / 存储', () => shell(screenSettings())],
-  ['关于',            '版本 · 许可 · 隐私',    () => shell(screenAbout())],
+  ['关于',            '许可 · 隐私 · 播放记录', () => shell(screenAbout())],
   /* 这三张是新增的整屏功能页,设计板一并铺出来 —— 它们不再是 toast,
      是真的能走进去、能提交的页面。 */
   ['下载管理',        '队列 + 进度',          () => shell(screenDownloads())],

@@ -13,6 +13,7 @@ import '../data/models.dart';
 import '../data/music_source.dart';
 import '../data/network_status.dart';
 import 'quality.dart';
+import 'scrobble.dart';
 
 /// 一首歌该从哪里播 —— 本机有下载就用本机,否则走服务器的流。
 ///
@@ -242,6 +243,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       if (!_player.playing) return;
       _watchedPosition = position;
       _watchedIndex = index;
+      // 位置是会话里**唯一持续到达**的信号 —— 「听过一次」那条判据搭在这里
+      // (越过「一半或 4 分钟」报一次,见 ScrobbleTracker)。
+      _noteListened(index, position);
       if (!rewind) return;
       unawaited(_advancePastRewind(index));
     });
@@ -253,6 +257,10 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
         // 换歌了:缓存那一头要知道**正在听的是哪一份**(淘汰时跳过它,
         // 并刷新它的「最近听过」)。
         _noteCurrentTrack(event.currentIndex);
+        // 同一刻也向服务器报一次「正在播放」—— 服务器那一栏(以及它自己的
+        // 「最近播放」)靠的就是这一次。**不是拼播放源的时候报**:一次 setQueue
+        // 会把整条队列都拼一遍,在那里报会把队列最后一首报成正在播的。
+        _noteNowPlaying(event.currentIndex);
         // 通知栏与锁屏要靠 `mediaItem` 这条流才会更新标题 / 封面 ——
         // 它只在装载动作(setQueue / append / jumpTo …)时被 add 过,
         // 自动切歌不重发的话,通知栏会一直挂着**上一首**。
@@ -271,6 +279,12 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// 取值函数而非实例 —— 见 startAudioService 的说明。
   final MusicSource? Function() _repository;
+
+  /// 播放状态回报 —— 判断由 [ScrobbleTracker] 做,失败一律静默
+  /// (见 `playback/scrobble.dart`)。仓库是**每一次现取**的:播放层先建、
+  /// 仓库后配(见 `main.dart` 的接线顺序),拿一份旧的会永远报不出去。
+  late final PlaybackReporter _reporter =
+      PlaybackReporter(() => _repository());
   final QualityController _quality;
 
   /// 本机下载内容。为 null 表示这块存储用不了,一切照旧走网络。
@@ -859,6 +873,32 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
 
     return ProgressiveAudioSource(origin.uri,
         tag: mediaItem, duration: declared);
+  }
+
+  /// 向服务器报一次「正在播放」。
+  ///
+  /// 与 [_noteCurrentTrack] **同一刻**(换歌真的发生了),但说的是两件事:
+  /// 那个管本机缓存的记账,这个管服务器端「正在播放」那一栏。
+  /// 去重由 [ScrobbleTracker] 做 —— 同一首在队列里被重排 / 换档重装时
+  /// 不该再报一遍。
+  void _noteNowPlaying(int? index) {
+    if (index == null || index < 0 || index >= _queue.length) return;
+    _reporter.nowPlaying(_queue[index].id);
+  }
+
+  /// 位置到了 —— 「听过一次」那一半。
+  ///
+  /// 时长取的是**元数据声明的那一个**([_durationAt]),不是平台报出来的:
+  /// 这条判据要在曲目刚开播、平台还没报出时长时就算得出来,而且它只需要
+  /// 「大概一半」这个量级,声明值足够。声明为 0 = 时长未知,那时一条都不报
+  /// (见 [ScrobbleTracker.notePosition])。
+  void _noteListened(int index, Duration position) {
+    if (index < 0 || index >= _queue.length) return;
+    _reporter.position(
+      _queue[index].id,
+      position: position,
+      duration: _durationAt(index),
+    );
   }
 
   /// 换歌了(真的换到某一首在放,而不是「拼出了某首歌的播放源」)。

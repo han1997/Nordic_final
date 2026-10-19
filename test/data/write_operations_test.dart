@@ -136,4 +136,39 @@ void main() {
       expect(seen.single.queryParameters['artistId'], 'ar-1');
     });
   });
+
+  group('播放状态上报', () {
+    /// 这一件原先**一处都没有**:全仓库没向服务器报过播放状态,于是服务端
+    /// 「正在播放」恒为空、播放次数永远是 0,而「关于」里那句「只用于服务器端的
+    /// 播放统计」是一句空话。同一个动作报两次形状不同:
+    /// `submission=false` 是「正在播放」,`true` 是「听过一次」。
+    test('正在播放：scrobble + submission=false，不带 time', () async {
+      await repo.reportPlayback('song-9', submission: false);
+
+      final uri = seen.single;
+      expect(uri.path, '/rest/scrobble.view');
+      expect(uri.queryParameters['id'], 'song-9');
+      expect(uri.queryParameters['submission'], 'false');
+      // 「正在播放」的落点是「现在」,给个时间反而让服务器以为那是另一件事。
+      expect(uri.queryParameters.containsKey('time'), isFalse);
+    });
+
+    test('听过一次：submission=true，带上那一刻的毫秒时间', () async {
+      final at = DateTime.fromMillisecondsSinceEpoch(1761000000000);
+      await repo.reportPlayback('song-9', submission: true, at: at);
+
+      final uri = seen.single;
+      expect(uri.queryParameters['submission'], 'true');
+      // `time` 是**那一刻**的墙上时间(毫秒),不是服务器收到的时间。
+      expect(uri.queryParameters['time'], '1761000000000');
+    });
+
+    test('不带时间也照样能报「听过一次」', () async {
+      await repo.reportPlayback('song-9', submission: true);
+
+      expect(seen.single.queryParameters['submission'], 'true');
+      expect(seen.single.queryParameters.containsKey('time'), isFalse);
+    });
+  });
+
 }

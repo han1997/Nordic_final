@@ -13,7 +13,6 @@ import 'package:nordic/state/app_state.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/screens/about_screen.dart';
-import 'package:nordic/ui/screens/servers_screen.dart';
 import 'package:nordic/ui/routes.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -99,20 +98,21 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('版本号从**包里**读出来，与产物名里那一份逐字相同', (tester) async {
+  testWidgets('版本号从**包里**读出来，而且只在顶部说一次', (tester) async {
     await pumpAbout(tester);
 
     expect(find.text('Nordic'), findsOneWidget);
     expect(find.text('多平台 NAS 音乐播放器'), findsOneWidget);
-    // 两处都报同一个值(顶部与卡片里那一行):一处带 build 号、一处不带是要出事的。
-    expect(find.text('1.0.42+43'), findsNWidgets(2));
+    // **一处**:卡片里那个「版本」行删了 —— 与顶部说同一件事,摆两遍是重复。
+    expect(find.text('1.0.42+43'), findsOneWidget);
+    expect(find.text('版本'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('隐私那两条在里面 —— 它们是陈述，不是开关', (tester) async {
     await pumpAbout(tester);
 
-    // 这一条在页面下头 —— 列表是懒建的,不滚过去它根本没建出来。
+    // 这条在页面下头 —— 列表是懒建的,不滚过去它根本没建出来。
     await tester.dragUntilVisible(
       find.text('凭据仅存本机'),
       find.byType(ListView),
@@ -122,20 +122,23 @@ void main() {
 
     expect(find.text('凭据仅存本机'), findsOneWidget);
     expect(find.text('播放记录'), findsOneWidget);
+    // 「播放记录」那句说的是**实际行为**(开播报正在播放、听够一半报听过),
+    // 不是早先那句在接了 scrobble 之前属于空话的「只用于服务器端的播放统计」。
+    expect(find.textContaining('听够一半'), findsOneWidget);
     // 这一页上不该出现任何开关:能关掉的话就成了骗人的东西。
     expect(find.byType(Switch), findsNothing);
   });
 
-  testWidgets('服务器那一行报的是当前配置，点得进服务器与线路', (tester) async {
+  testWidgets('与别处重复的那三行都不在了', (tester) async {
     await pumpAbout(tester);
 
-    expect(find.text('客厅 Navidrome'), findsOneWidget);
-    expect(find.text('Navidrome · 2 条线路'), findsOneWidget);
-
-    await tester.tap(find.text('客厅 Navidrome'));
-    await tester.pumpAndSettle();
-    expect(find.byType(ServersScreen), findsOneWidget);
+    // 「版本」在顶上已经有;「服务器」在设置页那一栏;「默认转码质量」是设置页
+    // 第一行。三行摆在「关于」里既不解释「这是什么软件」,又显得啰嗦。
+    expect(find.text('服务器与线路'), findsNothing);
+    expect(find.text('默认转码质量'), findsNothing);
+    expect(find.text('还没有连接服务器'), findsNothing);
   });
+
 
   testWidgets('「开源许可」点开的是 Flutter 那一页，不是自己画的', (tester) async {
     await pumpAbout(tester);
