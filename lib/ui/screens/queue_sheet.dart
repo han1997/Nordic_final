@@ -34,7 +34,10 @@ class _QueueSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final playable = context.watch<PlaybackController>();
-    final appState = context.watch<AppState>();
+    // 面板只用到 `AppState` 里的一件事:**仓库**(拼封面地址用)。整份 watch 会让
+    // 下载进度(最多每秒四次)与缓存淘汰把整张队列面板重建一遍 ——
+    // 它一个字都不跟着变。
+    final repo = context.select<AppState, MusicSource?>((s) => s.repository);
     final queue = playable.queue;
     // 显示顺序 → 原始下标。随机开着时 just_audio 按**自己的**顺序播,而 queue
     // 仍是装载时的顺序 —— 照 queue 铺,面板写的「下一首」就是假的。
@@ -89,7 +92,7 @@ class _QueueSheet extends StatelessWidget {
                           song: song,
                           isCurrent: isCurrent,
                           playing: playable.state.playing,
-                          coverUri: _coverUri(appState, song.coverArtId),
+                          coverUri: albumCoverUri(repo, song.coverArtId, size: 128),
                           onTap: () => playable.jumpTo(index),
                           onRemove: isCurrent
                               ? null
@@ -102,16 +105,6 @@ class _QueueSheet extends StatelessWidget {
               ),
       ),
     );
-  }
-
-  Uri? _coverUri(AppState state, String? artId) {
-    final repo = state.repository;
-    if (repo == null || artId == null) return null;
-    try {
-      return repo.coverUri(artId, size: 128);
-    } on MusicSourceException {
-      return null;
-    }
   }
 }
 

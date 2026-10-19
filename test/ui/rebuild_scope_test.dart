@@ -18,6 +18,9 @@ import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/screens/home_screen.dart';
 import 'package:nordic/ui/screens/library_screen.dart';
+import 'package:nordic/ui/screens/queue_sheet.dart';
+import 'package:nordic/ui/screens/settings_screen.dart';
+import 'package:nordic/ui/widgets/rows.dart';
 import 'package:nordic/ui/widgets/album_rail.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -115,6 +118,7 @@ void main() {
   late MediaCache audioCache;
   late AppState state;
   late PlaybackController playable;
+  late QualityController quality;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -125,11 +129,12 @@ void main() {
       root: Directory('${root.path}${Platform.pathSeparator}audio'),
     );
 
+    quality = QualityController();
     late final AppState appState;
     appState = AppState(
       configStore: await ConfigStore.open(),
       credentialStore: CredentialStore(),
-      quality: QualityController(),
+      quality: quality,
       downloadManager: DownloadManager(
         store: await DownloadStore.open(root: root),
         repository: () => appState.repository,
@@ -165,6 +170,7 @@ void main() {
         providers: [
           ChangeNotifierProvider<AppState>.value(value: state),
           ChangeNotifierProvider<PlaybackController>.value(value: playable),
+          ChangeNotifierProvider<QualityController>.value(value: quality),
         ],
         child: MaterialApp(
           theme: NordicTheme.build(NordicTokens.dark),
@@ -247,5 +253,85 @@ void main() {
     await loadLibrary(tester);
     await tester.pump();
     expect(find.text('B-全部专辑'), findsOneWidget);
+  });
+
+  /// **播放状态**这条轴。
+  ///
+  /// 音乐库是 `IndexedStack` **保活**的常驻 tab:早先它整份
+  /// `watch<PlaybackController>()`,于是切歌之外的通知 —— 时长上报、缓冲翻转、
+  /// 循环 / 随机翻转 —— 都会把它连四百多格专辑网格 delegate 一起重建一遍,
+  /// 而用户那会儿可能正停在首页。收窄之后只认「当前是哪一首」与「在不在播」。
+  ///
+  /// 两头都要钉:无关通知**不该**重建;换歌**必须**跟着变(收窄不能收成不更新)。
+  testWidgets('音乐库：播放层的无关通知不重建整屏，换歌照样跟着变', (tester) async {
+    await loadLibrary(tester);
+    await pump(tester, const LibraryScreen());
+
+    // 换歌:点一行开播(走界面那条路;直接在 `runAsync` 里叫 `playAll` 会撞上
+    // just_audio 没有平台实现的那些方法)。
+    //
+    // 锚点是**栏标题**(在按下那一行之外)—— 拿行里的东西当锚的话,按下时
+    // `Pressable` 自己那一层重建就会把断言带偏。
+    final header = find.text('全部歌曲');
+    final before = tester.widget<Text>(header);
+
+    await tester.tap(find.byType(SongRow).first);
+    await tester.pump();
+    await tester.pump();
+
+    expect(identical(tester.widget<Text>(header), before), isFalse,
+        reason: '「当前是哪一首」变了，这一屏必须跟着重建 —— 收窄不能收成不更新');
+
+    // 反过来:时长上报 / 缓冲翻转 / 循环翻转都走同一条通知(直接播一次代表它们),
+    // 而「当前哪一首」「在不在播」两件都没变 —— 这一屏不该重建。
+    final after = tester.widget<Text>(header);
+    playable.notifyListeners();
+    await tester.pump();
+    expect(identical(tester.widget<Text>(header), after), isTrue,
+        reason: '订阅的那两件都没变，别跟着别的播放状态通知一起重建');
+  });
+
+  /// 设置页同一类:它挂在**别的 tab 上也会被保活**,而下载进度最多每秒播报
+  /// 四次。两头照样都要钉。
+  testWidgets('设置页：下载进度跳动不重建，订阅的东西变了照旧重建', (tester) async {
+    await pump(tester, const SettingsScreen());
+
+    final title = find.text('Nordic');
+    expect(title, findsOneWidget);
+    final before = tester.widget<Text>(title);
+
+    state.downloadManager.notifyListeners();
+    await tester.pump();
+    expect(identical(tester.widget<Text>(title), before), isTrue,
+        reason: '设置页不显示下载进度，不该跟着它重建');
+
+    // 反过来:它**确实**订阅的那一件变了,必须重建。
+    // (那一行在 `ListView` 的第二屏,先滚下去 —— 懒加载的列表没建出来就查不到。)
+    await state.setWifiOnlyDownload(true);
+    await tester.drag(find.byType(ListView), const Offset(0, -800));
+    await tester.pump();
+    expect(find.text('流量下不缓存'), findsOneWidget,
+        reason: '订阅的东西变了还不更新，就是把界面收死了');
+  });
+
+  /// 队列面板:它对 `AppState` 的全部用处只有「仓库」(拼封面地址),
+  /// 下载进度与缓存淘汰都不该把整张面板重建一遍。
+  testWidgets('队列面板：下载进度跳动不重建', (tester) async {
+    await loadLibrary(tester);
+    await pump(tester, const LibraryScreen());
+
+    // 打开面板(空队列 —— 这一条只关心重建范围,不关心面板里有什么)。
+    showQueueSheet(tester.element(find.byType(LibraryScreen)));
+    await tester.pumpAndSettle();
+
+    final title = find.text('播放队列');
+    expect(title, findsOneWidget);
+    final before = tester.widget<Text>(title);
+
+    state.downloadManager.notifyListeners();
+    await tester.pump();
+
+    expect(identical(tester.widget<Text>(title), before), isTrue,
+        reason: '面板不显示下载进度，不该跟着它重建');
   });
 }

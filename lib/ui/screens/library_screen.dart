@@ -98,8 +98,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ));
     // 方法用这一份:取值函数不参与重建判定。
     final state = context.read<AppState>();
-    final playable = context.watch<PlaybackController>();
-    final currentSongId = playable.state.song?.id;
+    // 播放层**只订阅它真正读到的两件** —— 当前曲目(给歌曲行高亮)与是否在播。
+    // 早先这里是整份 `watch<PlaybackController>()`:play/pause、切歌、缓冲翻转、
+    // 时长上报都会重建整屏,而音乐库是 `IndexedStack` **保活**的常驻 tab ——
+    // 用户停在首页时它照样在重建自己那棵(含离屏的四百多格专辑网格 delegate)。
+    // 动作那一侧(随机 / 播放全部)仍走 read:取值函数不进重建判定。
+    final playable = context.read<PlaybackController>();
+    final (currentSongId, playing) = context
+        .select<PlaybackController, (String?, bool)>(
+      (p) => (p.state.song?.id, p.state.playing),
+    );
     _deriveIfNeeded(view.library);
 
     return Scaffold(
@@ -139,7 +147,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   onChanged: (t) => setState(() => _tab = t),
                 ),
               ),
-              Expanded(child: _body(state, view, currentSongId, playable)),
+              Expanded(child: _body(state, view, currentSongId, playing, playable)),
             ],
           ),
           // 底部留白:内容要能滚到坞的上方,而不是被压在玻璃下面。
@@ -158,6 +166,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     AppState state,
     _LibraryView view,
     String? currentSongId,
+    bool playing,
     PlaybackController playable,
   ) {
     if (!view.hasServer) {
@@ -241,6 +250,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         LibraryTab.songs => _SongsTab(
             library: library,
             currentSongId: currentSongId,
+            playing: playing,
             playable: playable,
           ),
               LibraryTab.playlists => _PlaylistsTab(library: library),
@@ -528,11 +538,15 @@ class _SongsTab extends StatelessWidget {
   const _SongsTab({
     required this.library,
     required this.currentSongId,
+    required this.playing,
     required this.playable,
   });
 
   final LibrarySnapshot library;
   final String? currentSongId;
+
+  /// 当前这一首**在不在播** —— 由上面 select 出来传下来,这一栏不去订阅播放层。
+  final bool playing;
   final PlaybackController playable;
 
   @override
@@ -588,7 +602,7 @@ class _SongsTab extends StatelessWidget {
           return SongRow(
             song: song,
             coverUri: (id) => repo!.coverUri(id, size: 128),
-            playing: song.id == currentSongId && playable.state.playing,
+            playing: song.id == currentSongId && playing,
             onTap: () => playable.playAll(library.songs, index: index - 1),
           );
         },

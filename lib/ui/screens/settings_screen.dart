@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/media_cache.dart';
+import '../../data/server_config.dart';
 import '../../playback/quality.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
@@ -16,6 +18,22 @@ import 'config_export_sheet.dart';
 import 'cache_sheet.dart';
 import 'quality_sheet.dart';
 
+/// 这一屏真正订阅的那几件 `AppState` 数据。
+///
+/// **别换回 `watch<AppState>()`。** 下载进度最多每秒播报四次、缓存淘汰也会播报,
+/// 而它们一件都不在这张表里 —— 记录按**值**比较,于是那些通知到不了这一屏。
+/// 表里每一件都必须是 build 体(含它调用的私有方法)真正读到的,漏一件就是
+/// 那一件不再更新。**注意收的是「算好的标量」而不是那一整条列表**:
+/// 下载进度每跳一次都会换掉列表里的 job 对象,收 `downloads` 整条等于白收。
+typedef _SettingsView = ({
+  bool autoRoute,
+  bool backgroundPlay,
+  ServerConfig? server,
+  bool wifiOnlyDownload,
+  int downloadCount,
+  int activeDownloads,
+});
+
 /// 设置 —— 外观 / 播放 / 服务器 / 下载 / 隐私。
 ///
 /// 这里的每一个开关都**真的生效并落盘**,不做「点了变个样子」的假开关。
@@ -26,8 +44,19 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final quality = context.watch<QualityController>().value;
+    // 开关与跳转是动作,用取值函数(不参与重建判定)。
+    final state = context.read<AppState>();
+    final quality = context.select<QualityController, QualityOption>(
+      (c) => c.value,
+    );
+    final view = context.select<AppState, _SettingsView>((s) => (
+          autoRoute: s.autoRoute,
+          backgroundPlay: s.backgroundPlay,
+          server: s.server,
+          wifiOnlyDownload: s.wifiOnlyDownload,
+          downloadCount: s.downloads.length,
+          activeDownloads: s.activeDownloadCount,
+        ));
 
     return Scaffold(
       backgroundColor: context.nordic.bg,
@@ -41,7 +70,7 @@ class SettingsScreen extends StatelessWidget {
               title: '设置',
               subtitle: 'Nordic',
             ),
-            _ThemeSection(state: state),
+            const _ThemeSection(),
             const SectionHeader(title: '播放'),
             _Card(
               children: [
@@ -68,20 +97,20 @@ class SettingsScreen extends StatelessWidget {
                 _SettingRow(
                   icon: Icons.route_outlined,
                   title: '线路自动择优',
-                  subtitle: state.autoRoute ? '按延迟选择最快可用地址' : '每条线路要手动锁定',
+                  subtitle: view.autoRoute ? '按延迟选择最快可用地址' : '每条线路要手动锁定',
                   trailing: NordicSwitch(
-                    value: state.autoRoute,
+                    value: view.autoRoute,
                     onChanged: state.setAutoRoute,
                   ),
                 ),
                 _SettingRow(
                   icon: Icons.notifications_none,
                   title: '播放时后台运行',
-                  subtitle: state.backgroundPlay
+                  subtitle: view.backgroundPlay
                       ? '通知栏与锁屏可控制'
                       : '切到后台即暂停',
                   trailing: NordicSwitch(
-                    value: state.backgroundPlay,
+                    value: view.backgroundPlay,
                     onChanged: state.setBackgroundPlay,
                   ),
                 ),
@@ -92,11 +121,11 @@ class SettingsScreen extends StatelessWidget {
               children: [
                 _SettingRow(
                   icon: Icons.dns_outlined,
-                  title: state.server?.name ?? '还没有连接服务器',
-                  subtitle: state.server == null
+                  title: view.server?.name ?? '还没有连接服务器',
+                  subtitle: view.server == null
                       ? '填上地址、账号与密码就能开始'
-                      : '${state.server!.kind.label} · '
-                          '${state.server!.routes.length} 条线路',
+                      : '${view.server!.kind.label} · '
+                          '${view.server!.routes.length} 条线路',
                   // 右边明说点进去是什么。原先只有一颗箭头,而这一屏里
                   // 「服务器」到底是**改配置**还是**只看线路**说不清 ——
                   // 点进去能改的其实是账号 / 密码 / 地址那整张表单。
@@ -137,7 +166,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 // 只在真连着的时候出现。[_SettingRow] 没有禁用态,给一个
                 // `onTap: null` 的行既不置灰也不回弹,读起来就是个坏按钮。
-                if (state.server != null)
+                if (view.server != null)
                   _SettingRow(
                     icon: Icons.qr_code_2,
                     title: '导出配置',
@@ -149,17 +178,17 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
             const SectionHeader(title: '缓存'),
-            _CacheSection(state: state),
+            const _CacheSection(),
             const SectionHeader(title: '下载'),
             _Card(
               children: [
                 _SettingRow(
                   icon: Icons.download_outlined,
                   title: '下载管理',
-                  subtitle: state.downloads.isEmpty
+                  subtitle: view.downloadCount == 0
                       ? '队列是空的'
-                      : '${state.activeDownloadCount} 个进行中 · '
-                          '${state.downloads.length} 项',
+                      : '${view.activeDownloads} 个进行中 · '
+                          '${view.downloadCount} 项',
                   trailing: Icon(Icons.chevron_right,
                       size: 18, color: context.nordic.fg3),
                   onTap: () => AppRoutes.openDownloads(context),
@@ -167,9 +196,9 @@ class SettingsScreen extends StatelessWidget {
                 _SettingRow(
                   icon: Icons.wifi,
                   title: '仅 Wi-Fi 下载',
-                  subtitle: state.wifiOnlyDownload ? '流量下不缓存' : '流量下也会预取',
+                  subtitle: view.wifiOnlyDownload ? '流量下不缓存' : '流量下也会预取',
                   trailing: NordicSwitch(
-                    value: state.wifiOnlyDownload,
+                    value: view.wifiOnlyDownload,
                     onChanged: state.setWifiOnlyDownload,
                   ),
                 ),
@@ -205,14 +234,14 @@ class SettingsScreen extends StatelessWidget {
 /// 在 Nordic/Music 里看得见),缓存是**顺手留的**(上限一到就按最久没听淘汰)。
 /// 摆在一起会让人以为「清缓存」会连下载一起清掉 —— 不会。
 class _CacheSection extends StatelessWidget {
-  const _CacheSection({required this.state});
-
-  final AppState state;
+  const _CacheSection();
 
   @override
   Widget build(BuildContext context) {
-    final limit = state.cacheLimit;
-    final used = state.cacheUsedBytes;
+    // 自己 select 真正显示的两件,而不是接一份整个 `AppState` ——
+    // 下载进度与缓存播报到不了这一块(这一块只认上限与占用)。
+    final (limit, used) = context
+        .select<AppState, (CacheLimit, int)>((s) => (s.cacheLimit, s.cacheUsedBytes));
 
     return _Card(
       children: [
@@ -268,6 +297,7 @@ class _CacheSection extends StatelessWidget {
   /// 清缓存。**先问一句** —— 清掉的是「断网时还能听的那些」,
   /// 下次再听到是重新花流量拉一遍。
   Future<void> _clear(BuildContext context) async {
+    final state = context.read<AppState>();
     final messenger = ScaffoldMessenger.maybeOf(context);
     final confirmed = await showDialog<bool>(
       context: context,
@@ -306,14 +336,17 @@ class _CacheSection extends StatelessWidget {
 
 /// 外观:主题三档(跟随系统 / 深色 / 浅色)。
 class _ThemeSection extends StatelessWidget {
-  const _ThemeSection({required this.state});
-
-  final AppState state;
+  const _ThemeSection();
 
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    final current = NordicThemeMode.byName(state.themeModeName);
+    // 主题档位这一位**单独订阅**:换主题才重建这一块,别的通知(下载进度、
+    // 缓存淘汰)到不了这里。
+    final state = context.read<AppState>();
+    final current = NordicThemeMode.byName(
+      context.select<AppState, String?>((s) => s.themeModeName),
+    );
 
     return Column(
       children: [

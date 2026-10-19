@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nordic/data/download_manager.dart';
 import 'package:nordic/data/download_store.dart';
@@ -272,6 +273,64 @@ void main() {
     expect(find.text('连接服务器'), findsWidgets);
     expect(find.text('扫码同步'), findsWidgets);
     expect(tester.takeException(), isNull);
+  });
+
+  /// 从某个元素往上找**最近那层** `RenderRepaintBoundary`。
+  RenderRepaintBoundary? nearestBoundary(WidgetTester tester, Finder finder) {
+    RenderObject? ro = tester.renderObject(finder);
+    while (ro != null) {
+      if (ro is RenderRepaintBoundary) return ro;
+      ro = ro.parent;
+    }
+    return null;
+  }
+
+  /// [inner] 是不是长在 [outer] 底下(渲染树上)。
+  bool isBelow(RenderObject inner, RenderObject outer) {
+    RenderObject? ro = inner;
+    while (ro != null) {
+      if (identical(ro, outer)) return true;
+      ro = ro.parent;
+    }
+    return false;
+  }
+
+  /// **重绘范围**(不是重建范围)。
+  ///
+  /// 「正在播放」那张卡挂在 `SliverToBoxAdapter` 上,而那个位置**不带**重绘
+  /// 边界 —— sliver 默认发的边界只给 `SliverList` / `SliverGrid` 的子项。
+  /// 于是卡上那笔 44px 模糊投影、两层渐变、以及里面那张 38px 投影的封面,
+  /// 会**跟着每一次上下滚动重画一遍**。位置那条文字更要紧:它每秒变好几次,
+  /// 不单独隔开就把整张卡拖着一起重绘。
+  ///
+  /// 判据用**渲染树**:从锚点往上找最近那层 `RenderRepaintBoundary`,它必须
+  /// (1) 存在、(2) 长在**滚动视图里面**(在 `RenderViewport` 之下)。少了那一层,
+  /// 最近的重绘边界就跑到滚动视图外面去了 —— 断言当场变红。
+  testWidgets('首页：播放卡与它那条位置文字各自垫了重绘边界', (tester) async {
+    await loadLibrary(tester);
+    await pumpHome(tester);
+    await tester.tap(find.text('随机播放'));
+    await tester.pump();
+    await tester.pump();
+
+    // 卡片本体拿「上一首」那颗键当锚(它在不在播都一样在)。
+    final cardBoundary =
+        nearestBoundary(tester, find.byIcon(Icons.skip_previous));
+    final positionBoundary =
+        nearestBoundary(tester, find.textContaining(' / '));
+
+    expect(cardBoundary, isNotNull,
+        reason: '那张卡要有一层自己的重绘边界，否则滚动时每帧重画那笔模糊投影');
+    expect(positionBoundary, isNotNull, reason: '位置文字要有一层自己的重绘边界');
+    expect(identical(positionBoundary, cardBoundary), isFalse,
+        reason: '位置文字不能与卡片共用一层 —— 共用就等于没隔，'
+            '位置每跳一次还是会把整张卡重绘一遍');
+
+    final viewport = tester.renderObject(find.byType(Viewport).first);
+    expect(isBelow(cardBoundary!, viewport), isTrue,
+        reason: '卡片那层重绘边界要长在滚动内容里面');
+    expect(isBelow(positionBoundary!, viewport), isTrue,
+        reason: '位置文字那层重绘边界要长在滚动内容里面');
   });
 
   testWidgets('还没在播时给一颗「随机播放」，按下去就开播', (tester) async {

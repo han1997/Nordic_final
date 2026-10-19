@@ -132,8 +132,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
       return const EmptyState(title: '这张专辑已经不在库里了');
     }
 
-    final playable = context.watch<PlaybackController>();
-    final currentId = playable.state.song?.id;
+    // 同 [LibraryScreen]:只订阅高亮要的两件,动作走 read。
+    final playable = context.read<PlaybackController>();
+    final (currentId, playing) = context
+        .select<PlaybackController, (String?, bool)>(
+      (p) => (p.state.song?.id, p.state.playing),
+    );
 
     // 服务器报的整张首数 vs 我们实际拿到的条数。
     final missing = album.songCount - _songs.length;
@@ -169,7 +173,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             itemBuilder: (context, i) => TrackRow(
               song: _songs[i],
               trackNumber: _songs[i].track ?? i + 1,
-              playing: _songs[i].id == currentId && playable.state.playing,
+              playing: _songs[i].id == currentId && playing,
               onTap: () => playable.playAll(_songs, index: i),
             ),
           ),

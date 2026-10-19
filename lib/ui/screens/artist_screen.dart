@@ -118,8 +118,12 @@ class _ArtistScreenState extends State<ArtistScreen> {
       return const EmptyState(title: '这位艺人已经不在库里了');
     }
 
-    final playable = context.watch<PlaybackController>();
-    final currentId = playable.state.song?.id;
+    // 同 [LibraryScreen]:只订阅高亮要的两件,动作走 read。
+    final playable = context.read<PlaybackController>();
+    final (currentId, playing) = context
+        .select<PlaybackController, (String?, bool)>(
+      (p) => (p.state.song?.id, p.state.playing),
+    );
     // 订阅的只有「仓库」这一件(拼封面地址用);动作(收藏、下载)走取值函数,
     // 下载进度与缓存淘汰于是不会把这一屏拖着重建。
     final repo = context.select<AppState, MusicSource?>(
@@ -167,7 +171,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
             itemBuilder: (context, i) => TrackRow(
               song: _topSongs[i],
               // 「热门」按播放量排,序数没有意义,所以不排曲序。
-              playing: _topSongs[i].id == currentId && playable.state.playing,
+              playing: _topSongs[i].id == currentId && playing,
               onTap: () => playable.playAll(_topSongs, index: i),
               trailing: IconButtonRound(
                 icon: Icons.more_horiz,

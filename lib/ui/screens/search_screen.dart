@@ -213,8 +213,13 @@ class _SearchScreenState extends State<SearchScreen> {
     bool show(SearchScope scope) =>
         _scope == SearchScope.all || _scope == scope;
 
-    final playable = context.watch<PlaybackController>();
-    final currentId = playable.state.song?.id;
+    // 只订阅真正读到的两件(命中行高亮);动作(播放全部)走 read ——
+    // 整份 watch 会让 play/pause、切歌、时长上报都重建整片结果。
+    final playable = context.read<PlaybackController>();
+    final (currentId, playing) = context
+        .select<PlaybackController, (String?, bool)>(
+      (p) => (p.state.song?.id, p.state.playing),
+    );
     final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
@@ -237,7 +242,7 @@ class _SearchScreenState extends State<SearchScreen> {
             itemBuilder: (context, i) => SongRow(
               song: _hits.songs[i],
               coverUri: (id) => repo!.coverUri(id, size: 128),
-              playing: _hits.songs[i].id == currentId && playable.state.playing,
+              playing: _hits.songs[i].id == currentId && playing,
               onTap: () => playable.playAll(_hits.songs, index: i),
             ),
           ),

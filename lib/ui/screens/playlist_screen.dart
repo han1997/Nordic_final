@@ -129,8 +129,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
-    final playable = context.watch<PlaybackController>();
-    final currentId = playable.state.song?.id;
+    // 同 [LibraryScreen]:只订阅高亮要的两件,动作走 read。
+    final playable = context.read<PlaybackController>();
+    final (currentId, playing) = context
+        .select<PlaybackController, (String?, bool)>(
+      (p) => (p.state.song?.id, p.state.playing),
+    );
 
     // sliver 铺法 —— 与专辑页同一条家法:曲目多的时候(几百首的歌单)
     // 一次全建出来要好几帧,而且每次播放状态 / 应用状态一变就重来一遍。
@@ -256,7 +260,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             itemBuilder: (context, i) => SongRow(
               song: _songs[i],
               coverUri: (id) => _coverUri(repo, id, size: 128),
-              playing: _songs[i].id == currentId && playable.state.playing,
+              playing: _songs[i].id == currentId && playing,
               onTap: () => playable.playAll(_songs, index: i),
               trailing: playlist.readonly
                   ? null

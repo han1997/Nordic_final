@@ -244,11 +244,13 @@ class _HomeAmbient extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final song = context.watch<PlaybackController>().state.song;
+    // **只订阅「当前是哪个封面」这一件**:氛围配色只跟 albumId 走,
+    // 而 play/pause、时长上报、循环 / 随机翻转都不该让它重建。
+    final albumId = context.select<PlaybackController, String?>(
+      (p) => p.state.song?.albumId,
+    );
     return NordicAmbient(
-      accent: song == null
-          ? context.accent
-          : NordicAccent.derived(song.albumId),
+      accent: albumId == null ? context.accent : NordicAccent.derived(albumId),
     );
   }
 }
@@ -355,7 +357,13 @@ class _NowPlayingCard extends StatelessWidget {
       child: Pressable(
         onTap: () => AppRoutes.openPlayer(context),
         scale: 0.98,
-        child: Container(
+        // **隔一层重绘边界**:这张卡有 44px 的模糊投影、两层渐变,外加里面那张
+        // 38px 投影的封面 —— 而它挂在 `SliverToBoxAdapter` 上,那个位置**不带**
+        // 重绘边界(sliver 的默认边界只发给 `SliverList` / `SliverGrid` 的子项),
+        // 于是首页上下滑动时这几笔每帧重画一遍。隔开之后滑过去只是搬一层已经
+        // 光栅化好的图层;按下缩一下那 0.98 也只作用在这一层上。
+        child: RepaintBoundary(
+          child: Container(
           padding: const EdgeInsets.all(NordicSpace.s4),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(NordicRadius.xl),
@@ -439,17 +447,20 @@ class _NowPlayingCard extends StatelessWidget {
                               ?.copyWith(color: t.fg2),
                         ),
                         const SizedBox(height: 8),
-                        // 位置单独订阅 —— 位置每秒变好几次,不该把整页货架
-                        // 一起拉进重建名单。
+                        // 位置**既单独订阅、也单独隔一层重绘边界**:位置每秒变
+                        // 好几次,而它上面那张卡带着 44px 的模糊投影 —— 不隔开的话,
+                        // 每跳一次数字就把整张卡(含投影)重绘一遍。
                         ValueListenableBuilder<Duration>(
                           valueListenable: playable.position,
-                          builder: (context, position, _) => Text(
-                            '${formatDuration(position)} / '
-                            '${formatDuration(playable.state.duration)}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(color: t.fg3),
+                          builder: (context, position, _) => RepaintBoundary(
+                            child: Text(
+                              '${formatDuration(position)} / '
+                              '${formatDuration(playable.state.duration)}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(color: t.fg3),
+                            ),
                           ),
                         ),
                       ],
@@ -490,6 +501,7 @@ class _NowPlayingCard extends StatelessWidget {
                 ],
               ),
             ],
+          ),
           ),
         ),
       ),

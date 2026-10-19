@@ -51,8 +51,12 @@ class BottomStack extends StatelessWidget {
   Widget build(BuildContext context) {
     // 不看坞的时候**不去问播放层** —— 短路的写法让这一片在「没有播放层」
     // 的树里也能立起来(测试里就是这么用的)。
-    final docked =
-        showDock && context.watch<PlaybackController?>()?.state.song != null;
+    // **只订阅「有没有在放的那一首」这一个 bool**:任何别的播放状态通知(时长上报、
+    // 循环 / 随机翻转)都不该把整条托盘(含那片 `BackdropFilter` 玻璃)重建一遍。
+    final docked = showDock &&
+        context.select<PlaybackController?, bool>(
+          (p) => p?.state.song != null,
+        );
 
     return Positioned(
       left: 0,
@@ -97,11 +101,17 @@ class _PlayerDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    // 必须 watch **这一份**:它是 ChangeNotifierProvider,播放状态一变就重建。
-    // (早先这里查过一份可空的注册,那份是普通 Provider,不监听通知 ——
-    //  坞于是永远停在「还没开始播」的样子,放起歌来也不出现。)
-    final playback = context.watch<PlaybackController>();
-    final song = playback.state.song;
+    // **只订阅它真正读到的两件**:当前这一首(封面 / 名字 / 艺人)与是否在播。
+    // 早先这里是整份 `watch<PlaybackController>()` —— play/pause、时长上报、
+    // 循环 / 随机翻转、缓冲状态翻转都会把这条坞重建一遍,而坞是**每个 tab 都在**
+    // 的常驻件(`state.song` 与 `playing` 的两条流之外,那些通知到不了这里:
+    // 记录按值比较,而 `copyWith` 不会换掉 song 那个引用)。
+    // 按钮那一侧(播放 / 暂停、下一首)走 read。
+    final playback = context.read<PlaybackController>();
+    final (song, playing) = context
+        .select<PlaybackController, (Song?, bool)>(
+      (p) => (p.state.song, p.state.playing),
+    );
     // 还没放过任何东西时不占位 —— 空坞是一块没有意义的玻璃。
     if (song == null) return const SizedBox.shrink();
 
@@ -112,8 +122,6 @@ class _PlayerDock extends StatelessWidget {
     final repo = context.select<AppState, MusicSource?>(
       (s) => s.repository,
     );
-
-    final playing = playback.state.playing;
 
     // 整条坞按下去**亮一层底色**,与所有列表行同一套(`pressedDecoration`)。
     // 原先这里是裸 `GestureDetector`:按下去屏幕上什么都不动 —— 而坞是一整条
