@@ -1474,11 +1474,14 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   line-height: 1.4;
   color: var(--fg-4);
   transition: color 0.35s var(--ease);
-  /* 每一句都是跳转落点(见 screenLyrics)。按下时压一下 —— 没有这一下,
-     「点了半句没反应」时用户分不出是没点中还是播放器没动。 */
+  /* 每一句都是跳转落点(见 screenLyrics)。行内是「文字 + 行尾那颗胶囊」,
+     所以这一行自己是一根横排:文字用 .txt 撑开,胶囊按内容宽。 */
+  display: flex; align-items: center; gap: var(--s2);
+  /* 按下时压一下 —— 没有这一下,「点了半句没反应」时用户分不出是没点中还是播放器没动。 */
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
+.lyric-line .txt { flex: 1 1 auto; }
 .lyric-line:active { opacity: 0.6; }
 .lyric-line.on {
   color: var(--fg);
@@ -1498,6 +1501,26 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   border-radius: var(--r-full);
   background: var(--accent);
   box-shadow: 0 0 12px var(--accent);
+}
+/* 点中的那一句(还差一下才跳):文字提一档亮度,行尾浮出那颗胶囊。
+   提一档是为了跟「正在唱的那一句」(.on,最亮)分得开 —— 两件事不能长得一样。 */
+.lyric-line.sel { color: var(--fg-2); }
+/* 一行右缘只放一个东西:选中了就让辉光给胶囊腾地方。 */
+.lyric-line.sel::after { display: none; }
+/* 行尾那颗「跳到这句 · 2:30」:点第二下之前先让人知道**要去哪儿**,
+   顺带就是「这一句已经选上了」的凭据。
+   高 26px 必须 ≤ 文字盒高(22 × 1.4 ≈ 30.8)—— 再高一点,选中一下就把整列往下推。 */
+.jump-chip {
+  flex: 0 0 auto;
+  height: 26px;
+  display: inline-flex; align-items: center;
+  padding: 0 var(--s2);
+  border-radius: var(--r-full);
+  background: var(--fill-3);
+  color: var(--fg-2);
+  font-size: 12px; font-weight: 620; letter-spacing: 0;
+  white-space: nowrap;
+  text-shadow: none;
 }
 
 /* ============================================================

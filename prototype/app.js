@@ -247,6 +247,10 @@ const STATE = {
      看起来像是「每首歌都恰好停在 38%」;按秒存则换算出来是新歌自己的位置。 */
   playing: true,
   elapsed: 83,
+  /* 歌词页**待跳转的那一句**。点第一下只选中(行尾浮出「跳到这句 · 2:30」),
+     同一句再点一下才真跳 —— 跳转不可逆,手一滑就跳走、还回不到原来那句。
+     -1 = 没选中。这一层确认只在**这一趟**里算数:离开歌词页(go / back)与换歌都清掉。 */
+  pendingLine: -1,
   /* 搜索页与添加服务器页的实时状态 —— 输入框、分段选中都要有反馈 */
   query: '程响',
   scope: 'all',
@@ -1600,10 +1604,12 @@ function screenLyrics() {
   /* 歌词随整首歌的进度同步推进:播到哪儿,高亮就挪到哪儿。
      activeIx 用秒的占比取整 —— 等价于切歌时高亮回到第一行,而不需要单独的状态。 */
   const activeIx = Math.min(LYRICS.length - 1, Math.floor((elapsed / s.dur) * LYRICS.length));
-  /* 每一句都是**跳转落点**:点某一句就跳到那一段(见 click 里那个 data-seek-line
-     分支)。原型这套歌词没有时间轴,落点只能按整首摊行反推 —— 取**那一行的
-     中段**而不是起点:高亮用的是 floor(比例 × 行数),起点在浮点误差下会退到
-     上一行(点第三句、高亮停第二句)。 */
+  /* 每一句都是**跳转落点**,但要**两下**才算数:第一下只选中(见 STATE.pendingLine),
+     同一句再点一下才跳。落点仍是那一行的**中段**而不是起点 —— 高亮用的是
+     floor(比例 × 行数),起点在浮点误差下会退到上一行(点第三句、高亮停第二句)。
+     胶囊里报的就是这个落点:点第二下之前,先让人知道要去哪儿。 */
+  const targetOf = (i) => ((i + 0.5) / LYRICS.length) * s.dur;
+  const rowTitle = (i) => (i === STATE.pendingLine ? '再点一下就跳到这一句' : '点一下选中这一句');
   return `${ambient(a)}
     <div class="appbar nav">
       <button class="icon-btn" data-back>${ic('back', 22)}</button>
@@ -1612,12 +1618,13 @@ function screenLyrics() {
       <span class="spacer"></span>
       <button class="icon-btn quiet" data-menu-for="song">${ic('more', 20)}</button>
     </div>
-    <!-- 点某一句 = 跳到那一段;点**行以外的空白**(上下各 30% 的内边距)回封面 ——
-         与「点封面看歌词」互为来路,进出都不必去够返回键。两条都留着:
-         只剩返回键的话,歌词页就成了唯一一屏进得去出不来靠顶栏的地方。
+    <!-- 点某一句 = **选中**它(行尾浮出那颗「跳到这句 · 2:30」);同一句再点一下才真的
+         跳到那一段 —— 两下才跳,见 STATE.pendingLine。点**行以外的空白**(上下各 30%
+         的内边距)回封面 —— 与「点封面看歌词」互为来路,进出都不必去够返回键。
+         两条都留着:只剩返回键的话,歌词页就成了唯一一屏进得去出不来靠顶栏的地方。
          拖动滚动不会触发 click,所以翻歌词不会误退、也不会误跳。 -->
-    <div class="lyrics" data-go="player" role="button" title="点某一句跳到那一段,点空白回到封面">
-      ${LYRICS.map((l, i) => `<div class="lyric-line ${i === activeIx ? 'on' : i < activeIx ? 'past' : ''}" data-seek-line="${i}" role="button" title="跳到这一句">${l}</div>`).join('')}
+    <div class="lyrics" data-go="player" role="button" title="点一下选中,再点跳到这一句;点空白回到封面">
+      ${LYRICS.map((l, i) => `<div class="lyric-line ${i === activeIx ? 'on' : i < activeIx ? 'past' : ''}${i === STATE.pendingLine ? ' sel' : ''}" data-seek-line="${i}" role="button" title="${rowTitle(i)}"><span class="txt">${l}</span>${i === STATE.pendingLine ? `<span class="jump-chip">跳到这句 · ${mmss(targetOf(i))}</span>` : ''}</div>`).join('')}
     </div>
     ${scrubBar(s, elapsed)}
     ${mediaControls()}`;
@@ -1964,7 +1971,7 @@ const BOARD = [
   ['转码质量',        '四档位，含说明',       () => shell(screenPlayer() + sheetQuality(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['播放队列',        '队列管理',             () => shell(screenPlayer() + sheetQueue(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['线路切换',        '播放中改线路',         () => shell(screenPlayer() + sheetRoutes(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
-  ['歌词',            '逐句高亮',             () => shell(screenLyrics(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
+  ['歌词',            '逐句高亮 · 两下才跳', () => shell(screenLyrics(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['搜索',            '输入即筛选',           () => shell(screenSearch())],
   ['设置',            '播放 / 服务器 / 隐私', () => shell(screenSettings())],
   /* 这三张是新增的整屏功能页,设计板一并铺出来 —— 它们不再是 toast,
@@ -2134,6 +2141,9 @@ function renderStage(root) {
     STATE.view = name;
     STATE.params = params || {};
     STATE.overlay = '';
+    /* 歌词那层「待跳转」只在一趟里算数 —— 离开这一屏(含从别处再进来)就清掉,
+       免得回来时行尾还挂着一颗上一趟留下的胶囊。 */
+    if (name !== 'lyrics') STATE.pendingLine = -1;
     render(morph, navKind(nav, name, leaving));
   };
 
@@ -2148,6 +2158,7 @@ function renderStage(root) {
       STATE.params = { lib: 'songs' };
     }
     STATE.overlay = '';
+    STATE.pendingLine = -1;
     render(true, navKind('back', STATE.view, leaving));
   };
 
@@ -2269,6 +2280,8 @@ function renderStage(root) {
            原进度超过新歌长度的话，夹回去，免得一进去就显示成"已放完"。 */
         STATE.songId = d.song;
         STATE.elapsed = Math.min(STATE.elapsed, currentSong().dur - 1);
+        /* 换歌了,上一首选中的那一句不算数(行号也会对不上)。 */
+        STATE.pendingLine = -1;
         STATE.playing = true;
         return go('player');
       }
@@ -2317,13 +2330,17 @@ function renderStage(root) {
         STATE.overlay = '';
         return render();
       }
-      /* 点某一句歌词 → 跳到那一段。落点与高亮同一套规则(见 screenLyrics):
-         没有时间轴,按整首摊行取那一行的**中段** —— 取起点会在浮点误差下
-         退到上一行。唱到一半点一句,应该落在这一句上,不该「点了没反应」。 */
+      /* 点某一句歌词:**两下**才算跳。第一下只选中(行尾浮出「跳到这句 · 2:30」),
+         同一句再点一下才落下去;点别的句子只是改选,不跳 —— 跳转不可逆,
+         手一滑就跳到别处、原来那句还回不去,所以先让人确认一次。
+         落点与高亮同一套规则(见 screenLyrics):没有时间轴,按整首摊行取那一行的
+         **中段** —— 取起点会在浮点误差下退到上一行。 */
       if (d.seekLine !== undefined) {
         const i = Number(d.seekLine);
         const lines = LYRICS.length;
         if (!lines || !currentSong().dur) return;
+        if (STATE.pendingLine !== i) { STATE.pendingLine = i; return render(); }
+        STATE.pendingLine = -1;
         STATE.elapsed = Math.round(((i + 0.5) / lines) * currentSong().dur);
         return render();
       }

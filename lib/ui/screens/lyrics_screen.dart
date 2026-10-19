@@ -11,18 +11,22 @@ import '../../theme/tokens.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/playback_controls.dart';
+import '../widgets/rows.dart';
 import '../widgets/states.dart';
 import 'song_menu_sheet.dart';
 
-/// 歌词页 —— 逐句高亮,带时间轴时跟真实进度走;点某一句跳到那一段。
+/// 歌词页 —— 逐句高亮,带时间轴时跟真实进度走;**点两句才跳**。
 ///
 /// 关键区别:服务器给的若是**带时间轴**的结构化歌词(Navidrome 的
 /// `getLyricsBySongId` 会给),高亮就落在当前时间该唱的那一句上;
 /// 只有纯文本时退回「按行数平均分布」,并在页面上**说明这一点** ——
 /// 假装时间已知会让高亮乱跳,用户会以为是坏了。
 ///
-/// 点了某一句就跳到那一段([seekTargetForLine])—— 两句之间的空白仍是「回封面」:
-/// 与「点封面看歌词」互为来路的那一条不能丢,否则这一屏进出就只剩顶栏了。
+/// 跳转要**两下**:第一下只把那一句选中(行尾浮出「跳到这句 · 2:30」),
+/// 同一句再点一下才落到那一段([seekTargetForLine])—— 跳转不可逆,手一滑就跳到
+/// 别处、还回不到刚才在听的地方,所以先让人确认一次。点别的句子只是改选;
+/// 两句之间的空白仍是「回封面」:与「点封面看歌词」互为来路的那一条不能丢,
+/// 否则这一屏进出就只剩顶栏了。
 class LyricsScreen extends StatefulWidget {
   const LyricsScreen({super.key});
 
@@ -44,6 +48,15 @@ class _LyricsScreenState extends State<LyricsScreen> {
   /// 260ms 的动画里 —— 真机上「跳转动画一顿一顿」多半就是这几帧。
   /// 每行自己订它、自己决定要不要重建(见 [_LyricLine]):换一行只有两行会动。
   final _activeLine = ValueNotifier<int>(-1);
+
+  /// 点中、还差一下才跳的那一行 —— 也是**不进 state**。
+  ///
+  /// 同一个理由(见 [_activeLine]):选中一行真正变的只有两行(原来选中的那行、
+  /// 新选中的那行),走整屏 `setState` 就是把顶栏 + 上百行歌词 + 满屏氛围重建一次,
+  /// 而这次改动几乎一定会被**点两下**。每行自己订它、自己决定要不要重建。
+  ///
+  /// -1 = 没选中。换歌 / 歌词重载时清掉 —— 行号对不上,留着就是指着别人。
+  final _pendingLine = ValueNotifier<int>(-1);
 
   /// 已经排进帧后回调的那一行。同一行只排一次 —— 排重了就是好几个
   /// `ensureVisible` 同时开跑、互相打断,那也读作「卡」。
@@ -142,6 +155,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
   void dispose() {
     _playback?.position.removeListener(_onPosition);
     _activeLine.dispose();
+    _pendingLine.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -153,6 +167,8 @@ class _LyricsScreenState extends State<LyricsScreen> {
       _loadedForSongId = songId;
       _lyrics = Lyrics.empty;
       _activeLine.value = -1;
+      // 换歌 / 重载:上一首选中的那一句不算数(行号也对不上)。
+      _pendingLine.value = -1;
     });
 
     final lyrics = await context.read<AppState>().lyricsFor(songId);
@@ -171,10 +187,23 @@ class _LyricsScreenState extends State<LyricsScreen> {
     _scheduleScroll(_activeLine.value);
   }
 
-  /// 点某一句 → 跳到那一段。
-  void _seekToLine(int index) {
+  /// 点某一句 —— **两下才算跳**。
+  ///
+  /// 第一下只选中(行尾浮出「跳到这句 · 2:30」),同一句再点一下才落到那一段;
+  /// 点别的句子只是改选,不跳。跳转不可逆,手一滑就跳到别处、还回不到刚才在听的
+  /// 地方,所以先让人确认一次 —— 而确认要报出**要去哪儿**(胶囊里那个时间),
+  /// 否则「确认」只是个多余的点击。
+  ///
+  /// 跳不到的行([seekTargetForLine] 返回 null)连选中都不给:跳不了的地方
+  /// 不该装成跳了,也不该让那一行看起来「选中了却按不动」。
+  void _onLineTap(int index) {
     final target = seekTargetForLine(_lyrics, index, duration: _duration);
     if (target == null) return;
+    if (_pendingLine.value != index) {
+      _pendingLine.value = index;
+      return;
+    }
+    _pendingLine.value = -1;
     _playback?.seek(target);
   }
 
@@ -271,7 +300,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
       );
     }
 
-    // 点**某一句**跳到那一段,点**行以外的空白**(上下那一大截内边距)回封面 ——
+    // 点**某一句**两下跳到那一段,点**行以外的空白**(上下那一大截内边距)回封面 ——
     // 与播放页「点封面看歌词」互为来路,两条都留着。拖动滚动不会触发点击手势,
     // 所以翻歌词不会误退、也不会误跳。
     return Column(
@@ -297,10 +326,12 @@ class _LyricsScreenState extends State<LyricsScreen> {
               },
               child: _LyricsList(
                 lyrics: _lyrics,
+                duration: _duration,
                 activeLine: _activeLine,
+                pendingLine: _pendingLine,
                 controller: _scrollController,
                 lineKeys: _lineKeys,
-                onLineTap: _seekToLine,
+                onLineTap: _onLineTap,
               ),
             ),
           ),
@@ -349,7 +380,9 @@ class _LyricsScreenState extends State<LyricsScreen> {
 class _LyricsList extends StatelessWidget {
   const _LyricsList({
     required this.lyrics,
+    required this.duration,
     required this.activeLine,
+    required this.pendingLine,
     required this.controller,
     required this.lineKeys,
     required this.onLineTap,
@@ -357,16 +390,23 @@ class _LyricsList extends StatelessWidget {
 
   final Lyrics lyrics;
 
+  /// 没时间轴的歌词按它摊行 —— 也是「点这一句跳到哪儿」的依据(见
+  /// [seekTargetForLine])。行尾那枚胶囊报的就是这个落点,所以逐行算一份。
+  final Duration duration;
+
   /// 当前高亮行。**传的是通道不是值**:换一行只有那两行自己重建,
   /// 这一整列(含上百行)不跟着重来。
   final ValueListenable<int> activeLine;
+
+  /// 点中、还差一下才跳的那一行。同样是通道(见 [activeLine])。
+  final ValueListenable<int> pendingLine;
 
   final ScrollController controller;
 
   /// 与 [lyrics] 逐行对应 —— 外层靠它把高亮句滚到中间。
   final List<GlobalKey> lineKeys;
 
-  /// 点某一句 → 跳到那一段。
+  /// 点某一句 → 选中 / 再点一下跳过去(两段式判断留在 [_LyricsScreenState])。
   final ValueChanged<int> onLineTap;
 
   @override
@@ -410,6 +450,10 @@ class _LyricsList extends StatelessWidget {
                   line: lyrics.lines[i],
                   index: i,
                   activeLine: activeLine,
+                  pendingLine: pendingLine,
+                  // 落点在这里算一次、随行传下去:胶囊要报「跳到哪儿」,
+                  // 而这一列只在整屏重建时才重算(不是每次点)。
+                  target: seekTargetForLine(lyrics, i, duration: duration),
                   onTap: () => onLineTap(i),
                 ),
               ),
@@ -524,6 +568,8 @@ class _LyricLine extends StatefulWidget {
     required this.line,
     required this.index,
     required this.activeLine,
+    required this.pendingLine,
+    required this.target,
     required this.onTap,
   });
 
@@ -531,7 +577,14 @@ class _LyricLine extends StatefulWidget {
   final int index;
   final ValueListenable<int> activeLine;
 
-  /// 点这一句 → 跳到那一段。
+  /// 点中、还差一下才跳的那一行(见 [_LyricsScreenState._pendingLine])。
+  final ValueListenable<int> pendingLine;
+
+  /// 点这一句会跳到哪儿。null = 跳不到(混合时间轴缺 `start`、或连时长都不知道),
+  /// 那一行就既不显示胶囊、也不接这一下点击。
+  final Duration? target;
+
+  /// 点这一句 → 选中 / 再点一下跳过去。
   final VoidCallback onTap;
 
   @override
@@ -540,6 +593,7 @@ class _LyricLine extends StatefulWidget {
 
 class _LyricLineState extends State<_LyricLine> {
   late _LineState _state;
+  bool _selected = false;
   bool _pressed = false;
 
   _LineState _stateFor(int active) => widget.index == active
@@ -548,28 +602,37 @@ class _LyricLineState extends State<_LyricLine> {
           ? _LineState.past
           : _LineState.upcoming;
 
+  bool _selectedFor(int pending) =>
+      widget.target != null && widget.index == pending;
+
   @override
   void initState() {
     super.initState();
     _state = _stateFor(widget.activeLine.value);
+    _selected = _selectedFor(widget.pendingLine.value);
     widget.activeLine.addListener(_onActiveChanged);
+    widget.pendingLine.addListener(_onPendingChanged);
   }
 
   @override
   void didUpdateWidget(_LyricLine old) {
     super.didUpdateWidget(old);
-    if (identical(old.activeLine, widget.activeLine) &&
-        old.index == widget.index) {
-      return;
+    if (!identical(old.activeLine, widget.activeLine)) {
+      old.activeLine.removeListener(_onActiveChanged);
+      widget.activeLine.addListener(_onActiveChanged);
     }
-    old.activeLine.removeListener(_onActiveChanged);
-    widget.activeLine.addListener(_onActiveChanged);
+    if (!identical(old.pendingLine, widget.pendingLine)) {
+      old.pendingLine.removeListener(_onPendingChanged);
+      widget.pendingLine.addListener(_onPendingChanged);
+    }
     _state = _stateFor(widget.activeLine.value);
+    _selected = _selectedFor(widget.pendingLine.value);
   }
 
   @override
   void dispose() {
     widget.activeLine.removeListener(_onActiveChanged);
+    widget.pendingLine.removeListener(_onPendingChanged);
     super.dispose();
   }
 
@@ -580,17 +643,30 @@ class _LyricLineState extends State<_LyricLine> {
     setState(() => _state = next);
   }
 
+  void _onPendingChanged() {
+    final next = _selectedFor(widget.pendingLine.value);
+    // 同上:点一下真正变的只有「原来选中的那行」与「新选中的那行」。
+    if (next == _selected || !mounted) return;
+    setState(() => _selected = next);
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
     final accent = context.accent.accent;
     final state = _state;
+    final selected = _selected;
+    final target = widget.target;
 
-    final color = switch (state) {
-      _LineState.active => t.fg,
-      _LineState.past => t.fg4.withValues(alpha: t.fg4.a * 0.6),
-      _LineState.upcoming => t.fg4,
-    };
+    // 选中那一行**提一档亮度**:要跟「正在唱的那一句」(最亮)分得开 ——
+    // 那是两件事,不能长得一样。
+    final color = selected
+        ? t.fg2
+        : switch (state) {
+            _LineState.active => t.fg,
+            _LineState.past => t.fg4.withValues(alpha: t.fg4.a * 0.6),
+            _LineState.upcoming => t.fg4,
+          };
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -629,9 +705,10 @@ class _LyricLineState extends State<_LyricLine> {
               children: [
                 Expanded(child: Text(widget.line.text)),
                 // 高亮句右缘那一撮辉光 —— 给当前行一个「正在被读到」的方向感。
+                // 选中时让它让位:一行的右缘只放一个东西。
                 AnimatedOpacity(
                   duration: const Duration(milliseconds: 350),
-                  opacity: state == _LineState.active ? 1 : 0,
+                  opacity: state == _LineState.active && !selected ? 1 : 0,
                   child: Container(
                     width: 3,
                     height: 22,
@@ -645,9 +722,38 @@ class _LyricLineState extends State<_LyricLine> {
                     ),
                   ),
                 ),
+                // 还差一下才跳的那一句:行尾一枚小胶囊,报出**要跳到哪儿**。
+                if (selected && target != null) _jumpChip(t, target),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 「跳到这句 · 2:30」那枚胶囊。
+  ///
+  /// **高 26 必须 ≤ 文字盒高**(22 × 1.4 ≈ 30.8):再高一点,选中一下就把整行
+  /// 顶高、整列跟着往下推 —— 点一句歌词不该让歌词挪位。
+  ///
+  /// 也不复用 `PillButton`:那个固定 36px 高,塞进来就是同一个问题。
+  Widget _jumpChip(NordicTokens t, Duration target) {
+    return Container(
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s2),
+      decoration: BoxDecoration(
+        color: t.fill3,
+        borderRadius: BorderRadius.circular(NordicRadius.full),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '跳到这句 · ${formatDuration(target)}',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+          color: t.fg2,
         ),
       ),
     );

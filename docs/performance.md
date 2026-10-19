@@ -127,6 +127,11 @@
   `ListView(children:)` **也是懒的**(`SliverChildListDelegate` 只给视口附近建 Element),
   想用无限缓存区把它逼出来也不行:`ScrollCacheExtent.pixels(double.infinity)` 会让
   视口的语义矩形变成非有限值,框架直接断言。
+- **歌词「点两句才跳」里那层选中态也走 `ValueNotifier`**(`_pendingLine`),不进 `setState`
+  —— 与高亮同一套理由(见上一条):选中一行真正变的只有两行,而这次改动的动作本身
+  就是「点一下、再点一下」。顺带两条硬约束:**行尾那枚胶囊高 26px 必须 ≤ 文字盒高
+  (22 × 1.4 ≈ 30.8)**,否则选中一下就把整行顶高、整列往下推(用例量着行高);
+  胶囊不许复用 `PillButton`(固定 36px 高,正是这个坑)。
 - **弹层一律走 `showNordicSheet`**(`components.dart`),别直接调
   `showModalBottomSheet` —— 它替掉的两处默认值各修一个真机问题:
   框架默认那层 `Colors.black54` 会与 `NordicScrim` 叠成**两层黑**(而且纯黑不模糊);
