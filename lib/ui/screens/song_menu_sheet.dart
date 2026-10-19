@@ -12,6 +12,7 @@ import 'playlist_picker_sheet.dart';
 import 'quality_sheet.dart';
 import 'queue_sheet.dart';
 import 'routes_sheet.dart';
+import 'song_info_sheet.dart';
 
 /// 歌曲的「⋯」背后那张纸 —— 播放页 / 艺人页 / 歌单页 / 歌词页共用一份。
 ///
@@ -128,6 +129,14 @@ Future<void> showSongMenu(
                 onTap: () {
                   close();
                   showQualitySheet(context);
+                },
+              ),
+              NordicMenuRow(
+                icon: Icons.info_outline,
+                label: '歌曲信息',
+                onTap: () {
+                  close();
+                  showSongInfoSheet(context, song);
                 },
               ),
               NordicMenuRow(

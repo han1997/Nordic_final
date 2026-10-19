@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../data/models.dart';
 import '../../data/music_source.dart';
 import '../../playback/playback_controller.dart';
+import '../../playback/quality.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
@@ -15,6 +16,7 @@ import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/playback_controls.dart';
 import '../widgets/cover.dart';
+import 'quality_sheet.dart';
 import 'song_menu_sheet.dart';
 
 /// 播放页 —— 封面主导,配色随封面走。
@@ -325,56 +327,87 @@ class _SongInfo extends StatelessWidget {
       (s) => s.isSongStarred(song.id),
     );
     final artistId = song.artistId;
+    // 这一行报的是**实际在放的那一份**,不是「设置里选的那一档」:
+    // 本机有更高一档的完整缓存时播放层会直接拿它播(见 audio_handler 的
+    // loadedOriginOf),而「本机」还意味着这条流不花流量。
+    // 两条各自 select —— 换档 / 换线路 / 切歌只让这一小块重建,不是整屏。
+    final (selected, loaded, local) = context
+        .select<PlaybackController, (QualityOption, QualityOption?, bool?)>(
+      (p) => (p.quality, p.loadedQuality, p.loadedLocal),
+    );
+    // 装载记录被清掉 / 这一首还没装载过时 local 是 null:那时只报档位、不猜来源
+    // (见 playbackOriginLabel)。
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         NordicSpace.s6, NordicSpace.s5, NordicSpace.s6, NordicSpace.s3),
-      child: Row(
-        // 原型 `.player-info .top-row` 是居中:心形对着标题与艺人那一块居中,
-        // 不是贴着标题顶。
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 歌名也是入口 —— 与封面区同一件事的两处来路(原型里 `.player-info .t`
-                // 同样挂着 `data-go="lyrics"`)。它原先谁都不指向,而下面那两条
-                // 艺人 / 专辑链接各有各的去处,这里别动它们。
-                GestureDetector(
-                  onTap: () => AppRoutes.openLyrics(context),
-                  child: Text(
-                    song.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          // 原型:letter-spacing -0.035em。
-                          letterSpacing: -0.9,
-                        ),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
+          Row(
+            // 原型 `.player-info .top-row` 是居中:心形对着标题与艺人那一块居中,
+            // 不是贴着标题顶。
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(
-                      child: artistId != null
-                          ? GestureDetector(
-                              onTap: () => AppRoutes.openArtist(context, artistId),
-                              child: Text(
-                                song.artist,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge
-                                    ?.copyWith(color: t.fg2),
-                              ),
-                            )
-                          : Text(
-                              song.artist,
+                    // 歌名也是入口 —— 与封面区同一件事的两处来路(原型里 `.player-info .t`
+                    // 同样挂着 `data-go="lyrics"`)。它原先谁都不指向,而下面那两条
+                    // 艺人 / 专辑链接各有各的去处,这里别动它们。
+                    GestureDetector(
+                      onTap: () => AppRoutes.openLyrics(context),
+                      child: Text(
+                        song.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w700,
+                              // 原型:letter-spacing -0.035em。
+                              letterSpacing: -0.9,
+                            ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: artistId != null
+                              ? GestureDetector(
+                                  onTap: () => AppRoutes.openArtist(context, artistId),
+                                  child: Text(
+                                    song.artist,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(color: t.fg2),
+                                  ),
+                                )
+                              : Text(
+                                  song.artist,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyLarge
+                                      ?.copyWith(color: t.fg2),
+                                ),
+                        ),
+                        Text(
+                          ' · ',
+                          style: TextStyle(color: t.fg2),
+                        ),
+                        Flexible(
+                          child: GestureDetector(
+                            onTap: () => AppRoutes.openAlbum(context, song.albumId),
+                            child: Text(
+                              song.album,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context)
@@ -382,46 +415,61 @@ class _SongInfo extends StatelessWidget {
                                   .bodyLarge
                                   ?.copyWith(color: t.fg2),
                             ),
-                    ),
-                    Text(
-                      ' · ',
-                      style: TextStyle(color: t.fg2),
-                    ),
-                    Flexible(
-                      child: GestureDetector(
-                        onTap: () => AppRoutes.openAlbum(context, song.albumId),
-                        child: Text(
-                          song.album,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyLarge
-                              ?.copyWith(color: t.fg2),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: NordicSpace.s4),
+              IconButtonRound(
+                icon: starred ? Icons.favorite : Icons.favorite_border,
+                iconSize: 26,
+                color: starred ? context.accentSafe : t.fg2,
+                onPressed: () async {
+                  final state = context.read<AppState>();
+                  // 没存上就说一句:心形自己弹回来,用户分不出是没点上还是没存上
+                  // (收藏失败时库是好的,顶栏那一套错误态不会出现)。
+                  if (await state.toggleSongStar(song.id)) return;
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+                    content: Text('没能存到服务器，收藏状态已退回 —— 检查网络后再试'),
+                    duration: Duration(seconds: 3),
+                  ));
+                },
+              ),
+            ],
           ),
-          const SizedBox(width: NordicSpace.s4),
-          IconButtonRound(
-            icon: starred ? Icons.favorite : Icons.favorite_border,
-            iconSize: 26,
-            color: starred ? context.accentSafe : t.fg2,
-            onPressed: () async {
-              final state = context.read<AppState>();
-              // 没存上就说一句:心形自己弹回来,用户分不出是没点上还是没存上
-              // (收藏失败时库是好的,顶栏那一套错误态不会出现)。
-              if (await state.toggleSongStar(song.id)) return;
-              if (!context.mounted) return;
-              ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
-                content: Text('没能存到服务器，收藏状态已退回 —— 检查网络后再试'),
-                duration: Duration(seconds: 3),
-              ));
-            },
+
+          // 「这一首是什么(源文件)+ 此刻按什么在放」。左边是**歌曲自己**的格式,
+          // 右边是**这一趟**实际用的档位与来源;点右边那枚胶囊直接开转码面板 ——
+          // 档位收进「⋯」菜单之后,播放页就没有能改档的地方了。
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  song.formatLine,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: t.fg3),
+                ),
+              ),
+              const SizedBox(width: NordicSpace.s3),
+              NordicChip(
+                label: playbackOriginLabel(
+                  loaded ?? selected,
+                  local: loaded == null ? null : local,
+                ),
+                icon: Icons.graphic_eq,
+                height: 28,
+                onTap: () => showQualitySheet(context),
+              ),
+            ],
           ),
         ],
       ),

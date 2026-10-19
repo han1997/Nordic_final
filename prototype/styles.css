@@ -2059,3 +2059,80 @@ html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
   word-break: break-all;
 }
 .field .input.is-multiline textarea::placeholder { color: var(--fg-4); }
+
+/* ============================================================
+   歌曲信息 / 播放页信息行 / 回到正在播放 / 关于
+   ============================================================ */
+
+/* 播放页:歌名与「艺人 · 专辑」再往下一行 —— 左边是**源文件**的样子,
+   右边是**这一趟**实际在用的档位与来源。转码那颗胶囊收进「⋯」菜单之后,
+   「现在到底按哪一档在放、是不是在放本机那一份」就没地方看了。 */
+.player-info .p-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s3);
+  margin-top: 9px;
+}
+.player-info .p-fmt {
+  font-size: var(--fs-sm);
+  color: var(--fg-3);
+  letter-spacing: 0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 与 .chip 同一副材质,尺寸收小 —— 它是那一行里的附注,不该抢歌名的位置。 */
+.q-badge {
+  flex: 0 0 auto;
+  height: 28px; padding: 0 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: var(--r-full);
+  background: var(--glass-4);
+  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 var(--glass-rim);
+  font-size: var(--fs-xs); font-weight: 660;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: all 0.18s var(--ease);
+}
+.q-badge:hover { color: var(--fg); border-color: var(--line-2); background: var(--fill-2); }
+.q-badge svg { color: var(--accent-safe); }
+
+/* 歌曲信息那张纸:label / value 两栏。与设置行同一套读法,只是不可点 ——
+   这里是**说事实**,没有可操作的东西。 */
+.info-list { padding: var(--s3) var(--s5) var(--s3); }
+.info-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s4);
+  padding: 9px 0;
+}
+.info-row + .info-row { border-top: 1px solid var(--line); }
+.info-row .k { flex: 0 0 auto; font-size: var(--fs-sm); color: var(--fg-3); }
+.info-row .v {
+  min-width: 0;
+  font-size: var(--fs-sm); font-weight: 620; color: var(--fg);
+  text-align: right;
+  word-break: break-all;
+}
+
+/* 「回到正在播放」落点那一下的亮。
+   **只是亮一下**:被选中过的是「正在放的那一首」,不是「这一行被点了」——
+   所以它自己灭掉,不留一个选中的错觉。淡入淡出都走 .row 自带的 0.16s。 */
+.row.located { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+/* 关于:图标 + 名字 + 版本。应用图标与启动器里那颗**是同一份矢量**
+   (tool/app_icon.py 生成),所以这一页上看到的和装机上一致。 */
+.about-hero {
+  display: flex; flex-direction: column; align-items: center;
+  padding: var(--s4) var(--s5) var(--s6);
+}
+.about-mark {
+  width: 96px; height: 96px;
+  border-radius: 26px;
+  overflow: hidden;
+  margin-bottom: var(--s4);
+  box-shadow: 0 26px 50px -24px var(--depth), inset 0 1px 0 var(--rim);
+}
+.about-mark .icon-svg { display: block; width: 100%; height: 100%; }
+.about-name { font-size: 24px; font-weight: 730; letter-spacing: -0.02em; }
+.about-line { margin-top: 3px; font-size: var(--fs-sm); color: var(--fg-3); }
+.about-ver { margin-top: 9px; font-size: var(--fs-sm); font-weight: 620; color: var(--fg-2); }

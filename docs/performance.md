@@ -213,3 +213,22 @@
   (`search3`),而「删一个字再打回来」是最常见的改字方式 —— 不记的话同一个词要问两遍。
   **别把它改回「只记上一次」**:`ab → a → ab` 中间那次会把上一条顶掉,而那条路正是要治的
   那一种。
+- **「回到正在播放」那一下是「估一步 + 框架对齐」,不是把整列建出来**(`library_screen.dart`
+  的 `_locateCurrent` / `rowExtent`)。音乐库的「全部歌曲」可能是几千行,而它**必须**继续
+  懒加载(见本文件开头那条),所以不能像歌词页那样给每一行挂 `GlobalKey`、等它们都建出来。
+  走法:先按**列表自己报出来的总高度除条数**(`maxScrollExtent + viewportDimension` / 项数,
+  就是已建行的平均高度 —— 行高一致时是准的)`jumpTo` 一步,再对**正在放的那一行**的
+  `currentContext` 用 `Scrollable.ensureVisible` 按真实布局对齐。两条别改回去:
+  **别写死行高 64** —— 行高是 `minHeight`,`NordicRow` 上的字一旦被系统放大(无障碍里
+  最常见的设置)每一行都会长高,上千行的库里落点会差出一整屏;**别为了让 `jumpTo` 精确
+  而给 `ListView` 加 `itemExtent`** —— 那等于把行高钉死,大字体会被裁。亮一下那一层走
+  `ValueNotifier` + 只包住那一行的 `AnimatedContainer`,不进 `setState`(这一屏背后挂着
+  四百多张专辑的网格,而这次动作真正变的只有一行)。
+- **播放页那枚档位徽标报的是「装载那一刻实际用的是哪一份」**(`PlaybackController.loadedQuality`
+  / `loadedLocal`,源头是 `NordicAudioHandler` 里那张 `_localLoaded`)。它**不是**「设置里选的
+  那一档」,两者会不一样:本机要是有更高一档的完整缓存,播放层直接拿它播;而「本机」还意味着
+  这条流不花流量。**查不到就给 null、界面只报档位**(`playbackOriginLabel`)—— 那句话是用户
+  用来判断「现在听的是什么、花不花流量」的,猜一个来源出来比不说更糟。刷新挂在
+  `PlaybackController._emit` 上(每一次状态播报顺手重读一遍),所以换档 / 换线路 / 切歌
+  三处装载都跟得上;**别改成只在切歌时读** —— 换档那一下正好是用户盯着它看的时刻,而它会
+  停在旧档上。

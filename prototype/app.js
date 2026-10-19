@@ -55,6 +55,9 @@ const ICONS = {
   camera:  '<path d="M4 8.6h3l1.5-2.4h7l1.5 2.4h3v9.8H4z"/><circle cx="12" cy="13.2" r="3.1"/>',
   paste:   '<rect x="5.6" y="5.2" width="12.8" height="14.8" rx="2.2"/><path d="M9.6 5.2V4a1.6 1.6 0 0 1 1.6-1.6h1.6A1.6 1.6 0 0 1 14.4 4v1.2"/><path d="M9 11.4h6M9 15h4"/>',
   copy:    '<rect x="8.6" y="8.6" width="10.8" height="10.8" rx="2.2"/><path d="M15.4 5.6H6.6A1.8 1.8 0 0 0 4.8 7.4v8.8"/>',
+  /* 歌曲信息与「回到正在播放」各一颗 —— 原先一个都没有。 */
+  info:    '<circle cx="12" cy="12" r="8.4"/><path d="M12 11.2v5.2"/><path d="M12 7.7h.01"/>',
+  locate:  '<circle cx="12" cy="12" r="6.6"/><circle cx="12" cy="12" r="1.9" fill="currentColor" stroke="none"/><path d="M12 2.6v3.4M12 18v3.4M2.6 12h3.4M18 12h3.4"/>',
 };
 
 function ic(name, size = 22, cls = '') {
@@ -153,22 +156,26 @@ const ALBUMS = [
 /* 曲目摊到全部六张专辑上,而不是五首都挂在《可能》名下 ——
    否则点进任何一张专辑看到的都是同一批歌,专辑页的曲目表就失去了意义。
    album / artist 两个字段是冗余的(albumOf() 查得出来),但列表行到处在用,
-   留在数据里比每次查表省事;顺便按各张专辑的实际首数配了曲序。 */
+   留在数据里比每次查表省事;顺便按各张专辑的实际首数配了曲序。
+
+   sizeMB / year / genre / added 只有「歌曲信息」那张纸在看(见 sheetSongInfo):
+   它们本来就是服务器随每首歌给下来的字段(mapper 那边进的是 suffix / bitRate /
+   size / year / genre / created),应用的信息弹层铺的就是这一份真东西。 */
 const SONGS = [
-  { id: 's1',  no: 1, title: '可能',        artist: '程响',         album: '可能',       albumId: 'a1', dur: 218, fmt: 'FLAC', kbps: 780, fav: true  },
-  { id: 's2',  no: 2, title: '人间烟火',    artist: '程响',         album: '可能',       albumId: 'a1', dur: 245, fmt: 'FLAC', kbps: 812, fav: false },
-  { id: 's3',  no: 3, title: '四季予你',    artist: '程响',         album: '可能',       albumId: 'a1', dur: 232, fmt: 'FLAC', kbps: 764, fav: false },
-  { id: 's4',  no: 4, title: '等你归来',    artist: '程响',         album: '可能',       albumId: 'a1', dur: 258, fmt: 'FLAC', kbps: 798, fav: true  },
-  { id: 's5',  no: 5, title: '时光洪流',    artist: '程响',         album: '可能',       albumId: 'a1', dur: 224, fmt: 'FLAC', kbps: 770, fav: false },
-  { id: 's6',  no: 1, title: 'Ultraviolet', artist: '3LAU',         album: 'Ultraviolet', albumId: 'a2', dur: 232, fmt: 'FLAC', kbps: 921, fav: true },
-  { id: 's7',  no: 1, title: '山色入秋',    artist: '拾光乐队',     album: '秋色',       albumId: 'a3', dur: 246, fmt: 'FLAC', kbps: 806, fav: false },
-  { id: 's8',  no: 2, title: '晚风信',      artist: '拾光乐队',     album: '秋色',       albumId: 'a3', dur: 219, fmt: 'FLAC', kbps: 788, fav: false },
-  { id: 's9',  no: 3, title: '落叶有信',    artist: '拾光乐队',     album: '秋色',       albumId: 'a3', dur: 268, fmt: 'FLAC', kbps: 794, fav: true  },
-  { id: 's10', no: 1, title: 'The Letters', artist: 'King Crimson', album: 'Islands',    albumId: 'a4', dur: 267, fmt: 'FLAC', kbps: 861, fav: false },
-  { id: 's11', no: 1, title: '山丘',        artist: '李宗盛',       album: '山丘',       albumId: 'a5', dur: 352, fmt: 'FLAC', kbps: 812, fav: true  },
-  { id: 's12', no: 2, title: '给自己的歌',  artist: '李宗盛',       album: '山丘',       albumId: 'a5', dur: 379, fmt: 'FLAC', kbps: 826, fav: false },
-  { id: 's13', no: 1, title: 'Get Lucky',     artist: 'Daft Punk',  album: 'Random Access Memories', albumId: 'a6', dur: 369, fmt: 'FLAC', kbps: 934, fav: false },
-  { id: 's14', no: 2, title: 'Instant Crush', artist: 'Daft Punk',  album: 'Random Access Memories', albumId: 'a6', dur: 337, fmt: 'FLAC', kbps: 902, fav: false },
+  { id: 's1',  no: 1, title: '可能',        artist: '程响',         album: '可能',       albumId: 'a1', dur: 218, fmt: 'FLAC', kbps: 780, fav: true,  sizeMB: 21, year: 2022, genre: '流行',     added: '2026-10-12' },
+  { id: 's2',  no: 2, title: '人间烟火',    artist: '程响',         album: '可能',       albumId: 'a1', dur: 245, fmt: 'FLAC', kbps: 812, fav: false, sizeMB: 25, year: 2022, genre: '流行',     added: '2026-10-12' },
+  { id: 's3',  no: 3, title: '四季予你',    artist: '程响',         album: '可能',       albumId: 'a1', dur: 232, fmt: 'FLAC', kbps: 764, fav: false, sizeMB: 22, year: 2022, genre: '流行',     added: '2026-10-12' },
+  { id: 's4',  no: 4, title: '等你归来',    artist: '程响',         album: '可能',       albumId: 'a1', dur: 258, fmt: 'FLAC', kbps: 798, fav: true,  sizeMB: 26, year: 2022, genre: '流行',     added: '2026-10-12' },
+  { id: 's5',  no: 5, title: '时光洪流',    artist: '程响',         album: '可能',       albumId: 'a1', dur: 224, fmt: 'FLAC', kbps: 770, fav: false, sizeMB: 22, year: 2022, genre: '流行',     added: '2026-10-12' },
+  { id: 's6',  no: 1, title: 'Ultraviolet', artist: '3LAU',         album: 'Ultraviolet', albumId: 'a2', dur: 232, fmt: 'FLAC', kbps: 921, fav: true,  sizeMB: 27, year: 2018, genre: '电子',     added: '2026-09-28' },
+  { id: 's7',  no: 1, title: '山色入秋',    artist: '拾光乐队',     album: '秋色',       albumId: 'a3', dur: 246, fmt: 'FLAC', kbps: 806, fav: false, sizeMB: 25, year: 2021, genre: '民谣',     added: '2026-08-30' },
+  { id: 's8',  no: 2, title: '晚风信',      artist: '拾光乐队',     album: '秋色',       albumId: 'a3', dur: 219, fmt: 'FLAC', kbps: 788, fav: false, sizeMB: 22, year: 2021, genre: '民谣',     added: '2026-08-30' },
+  { id: 's9',  no: 3, title: '落叶有信',    artist: '拾光乐队',     album: '秋色',       albumId: 'a3', dur: 268, fmt: 'FLAC', kbps: 794, fav: true,  sizeMB: 27, year: 2021, genre: '民谣',     added: '2026-08-30' },
+  { id: 's10', no: 1, title: 'The Letters', artist: 'King Crimson', album: 'Islands',    albumId: 'a4', dur: 267, fmt: 'FLAC', kbps: 861, fav: false, sizeMB: 29, year: 1971, genre: '前卫摇滚', added: '2025-11-03' },
+  { id: 's11', no: 1, title: '山丘',        artist: '李宗盛',       album: '山丘',       albumId: 'a5', dur: 352, fmt: 'FLAC', kbps: 812, fav: true,  sizeMB: 36, year: 2013, genre: '民谣',     added: '2025-11-03' },
+  { id: 's12', no: 2, title: '给自己的歌',  artist: '李宗盛',       album: '山丘',       albumId: 'a5', dur: 379, fmt: 'FLAC', kbps: 826, fav: false, sizeMB: 39, year: 2013, genre: '民谣',     added: '2025-11-03' },
+  { id: 's13', no: 1, title: 'Get Lucky',     artist: 'Daft Punk',  album: 'Random Access Memories', albumId: 'a6', dur: 369, fmt: 'FLAC', kbps: 934, fav: false, sizeMB: 43, year: 2013, genre: '电子', added: '2026-10-05' },
+  { id: 's14', no: 2, title: 'Instant Crush', artist: 'Daft Punk',  album: 'Random Access Memories', albumId: 'a6', dur: 337, fmt: 'FLAC', kbps: 902, fav: false, sizeMB: 38, year: 2013, genre: '电子', added: '2026-10-05' },
 ];
 
 const ARTISTS = [
@@ -251,6 +258,10 @@ const STATE = {
      同一句再点一下才真跳 —— 跳转不可逆,手一滑就跳走、还回不到原来那句。
      -1 = 没选中。这一层确认只在**这一趟**里算数:离开歌词页(go / back)与换歌都清掉。 */
   pendingLine: -1,
+  /* 「回到正在播放」那一下高亮的时间戳(0 = 没亮)。
+     **走 STATE 而不是往 DOM 上加 class**:下载计时器每 1.2 秒整屏重绘一次,
+     直接加的那份 class 会被重绘抹掉,高亮没亮完就没了。 */
+  locateAt: 0,
   /* 搜索页与添加服务器页的实时状态 —— 输入框、分段选中都要有反馈 */
   query: '程响',
   scope: 'all',
@@ -369,6 +380,27 @@ const ALBUM_BY_ID  = (id) => ALBUMS.find((x) => x.id === id) || ALBUMS[0];
 const ARTIST_BY_ID = (id) => ARTISTS.find((x) => x.id === id) || ARTISTS[0];
 const currentSong = () => SONGS.find((x) => x.id === STATE.songId) || SONGS[0];
 const currentAlbum = () => albumOf(currentSong());
+
+/* 这一首**现在按什么在放**:档位名 + 来源。三个来源的说法各自说的是不同的事 ——
+   「本机」= 放的是本机那一份(下载过的、或听过的缓存,不花流量),
+   「直出」= 原音、没转码,「转码」= 过了一道编码。
+   接的是应用那边的真口径(见 lib/playback/audio_handler.dart 的 loadedOriginOf):
+   档位与来源都是「**装载那一刻**」定下的,不是此刻磁盘上有没有 —— 边上边缓存
+   那一份会在播到一半时下完,而播放源没换过。
+   原型里「本机」由下载队列派生:下载过的那一首就演这一态。 */
+function playbackOriginOf(song) {
+  const q = QUALITIES.find((x) => x.id === STATE.quality) || QUALITIES[2];
+  const local = STATE.downloads.some((d) => d.songId === song.id);
+  const source = local ? '本机' : (q.id === 'original' ? '直出' : '转码');
+  return { quality: q.name, source, label: `${q.name} · ${source}` };
+}
+
+/* 「入库时间」按 `2026 年 10 月 12 日` 印。**不比 mmss 那一套详到分钟** ——
+   那一条说的是「哪时候同步的」,这一条说的是「这首什么时候进的库」,年比分钟要紧。 */
+function dayLabel(iso) {
+  const [y, m, d] = String(iso).split('-');
+  return `${y} 年 ${+m} 月 ${+d} 日`;
+}
 
 /* 真实关系一律从 SONGS 现推,不再另开一份手写的曲目表 ——
    两份数据迟早会各说各话。
@@ -686,9 +718,9 @@ function screenAddServer() {
 
 /* ---------------- 音乐库 ---------------- */
 
-function songRow(s, playing = false, trail = null) {
+function songRow(s, playing = false, trail = null, located = false) {
   const a = albumOf(s);
-  return `<div class="row ${playing ? 'playing' : ''}" data-song="${s.id}">
+  return `<div class="row ${playing ? 'playing' : ''}${located ? ' located' : ''}" data-song="${s.id}">
     ${cover(a, '', 'width:52px;height:52px;border-radius:14px')}
     <div class="grow">
       <div class="line1">${s.title}</div>
@@ -698,6 +730,10 @@ function songRow(s, playing = false, trail = null) {
     <span class="trail">${trail ?? mmss(s.dur)}</span>
   </div>`;
 }
+
+/* 这一行现在该不该亮着 —— 「回到正在播放」那一下的落点。
+   1.2 秒后自己灭掉(见 STATE.locateAt)。 */
+const locatedNow = (s) => s.id === STATE.songId && Date.now() - STATE.locateAt < 1200;
 
 /* ---------------- 首页 ----------------
 
@@ -878,7 +914,7 @@ function screenLibrary(tab = 'songs', notConnected = false) {
         <h2>全部歌曲</h2><span class="count">${SONGS.length} 首</span>
         <button class="sort-btn" data-sort-for="songs">${ic('sort', 13)} ${sortLabel(SONG_SORTS, STATE.songSort)}</button>
       </div>
-      ${sortedSongs().map((s) => songRow(s, s.id === cur.id)).join('')}`;
+      ${sortedSongs().map((s) => songRow(s, s.id === cur.id, null, locatedNow(s))).join('')}`;
   } else {
     body = `<div class="section"><h2>我的歌单</h2><span class="count">${PLAYLISTS.length} 个</span></div>
       ${PLAYLISTS.map((p) => `
@@ -898,6 +934,7 @@ function screenLibrary(tab = 'songs', notConnected = false) {
         <div class="sub">${SERVER.name} · ${SERVER.songs} 首</div>
       </div>
       <span class="spacer"></span>
+      ${tab === 'songs' ? `<button class="icon-btn quiet" data-act="locate" title="回到正在播放的那一首">${ic('locate', 21)}</button>` : ''}
       <button class="icon-btn quiet" data-go="search">${ic('search', 21)}</button>
     </div>
     <div style="padding:0 var(--s5) var(--s4)">
@@ -1064,6 +1101,7 @@ function mediaControls() {
 function screenPlayer() {
   const s = currentSong();
   const a = albumOf(s);
+  const origin = playbackOriginOf(s);
   const pct = progressOf(s, STATE.elapsed);
   const elapsed = Math.min(STATE.elapsed, s.dur);
 
@@ -1100,6 +1138,13 @@ function screenPlayer() {
         </div>
         <button class="icon-btn" data-act="fav" style="color:${STATE.fav.songs.has(s.id) ? 'var(--accent-safe)' : 'var(--fg-2)'}">
           ${ic(STATE.fav.songs.has(s.id) ? 'heartF' : 'heart', 26)}</button>
+      </div>
+      <!-- 这一首「是什么、按什么在放」。左半是**源文件**的样子(格式与码率),
+           右半是**此刻这一趟**实际用的档位与来源 —— 转码那颗胶囊收进「⋯」菜单之后,
+           「现在到底按哪一档在放」就没地方看了。点它直接开转码面板。 -->
+      <div class="p-meta">
+        <span class="p-fmt">${s.fmt ? (s.kbps ? `${s.fmt} · ${s.kbps} kbps` : s.fmt) : '—'}</span>
+        <button class="q-badge" data-sheet="quality" title="切换转码档位">${ic('wave', 13)} ${origin.label}</button>
       </div>
     </div>
 
@@ -1229,6 +1274,7 @@ function sheetMenu() {
       ['queue', '查看播放队列', 'sheet:queue'],
       ['route', '切换线路', 'sheet:routes'],
       ['wave', `转码质量 · ${(QUALITIES.find((x) => x.id === STATE.quality) || QUALITIES[2]).name}`, 'sheet:quality'],
+      ['info', '歌曲信息', 'sheet:songInfo'],
       ['disc', '查看专辑', `album:${a.id}`],
     ];
   } else if (forWhat === 'album') {
@@ -1268,7 +1314,45 @@ function sheetMenu() {
   </div>`;
 }
 
-/* ---------------- 下载 ----------------
+/* ---------------- 歌曲信息 ----------------
+
+   「⋯」菜单里那条。铺的全是**这首歌真有的字段**:服务器随曲目给下来的
+   格式 / 码率 / 体积 / 年份 / 流派 / 入库时间(应用那边在
+   `subsonic_mapper.dart` 里进的正是这几个)。**缺哪一项就整行不印** ——
+   写一行「未知」是拿假东西凑数,那比没有更糟。
+
+   歌名与艺人 · 专辑在标题那一行(与其它弹层同款),所以正文里不再重复。 */
+function sheetSongInfo() {
+  const s = currentSong();
+  const a = albumOf(s);
+  const origin = playbackOriginOf(s);
+  const rows = [
+    s.no ? ['曲序', `第 ${s.no} 首`] : null,
+    ['时长', mmss(s.dur)],
+    s.fmt ? ['格式', s.kbps ? `${s.fmt} · ${s.kbps} kbps` : s.fmt] : null,
+    s.sizeMB ? ['文件大小', mbLabel(s.sizeMB)] : null,
+    s.year ? ['年份', `${s.year}`] : null,
+    s.genre ? ['流派', s.genre] : null,
+    s.added ? ['入库时间', dayLabel(s.added)] : null,
+    ['实际播放', origin.label],
+  ].filter(Boolean);
+
+  return `<div class="sheet-scrim">
+    <div class="sheet">
+      <div class="handle"></div>
+      <h2>${s.title} <span>${s.artist} · ${a.name}</span></h2>
+      <div class="sheet-body">
+        <div class="info-list">
+          ${rows.map(([label, value]) => `
+            <div class="info-row"><span class="k">${label}</span><span class="v">${value}</span></div>`).join('')}
+        </div>
+        <div class="menu-item" data-menu-go="album:${a.id}">${ic('disc', 20)}<span>查看专辑</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+   /* ---------------- 下载 ----------------
    队列是真的:点下载按钮往 STATE.downloads 记一笔,这张页铺的就是队列本身。
    进度是模拟的 —— 每次渲染往前挪一点,直到 100 停住,状态从「下载中」变「已完成」。
    条目可删,删完剩下的接着排;空队列是真实空态(带说明),不是假骨架。 */
@@ -1280,6 +1364,10 @@ function dlEnqueue(kind, item) {
   STATE.downloads.unshift({
     id: 'dl' + (++STATE.dlSeq),
     kind, name,
+    /* 记下是哪一首 / 哪一张 —— 播放页那枚来源徽标要判「这一首在本机吗」
+       (见 playbackOriginOf),拿 name 去比是拿文案当键,改一次文案就断。 */
+    songId: kind === 'song' ? item.id : undefined,
+    albumId: kind === 'album' ? item.id : undefined,
     state: 'active', pct: 0, size,
   });
 }
@@ -1715,14 +1803,17 @@ function screenSearch() {
 /* ---------------- 设置 ---------------- */
 
 function screenSettings() {
-  /* 四个开关都是活的：点一下翻转，行里立刻换勾选态。
-     第一行的值不是开关而是当前档位，所以走 data-sheet 打开转码面板。 */
+  /* 开关都是活的:点一下翻转,行里立刻换勾选态。
+     第一行的值不是开关而是当前档位,所以走 data-sheet 打开转码面板。
+
+     「仅 Wi-Fi 下载」原先挤在这一栏里 —— 它管的是下载,不是播放,
+     现在跟着「下载管理」一起落到下面的「存储」栏:那一栏里手动的(下载)
+     与顺手的(缓存)摆在一起,两件都落在盘上的事才看得出是一件事。 */
   const rows = [
     { key: 'quality', icon: 'wave',  t: '默认转码质量', d: '移动网络下生效', value: () =>
         (QUALITIES.find((x) => x.id === STATE.quality) || QUALITIES[2]).name, sheet: 'quality' },
     { key: 'autoRoute', icon: 'route', t: '线路自动择优', value: () => STATE.autoRoute ? '已开启' : '已关闭', toggle: true, d: () => STATE.autoRoute ? '按延迟选择最快可用地址' : '每条线路要手动锁定' },
     { key: 'bgPlay',    icon: 'bell',  t: '播放时后台运行', value: () => STATE.bgPlay ? '已开启' : '已关闭', toggle: true, d: () => STATE.bgPlay ? '通知栏与锁屏可控制' : '切到后台即暂停' },
-    { key: 'wifiOnly',  icon: 'download', t: '仅 Wi-Fi 下载', value: () => STATE.wifiOnly ? '已开启' : '已关闭', toggle: true, d: () => STATE.wifiOnly ? '流量下不缓存' : '流量下也会预取' },
   ];
   const themeRow = `
       <div class="section" style="padding-top:var(--s2)"><h2>外观</h2></div>
@@ -1786,15 +1877,15 @@ function screenSettings() {
         </div>
       </div>
 
-      <div class="section"><h2>缓存</h2></div>
+      <div class="section"><h2>存储</h2></div>
       <div class="card" style="margin:0 var(--s5)">
         <div class="row" data-sheet="cache">
           <span class="set-icon">${ic('stack', 18)}</span>
           <div class="grow">
             <div class="line1">歌曲缓存</div>
             <div class="line2">${STATE.cacheLimit === 'off'
-              ? '已关闭：听过的歌每次都从服务器拉'
-              : '听过的歌留在本机，再听不用重新拉'}</div>
+              ? '已关闭:听过的歌每次都从服务器拉'
+              : '听过的歌留在本机,再听不用重新拉'}</div>
           </div>
           <span class="trail" style="color:var(--fg-2)">${cacheLimitLabel(STATE.cacheLimit)}</span>
           ${ic('chevron', 17)}
@@ -1811,10 +1902,7 @@ function screenSettings() {
           ${STATE.cacheUsedMb ? `<button class="btn ghost" data-act="clear-cache"
             style="width:auto;height:34px;padding:0 15px;font-size:var(--fs-sm)">清除</button>` : ''}
         </div>
-      </div>
-
-      <div class="section"><h2>下载</h2></div>
-      <div class="card" style="margin:0 var(--s5)">
+        <div class="divider"></div>
         <div class="row" data-go="downloads">
           <span class="set-icon">${ic('download', 18)}</span>
           <div class="grow"><div class="line1">下载管理</div>
@@ -1823,19 +1911,103 @@ function screenSettings() {
               : '队列是空的'}</div></div>
           ${ic('chevron', 18)}
         </div>
+        <div class="divider"></div>
+        <div class="row" data-toggle="wifiOnly" role="switch" aria-checked="${STATE.wifiOnly !== false}">
+          <span class="set-icon">${ic('wifi', 18)}</span>
+          <div class="grow"><div class="line1">仅 Wi-Fi 下载</div>
+            <div class="line2">${STATE.wifiOnly !== false ? '流量下不缓存' : '流量下也会预取'}</div></div>
+          <span class="switch${STATE.wifiOnly !== false ? ' on' : ''}"><i></i></span>
+        </div>
       </div>
 
-      <div class="section"><h2>隐私</h2></div>
+      <div class="section"><h2>关于</h2></div>
       <div class="card" style="margin:0 var(--s5)">
-        <div class="row">
-          <span class="set-icon">${ic('shield', 18)}</span>
-          <div class="grow"><div class="line1">凭据仅存本机</div><div class="line2">不保存明文密码，也不上传任何数据</div></div>
+        <div class="row" data-go="about">
+          <span class="set-icon">${ic('info', 18)}</span>
+          <div class="grow"><div class="line1">关于 Nordic</div>
+            <div class="line2">版本 · 开源许可 · 服务器与隐私</div></div>
+          ${ic('chevron', 18)}
         </div>
       </div>
       <div style="height:var(--s5)"></div>
     </div>
     ${bottom(undefined, undefined, 'settings')}`;
 }
+
+/* ---------------- 关于 ----------------
+
+   设置里「关于」那一栏的落地页。它回答的是「这是什么软件、什么版本、
+   我的东西在哪儿」—— 原先这三件事在设置里一个字都没有。
+
+   **这一屏只写真的**:版本号在应用里是从**包**里读的
+   (`package_info_plus` 读出的那份就是 `pubspec.yaml` 那一行,不是另存的一份);
+   服务器那行读当前配置;隐私那两条是**陈述不是开关** —— 原先它们和开关混在
+   同一屏里,读起来像可以关掉的东西。 */
+const ABOUT_VERSION = '1.0.42+43';
+
+function screenAbout() {
+  return `<div class="appbar nav">
+      <button class="icon-btn" data-back>${ic('back', 22)}</button>
+      <span class="spacer"></span>
+      <span style="font-size:11px;color:var(--fg-3);letter-spacing:0.1em;font-weight:660">关于</span>
+      <span class="spacer"></span>
+      <span style="width:38px"></span>
+    </div>
+    <div class="scroll">
+      <div class="about-hero">
+        <div class="about-mark">${ICON_SVG(ICON_FINAL, { px: 88 })}</div>
+        <div class="about-name">Nordic</div>
+        <div class="about-line">多平台 NAS 音乐播放器</div>
+        <div class="about-ver">${ABOUT_VERSION}</div>
+      </div>
+
+      <div class="card" style="margin:0 var(--s5)">
+        <div class="row" style="cursor:default">
+          <span class="set-icon">${ic('info', 18)}</span>
+          <div class="grow"><div class="line1">版本</div>
+            <div class="line2">与侧载包的名字同一份 —— 名字是从 pubspec.yaml 拼的</div></div>
+          <span class="trail" style="color:var(--fg-2)">${ABOUT_VERSION}</span>
+        </div>
+        <div class="divider"></div>
+        <div class="row" data-go="servers">
+          <span class="set-icon">${ic('server', 18)}</span>
+          <div class="grow"><div class="line1">${SERVER.name}</div>
+            <div class="line2">${SERVER.kind} · ${SERVER.routes.length} 条线路</div></div>
+          ${ic('chevron', 18)}
+        </div>
+        <div class="divider"></div>
+        <div class="row" style="cursor:default">
+          <span class="set-icon">${ic('book', 18)}</span>
+          <div class="grow"><div class="line1">开源许可</div>
+            <div class="line2">Flutter 与各第三方包各自的许可证</div></div>
+          ${ic('chevron', 18)}
+        </div>
+      </div>
+
+      <div class="section"><h2>隐私</h2></div>
+      <div class="card" style="margin:0 var(--s5)">
+        <div class="row" style="cursor:default">
+          <span class="set-icon">${ic('shield', 18)}</span>
+          <div class="grow"><div class="line1">凭据仅存本机</div>
+            <div class="line2">密码交给系统密钥库加密保存,不上传任何数据</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row" style="cursor:default">
+          <span class="set-icon">${ic('wave', 18)}</span>
+          <div class="grow"><div class="line1">播放记录</div>
+            <div class="line2">只用于服务器端的播放统计,本机不另存一份</div></div>
+        </div>
+      </div>
+
+      <div class="list-note" style="padding-top:var(--s4)">
+        这一页上的版本号是原型的示意值;应用里那一份是从**装上的那个包**读出来的,
+        所以换一版装上去,这里跟着变。
+      </div>
+      <div style="height:var(--s5)"></div>
+    </div>
+    ${bottom(undefined, undefined, 'settings')}`;
+}
+
 
 /* 排序面板 —— 与转码面板同一副骨架(选项行 + 勾),不另造一种弹层。 */
 function sheetSort() {
@@ -1917,7 +2089,7 @@ function screenIcon() {
 
 /* ---------------- 视图表 ---------------- */
 
-const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort, cache: sheetCache, exportConfig: sheetExportConfig };
+const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort, cache: sheetCache, exportConfig: sheetExportConfig, songInfo: sheetSongInfo };
 
 /* 弹层是叠在当前屏上的，不是某一屏专属 —— 专辑页的「队列」、设置里的
    「默认转码质量」、音乐库的「排序」都要能把同一张面板揭起来。之前只有
@@ -1944,6 +2116,7 @@ const VIEWS = {
   lyrics:         () => shell(withOverlay(screenLyrics()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
   search:         () => shell(withOverlay(screenSearch())),
   settings:       () => shell(withOverlay(screenSettings())),
+  about:          () => shell(withOverlay(screenAbout())),
   /* 设计交付物,不对应应用里的一屏 —— 见 BOARD 的最后一条 */
   icon:           () => shell(withOverlay(screenIcon())),
 };
@@ -1973,7 +2146,8 @@ const BOARD = [
   ['线路切换',        '播放中改线路',         () => shell(screenPlayer() + sheetRoutes(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['歌词',            '逐句高亮 · 两下才跳', () => shell(screenLyrics(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['搜索',            '输入即筛选',           () => shell(screenSearch())],
-  ['设置',            '播放 / 服务器 / 隐私', () => shell(screenSettings())],
+  ['设置',            '播放 / 服务器 / 存储', () => shell(screenSettings())],
+  ['关于',            '版本 · 许可 · 隐私',    () => shell(screenAbout())],
   /* 这三张是新增的整屏功能页,设计板一并铺出来 —— 它们不再是 toast,
      是真的能走进去、能提交的页面。 */
   ['下载管理',        '队列 + 进度',          () => shell(screenDownloads())],
@@ -2035,6 +2209,9 @@ function renderBoard(root) {
 /* toast 与计时器都是 stage 级 —— 一个会话一份,跨重绘存续。
    写在 render 外头,免得每次 render 都开新计时器。 */
 let toastTimer = 0;
+/* 「回到正在播放」那一下高亮的计时器同上:stage 级、跨重绘存续。
+   连点几下只该有一次熄灭 —— 每次都开一个新的,前一个会提前把后一个摘掉。 */
+let locateTimer = 0;
 function toastMarkup() {
   return STATE.toast ? `<div class="toast">${STATE.toast}</div>` : '';
 }
@@ -2345,6 +2522,22 @@ function renderStage(root) {
         return render();
       }
       if (d.go) return go(d.go);
+      /* 回到正在播放的那一首:滚到它那一行,并让它**亮一下**。
+         只做一件事是不够的 —— 一千多行的列表里滚过去了,眼睛未必跟得上落点。
+         亮完就把标记摘掉,不留下一个「选中」的错觉(选中的是正在放的那一首,
+         不是这一行被点了)。 */
+      if (d.act === 'locate') {
+        STATE.locateAt = Date.now();
+        render();
+        /* **重绘之后**才拿节点**在 stage 里找,不是 document**:设计板那一版也铺着
+           同一批 `.row.playing`(board 模式下点不着,但 document.querySelector
+           会先命中它,于是滚的是板子上那一格)。 */
+        const row = root.querySelector('.scroll .row.playing');
+        if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        clearTimeout(locateTimer);
+        locateTimer = setTimeout(() => { STATE.locateAt = 0; render(); }, 1200);
+        return;
+      }
       /* 三处的心共用一份本地名单。传进来的 id 必须来自当前这一屏，
          否则换页后按下会改到上一屏的对象上 —— 卡片上的心变实，播放页却不认。 */
       if (d.act === 'fav') {

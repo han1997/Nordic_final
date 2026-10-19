@@ -317,6 +317,20 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   static const _localLoadedLimit = 512;
   final Map<String, ({bool local, QualityOption quality, String? path})> _localLoaded = {};
 
+  /// 这一首**装载那一刻**用的是哪一份 —— 是不是本机文件、实际用的是哪一档。
+  ///
+  /// 界面要的正是这两件:播放页那枚档位徽标、歌曲信息里的「实际播放」。
+  /// 注意问的是「装载那一刻」而不是「此刻磁盘上有没有」(理由见 [_localLoaded]):
+  /// 边听边缓存的那一份会在播到一半时下完,而播放源没有换过。
+  ///
+  /// **查不到就给 null**:那次装载的记录可能已经被清掉(见 [_localLoadedLimit]),
+  /// 也可能这一首根本没被装载过。界面那时只报所选档,不猜来源。
+  ({bool local, QualityOption quality})? loadedOriginOf(Song song) {
+    final entry = _localLoaded['${song.id}@${_quality.value.id}'];
+    if (entry == null) return null;
+    return (local: entry.local, quality: entry.quality);
+  }
+
   /// 第几次 seek。等待期间用户又拖了一次的话,先前那一次作废 ——
   /// 否则两次重载会前后脚打起来。
   int _seekToken = 0;

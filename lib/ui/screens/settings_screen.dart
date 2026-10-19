@@ -29,9 +29,6 @@ typedef _SettingsView = ({
   bool autoRoute,
   bool backgroundPlay,
   ServerConfig? server,
-  bool wifiOnlyDownload,
-  int downloadCount,
-  int activeDownloads,
 });
 
 /// 设置 —— 外观 / 播放 / 服务器 / 下载 / 隐私。
@@ -53,9 +50,6 @@ class SettingsScreen extends StatelessWidget {
           autoRoute: s.autoRoute,
           backgroundPlay: s.backgroundPlay,
           server: s.server,
-          wifiOnlyDownload: s.wifiOnlyDownload,
-          downloadCount: s.downloads.length,
-          activeDownloads: s.activeDownloadCount,
         ));
 
     return Scaffold(
@@ -177,46 +171,17 @@ class SettingsScreen extends StatelessWidget {
                   ),
               ],
             ),
-            const SectionHeader(title: '缓存'),
-            const _CacheSection(),
-            const SectionHeader(title: '下载'),
+            const _StorageSection(),
+            const SectionHeader(title: '关于'),
             _Card(
               children: [
                 _SettingRow(
-                  icon: Icons.download_outlined,
-                  title: '下载管理',
-                  subtitle: view.downloadCount == 0
-                      ? '队列是空的'
-                      : '${view.activeDownloads} 个进行中 · '
-                          '${view.downloadCount} 项',
+                  icon: Icons.info_outline,
+                  title: '关于 Nordic',
+                  subtitle: '版本 · 开源许可 · 服务器与隐私',
                   trailing: Icon(Icons.chevron_right,
                       size: 18, color: context.nordic.fg3),
-                  onTap: () => AppRoutes.openDownloads(context),
-                ),
-                _SettingRow(
-                  icon: Icons.wifi,
-                  title: '仅 Wi-Fi 下载',
-                  subtitle: view.wifiOnlyDownload ? '流量下不缓存' : '流量下也会预取',
-                  trailing: NordicSwitch(
-                    value: view.wifiOnlyDownload,
-                    onChanged: state.setWifiOnlyDownload,
-                  ),
-                ),
-              ],
-            ),
-            const SectionHeader(title: '隐私'),
-            _Card(
-              children: const [
-                _SettingRow(
-                  icon: Icons.shield_outlined,
-                  title: '凭据仅存本机',
-                  subtitle: '密码交给系统密钥库加密保存，不上传任何数据',
-                ),
-                Divider(height: 1, thickness: 0.5),
-                _SettingRow(
-                  icon: Icons.history,
-                  title: '播放记录',
-                  subtitle: '只用于服务器端的播放统计，本机不另存一份',
+                  onTap: () => AppRoutes.openAbout(context),
                 ),
               ],
             ),
@@ -228,67 +193,98 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-/// 缓存:听过的歌留在本机的那一份。
+/// 存储:听过顺手留下的(缓存)与点名要下的(下载)。
 ///
-/// 与「下载」分开成一栏,因为它们是两件事:下载是**点名要的**(不会被自动删,
-/// 在 Nordic/Music 里看得见),缓存是**顺手留的**(上限一到就按最久没听淘汰)。
-/// 摆在一起会让人以为「清缓存」会连下载一起清掉 —— 不会。
-class _CacheSection extends StatelessWidget {
-  const _CacheSection();
+/// 这两件事原先各占一栏,可它们回答的是同一个问题 ——「盘上有什么」。
+/// 摆在一起才看得出来「清缓存」清掉的是哪一半(下载**不受影响**)。
+///
+/// 这一块自己 select 它真正显示的那几件:**下载进度最多每秒播报四次**,
+/// 那不该把上面那几栏(主题 / 播放 / 服务器 / 关于)也跟着重建。
+/// 收的仍是算好的标量,不是那整条列表 —— 进度每跳一次都会换掉列表里的 job 对象。
+class _StorageSection extends StatelessWidget {
+  const _StorageSection();
 
   @override
   Widget build(BuildContext context) {
-    // 自己 select 真正显示的两件,而不是接一份整个 `AppState` ——
-    // 下载进度与缓存播报到不了这一块(这一块只认上限与占用)。
+    final t = context.nordic;
     final (limit, used) = context
         .select<AppState, (CacheLimit, int)>((s) => (s.cacheLimit, s.cacheUsedBytes));
+    final (downloadCount, active, wifiOnly) =
+        context.select<AppState, (int, int, bool)>(
+      (s) => (s.downloads.length, s.activeDownloadCount, s.wifiOnlyDownload),
+    );
+    final state = context.read<AppState>();
 
-    return _Card(
+    return Column(
       children: [
-        _SettingRow(
-          icon: Icons.storage_outlined,
-          title: '歌曲缓存',
-          subtitle: limit.isOff
-              ? '已关闭：听过的歌每次都从服务器拉'
-              : '听过的歌留在本机，再听不用重新拉',
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                limit.label,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: context.nordic.fg2),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right, size: 18, color: context.nordic.fg3),
-            ],
-          ),
-          onTap: () => showCacheSheet(context),
-        ),
-        _SettingRow(
-          icon: Icons.album_outlined,
-          title: '已用空间',
-          // 关掉缓存那一刻占用会被清成 0,但**账还没数到**的窗口里可能还有数 ——
-          // 那种时候说「缓存里还没有东西」,而右边却挂着一颗「清除」,两句话
-          // 自相矛盾。所以:占用非 0 就如实报数,上限只在缓存开着时才提。
-          subtitle: switch ((used > 0, limit.isOff)) {
-            (false, true) => '缓存已关闭，本机没有留下东西',
-            (false, false) => '缓存里还没有东西',
-            (true, true) => '占用 ${formatBytes(used)} · 缓存已关闭',
-            (true, false) => '占用 ${formatBytes(used)} · 上限 ${limit.label}',
-          },
-          trailing: used == 0
-              ? null
-              : SizedBox(
-                  width: 72,
-                  child: GhostButton(
-                    label: '清除',
-                    height: 34,
-                    onPressed: () => _clear(context),
+        const SectionHeader(title: '存储'),
+        _Card(
+          children: [
+            _SettingRow(
+              icon: Icons.storage_outlined,
+              title: '歌曲缓存',
+              subtitle: limit.isOff
+                  ? '已关闭：听过的歌每次都从服务器拉'
+                  : '听过的歌留在本机，再听不用重新拉',
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    limit.label,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: t.fg2),
                   ),
-                ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right, size: 18, color: t.fg3),
+                ],
+              ),
+              onTap: () => showCacheSheet(context),
+            ),
+            _SettingRow(
+              icon: Icons.album_outlined,
+              title: '已用空间',
+              // 关掉缓存那一刻占用会被清成 0,但**账还没数到**的窗口里可能还有数 ——
+              // 那种时候说「缓存里还没有东西」,而右边却挂着一颗「清除」,两句话
+              // 自相矛盾。所以:占用非 0 就如实报数,上限只在缓存开着时才提。
+              subtitle: switch ((used > 0, limit.isOff)) {
+                (false, true) => '缓存已关闭，本机没有留下东西',
+                (false, false) => '缓存里还没有东西',
+                (true, true) => '占用 ${formatBytes(used)} · 缓存已关闭',
+                (true, false) => '占用 ${formatBytes(used)} · 上限 ${limit.label}',
+              },
+              trailing: used == 0
+                  ? null
+                  : SizedBox(
+                      width: 72,
+                      child: GhostButton(
+                        label: '清除',
+                        height: 34,
+                        onPressed: () => _clear(context),
+                      ),
+                    ),
+            ),
+            // 「仅 Wi-Fi 下载」原先挂在**播放**那一栏里 —— 它管的是下载,不是播放。
+            _SettingRow(
+              icon: Icons.download_outlined,
+              title: '下载管理',
+              subtitle: downloadCount == 0
+                  ? '队列是空的'
+                  : '$active 个进行中 · $downloadCount 项',
+              trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
+              onTap: () => AppRoutes.openDownloads(context),
+            ),
+            _SettingRow(
+              icon: Icons.wifi,
+              title: '仅 Wi-Fi 下载',
+              subtitle: wifiOnly ? '流量下不缓存' : '流量下也会预取',
+              trailing: NordicSwitch(
+                value: wifiOnly,
+                onChanged: state.setWifiOnlyDownload,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -333,6 +329,8 @@ class _CacheSection extends StatelessWidget {
     );
   }
 }
+
+// 「关于」那一栏的落地页在 about_screen.dart —— 这一屏只留入口。
 
 /// 外观:主题三档(跟随系统 / 深色 / 浅色)。
 class _ThemeSection extends StatelessWidget {

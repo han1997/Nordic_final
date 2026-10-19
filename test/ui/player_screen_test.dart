@@ -117,8 +117,31 @@ void main() {
     }
   });
 
-  Future<void> pumpPlayer(WidgetTester tester) async {
-    final playable = playingController(playing);
+  /// 造一份替身播放层,并把它的**档位持有者**留下来 —— 转码面板要往那一个里写,
+  /// 而播放页那枚徽标读的是同一份(main.dart 交的也是同一个 controller)。
+  QualityController? fakeQuality;
+
+  PlaybackController playerWith(
+    Song song, {
+    QualityOption? loadedQuality,
+    bool? loadedLocal,
+  }) {
+    final quality = QualityController();
+    fakeQuality = quality;
+    return playingController(
+      song,
+      loadedQuality: loadedQuality,
+      loadedLocal: loadedLocal,
+      quality: quality,
+    );
+  }
+
+  /// 同一棵树,只是播放层由调用点给 —— 「这一首实际装的是哪一份」要分两种情形验
+  /// (知道 / 不知道),而那一份只有播放层答得出来。
+  Future<void> pumpPlayerWith(
+    WidgetTester tester,
+    PlaybackController playable,
+  ) async {
     addTearDown(() {
       playable.dispose();
       playable.handler.player.dispose();
@@ -128,6 +151,11 @@ void main() {
         providers: [
           ChangeNotifierProvider<AppState>.value(value: state),
           ChangeNotifierProvider<PlaybackController>.value(value: playable),
+          // 转码面板自己要这一份(与 main.dart 同一条线:交给播放层的**就是**
+          // 这一个 QualityController)。播放页那枚胶囊点开的就是它。
+          ChangeNotifierProvider<QualityController>.value(
+            value: fakeQuality ?? QualityController(),
+          ),
         ],
         child: MaterialApp(
           theme: NordicTheme.build(NordicTokens.dark),
@@ -144,6 +172,9 @@ void main() {
     await tester.pump();
     await tester.pump();
   }
+
+  Future<void> pumpPlayer(WidgetTester tester) =>
+      pumpPlayerWith(tester, playerWith(playing));
 
   /// 让 `_toggleStar` 那一趟网络真的跑完 —— Dio 的拦截器链落在一条
   /// **0 延迟的 Timer** 上,裸 `pump()` 过不去,留着它测试结束会报
@@ -238,4 +269,68 @@ void main() {
 
     await settleStarToggle(tester);
   });
+testWidgets('信息行：左边是源文件的格式，右边是**这一趟实际**用的档位', (tester) async {
+    // 这一首带格式与码率,而且装载记录说「放的是本机那份、实际用的是高质量」——
+    // 而设置里选的是默认的「均衡」。报哪一个,就是这条用例要钉的事:
+    // 用户拿这一行判断「现在到底听的是什么、花不花流量」,报选择等于骗人。
+    const song = Song(
+      id: 's-fmt',
+      title: '带格式的那首',
+      artist: '艺人',
+      album: '专辑',
+      albumId: 'al-1',
+      suffix: 'flac',
+      bitRate: 812,
+    );
+    await pumpPlayerWith(
+      tester,
+      playerWith(
+        song,
+        loadedQuality: QualityOption.high,
+        loadedLocal: true,
+      ),
+    );
+
+    expect(find.text('FLAC · 812 kbps'), findsOneWidget);
+    expect(find.text('高质量 · 本机'), findsOneWidget);
+    // 「均衡」是设置里那一档,这一屏上不该出现它。
+    expect(find.text(QualityOption.fallback.name), findsNothing);
+  });
+
+  testWidgets('不知道装的是哪一份时，只报档位、不猜来源', (tester) async {
+    await pumpPlayerWith(
+      tester,
+      playerWith(
+        const Song(
+          id: 's-x',
+          title: '刚点开的那首',
+          artist: '艺人',
+          album: '专辑',
+          albumId: 'al-1',
+          suffix: 'flac',
+          bitRate: 900,
+        ),
+      ),
+    );
+
+    // 本机那份 / 转码 / 直出 —— 一个都别猜:这一首还没装载过,猜出来的
+    // 「均衡 · 转码」会被当成事实读(而它可能马上就要走本机那份)。
+    expect(find.text(QualityOption.fallback.name), findsOneWidget);
+    expect(find.text('${QualityOption.fallback.name} · 转码'), findsNothing);
+    expect(find.text('${QualityOption.fallback.name} · 本机'), findsNothing);
+  });
+
+  testWidgets('点那枚档位胶囊直接开转码面板 —— 播放页上仍能改档', (tester) async {
+    await pumpPlayer(tester);
+
+    await tester.tap(find.byIcon(Icons.graphic_eq));
+    // 不用 `pumpAndSettle`:这一屏上那颗封面的呼吸一直在动,settle 不下来。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // 四档都在,而且讲的是同一件事(那个面板与「⋯」菜单里那条是一条路)。
+    expect(find.text(QualityOption.original.name), findsOneWidget);
+    expect(find.text(QualityOption.low.name), findsOneWidget);
+  });
+
 }

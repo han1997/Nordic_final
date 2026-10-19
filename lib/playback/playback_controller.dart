@@ -190,6 +190,20 @@ class PlaybackController extends ChangeNotifier {
 
   QualityOption get quality => _handler.quality;
 
+  /// **正在放的那一首**装载那一刻实际用的是哪一档、是不是本机文件。
+  ///
+  /// 与 [quality](用户选的那一档)**不是一回事**,两处都会不一样:
+  /// 本机要是有更高一档的完整缓存,播放层会直接拿它播(见
+  /// `NordicAudioHandler._sourceFor`);而「本机那份」意味着这条流不花流量。
+  /// 界面(播放页徽标、歌曲信息)报的是**这一份**,不是选择。
+  ///
+  /// 两个都是 null = 不知道(还没装载过 / 装载记录被清),那时界面只报所选档。
+  QualityOption? get loadedQuality => _loadedQuality;
+  bool? get loadedLocal => _loadedLocal;
+
+  QualityOption? _loadedQuality;
+  bool? _loadedLocal;
+
   void _wire() {
     final player = _handler.player;
 
@@ -292,7 +306,21 @@ class PlaybackController extends ChangeNotifier {
 
   void _emit(PlaybackState next) {
     _state = next;
+    // 每一次状态播报都顺手重读一遍「实际装载的是哪一份」。
+    //
+    // 它不放进 [PlaybackState]:那份记录活在播放层里(见 [loadedQuality]),
+    // 而**每一次装载**都要重读一次才跟得上 —— 换档、换线路、切歌三处都会装载,
+    // 各自都会走到这里。少了一处,徽标就会停在上一档上,而那正是用户会信的
+    // 那一行字。查表很便宜(一个 map 命中),不必为它单开一条通道。
+    _refreshLoadedOrigin();
     notifyListeners();
+  }
+
+  void _refreshLoadedOrigin() {
+    final song = _state.song;
+    final origin = song == null ? null : _handler.loadedOriginOf(song);
+    _loadedQuality = origin?.quality;
+    _loadedLocal = origin?.local;
   }
 
   /// 冷启动把上次的循环 / 随机摆回**播放器**。

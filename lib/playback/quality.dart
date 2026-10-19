@@ -114,3 +114,20 @@ List<QualityOption> betterTiersThan(QualityOption base) {
   final index = QualityOption.all.indexOf(base);
   return index <= 0 ? const [] : QualityOption.all.sublist(0, index);
 }
+
+/// 「这一首此刻按什么在放」那句话 —— 播放页那枚徽标与歌曲信息里的
+/// 「实际播放」共用一份文案,免得两处各写一套说法。
+///
+/// 来源三选一,每个词说的是**不同的一件事**:
+///
+///   - **本机** —— 放的是本机那份文件(下载过的,或听过的缓存)。不花流量。
+///   - **直出** —— 原音、没过编码器(服务器上是什么样,听到的就是什么样)。
+///   - **转码** —— 过了一道编码(320 / 192 / 96 那几档)。
+///
+/// [local] 为 null 表示**不知道**(这一首还没装载过,或者装载记录已经被清掉)——
+/// 那时只报档位、不猜来源。猜错比不说更糟:用户要拿这句话判断「现在是不是在放本机那份」。
+String playbackOriginLabel(QualityOption quality, {bool? local}) {
+  if (local == null) return quality.name;
+  if (local) return '${quality.name} · 本机';
+  return '${quality.name} · ${quality.isOriginal ? '直出' : '转码'}';
+}

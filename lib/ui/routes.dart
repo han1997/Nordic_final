@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/config_transfer.dart';
 import '../theme/tokens.dart';
 import 'screens/add_route_screen.dart';
+import 'screens/about_screen.dart';
 import 'screens/album_screen.dart';
 import 'screens/artist_screen.dart';
 import 'screens/downloads_screen.dart';
@@ -42,6 +43,7 @@ abstract final class AppRoutes {
   static const newPlaylist = '/new-playlist';
   static const addRoute = '/add-route';
   static const sync = '/sync';
+  static const about = '/about';
 
   /// 所有页面的路由都从这里出。
   ///
@@ -79,6 +81,8 @@ abstract final class AppRoutes {
       case sync:
         // 二级页,走滑入 —— 它不是播放页那种「同一张封面翻个面」。
         return slide(settings, const SyncScreen());
+      case about:
+        return slide(settings, const AboutScreen());
       case downloads:
         return slide(settings, const DownloadsScreen());
       case newPlaylist:
@@ -227,6 +231,13 @@ abstract final class AppRoutes {
   /// 打开扫码同步 —— 把另一台设备上的服务器与线路带到这台设备来。
   static Future<void> openSync(BuildContext context) =>
       Navigator.of(context).pushNamed(sync);
+
+  /// 打开「关于」—— 设置里那一栏的落地页。
+  ///
+  /// 与别的二级页一样**推入**(不是弹层):它有一屏内容,还可能从那里翻到
+  /// 系统的开源许可页(那是另一层)。
+  static Future<void> openAbout(BuildContext context) =>
+      Navigator.of(context).pushNamed(about);
 
   static Future<void> openDownloads(BuildContext context) =>
       Navigator.of(context).pushNamed(downloads);

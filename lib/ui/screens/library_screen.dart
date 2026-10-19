@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -75,11 +76,115 @@ class _LibraryScreenState extends State<LibraryScreen> {
   int _totalSongs = 0;
   List<Artist> _topArtists = const [];
 
+  /// 「回到正在播放」用的三件东西 —— 都住在本层,**不住在 [_SongsTab] 里**:
+  /// 切栏会重建那一栏,而滚动位置、「刚定位到哪一行」该留住。
+  ///
+  /// [songsScroll] 挂在「全部歌曲」那张列表上;[playingRowKey] 挂在**正在放的那一行**
+  /// (落点要靠量真实位置对齐,见 [rowExtent])。
+  final ScrollController songsScroll = ScrollController();
+  final GlobalKey playingRowKey = GlobalKey();
+
+  /// 刚刚被「定位」到的那一行(1.2 秒后自己灭掉)。走通道不走 `setState`:
+  /// 该重建的只有那一行,而这一屏背后挂着四百多张专辑的网格。
+  final ValueNotifier<String?> located = ValueNotifier<String?>(null);
+  Timer? _locatedTimer;
+
+  @override
+  void dispose() {
+    _locatedTimer?.cancel();
+    songsScroll.dispose();
+    located.dispose();
+    super.dispose();
+  }
+
   void _deriveIfNeeded(LibrarySnapshot library) {
     if (identical(library, _derivedFor)) return;
     _derivedFor = library;
     _totalSongs = library.totalSongs;
     _topArtists = library.topArtists;
+  }
+
+  /// 歌曲行一行的实际高度 —— 拿**列表自己报出来的总高度**除条数,不写死 64。
+  ///
+  /// 行高是 `minHeight`(见 `docs/performance.md`):系统字号调大之后每一行都会长高,
+  /// 写死 64 的话上千行的库里落点会差出一整屏。列表虽然懒建,但 `itemCount` 是已知的,
+  /// 框架按已建行的**平均高度**报 `maxScrollExtent` —— 行高一致时这个平均数就是准的。
+  ///
+  /// [items] 要按**列表的项数**给(歌曲数 + 表头 + 页脚):除的是同一份口径,
+  /// 两处差一两个的话在短列表上会偏出去。
+  double rowExtent(int items) {
+    if (!songsScroll.hasClients || items <= 0) return 64;
+    final position = songsScroll.position;
+    final total = position.maxScrollExtent + position.viewportDimension;
+    if (total <= 0) return 64;
+    return (total / items).clamp(24.0, 400.0);
+  }
+
+  /// 回到正在播放的那一首:切到歌曲栏、滚到它那一行、让那一行亮一下。
+  ///
+  /// 三件事各有讲究:
+  ///
+  ///   - **那一首可能还没取回来**。「全部歌曲」是一页页取的,而在别处(专辑 /
+  ///     歌单 / 随机)播起来的那首完全可能落在还没取到的那几页里 —— 那就先接着取
+  ///     (封顶几页),取到了再滚;取完还是没有,如实说一句,别假装跳过去了。
+  ///   - **列表必须保持懒加载**。几千首的库不能为了滚一次全建出来,所以先按
+  ///     [rowExtent] 估一步 `jumpTo`,再用 `ensureVisible` 按**真实布局**对齐 ——
+  ///     与歌词页同一条口径(自己估准不了,框架量得准)。
+  ///   - **只让那一行亮**。整屏重建会把四百多张专辑的网格也带上。
+  Future<void> _locateCurrent(AppState state) async {
+    final playable = context.read<PlaybackController>();
+    final id = playable.state.song?.id;
+    if (id == null) return;
+
+    if (_tab != LibraryTab.songs) setState(() => _tab = LibraryTab.songs);
+    // 切栏之后要等这一帧画完:那一栏还没建出来时,列表的高度与落点都还问不到。
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    var index = state.library.songs.indexWhere((s) => s.id == id);
+    // 封顶四页(一页一千首)—— 常见个人库两三页就到底了,再多就是服务器给不出这一首。
+    for (var tries = 0; index < 0 && tries < 4; tries++) {
+      if (!await state.loadMoreSongs()) break;
+      if (!mounted) return;
+      index = state.library.songs.indexWhere((s) => s.id == id);
+    }
+
+    if (index < 0) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+        content: Text('这首歌不在已经取回来的曲目里 —— 下拉刷新一次音乐库再试'),
+        duration: Duration(seconds: 3),
+      ));
+      return;
+    }
+    if (!songsScroll.hasClients) return;
+
+    final songs = state.library.songs;
+    final position = songsScroll.position;
+    // 项数按列表自己的口径:表头一行 + 每首歌一行 + 页脚一行。
+    final target = (index * rowExtent(songs.length + 2))
+        .clamp(0.0, position.maxScrollExtent);
+    songsScroll.jumpTo(target);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    // 对齐交给框架(它按真实布局算偏移)。这一行没建出来的话就停在估计的落点上 ——
+    // 那也已经在视口附近了,聊胜于无,总比一动不动好。
+    final rowContext = playingRowKey.currentContext;
+    if (rowContext != null && rowContext.mounted) {
+      await Scrollable.ensureVisible(
+        rowContext,
+        alignment: 0.32,
+        duration: const Duration(milliseconds: 260),
+        curve: NordicMotion.ease,
+      );
+    }
+    if (!mounted) return;
+
+    located.value = id;
+    _locatedTimer?.cancel();
+    _locatedTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) located.value = null;
+    });
   }
 
   @override
@@ -130,6 +235,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     // 就是随机顺序,队列面板不必特殊处理。
                     onPressed: () => _shuffleAll(playable),
                   ),
+                  // 「回到正在播放」只在**歌曲栏**出现,而且**没有在播的歌时整颗不出现**
+                  // (禁用态在这里读起来像个坏按钮)。它用的 currentSongId 就是这一屏
+                  // 早就 select 出来的那一件 —— 不新增订阅,重建面也不动。
+                  if (_tab == LibraryTab.songs && currentSongId != null)
+                    IconButtonRound(
+                      icon: Icons.my_location,
+                      quiet: true,
+                      onPressed: () => _locateCurrent(state),
+                    ),
                   IconButtonRound(
                     icon: Icons.search,
                     quiet: true,
@@ -252,6 +366,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
             currentSongId: currentSongId,
             playing: playing,
             playable: playable,
+            scroll: songsScroll,
+            playingRowKey: playingRowKey,
+            located: located,
           ),
               LibraryTab.playlists => _PlaylistsTab(library: library),
             },
@@ -540,6 +657,9 @@ class _SongsTab extends StatelessWidget {
     required this.currentSongId,
     required this.playing,
     required this.playable,
+    required this.scroll,
+    required this.playingRowKey,
+    required this.located,
   });
 
   final LibrarySnapshot library;
@@ -548,6 +668,12 @@ class _SongsTab extends StatelessWidget {
   /// 当前这一首**在不在播** —— 由上面 select 出来传下来,这一栏不去订阅播放层。
   final bool playing;
   final PlaybackController playable;
+
+  /// 「回到正在播放」那三件 —— 由 `_LibraryScreenState` 持有(见那边的说明)。
+  /// 这一栏只负责挂上去:滚动控制器给列表,行键给正在放的那一行,通道给那一行听。
+  final ScrollController scroll;
+  final GlobalKey playingRowKey;
+  final ValueNotifier<String?> located;
 
   @override
   Widget build(BuildContext context) {
@@ -570,6 +696,7 @@ class _SongsTab extends StatelessWidget {
         return false;
       },
       child: ListView.builder(
+        controller: scroll,
         // 同 [_AlbumsTab]:不够长也要能下拉刷新。
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(
@@ -599,11 +726,21 @@ class _SongsTab extends StatelessWidget {
             );
           }
           final song = library.songs[index - 1];
-          return SongRow(
+          // 正在放的那一行多三件东西:一个行键(「回到正在播放」要靠它量真实位置)、
+          // 一个听 [located] 的包装(只有这一行会亮)。别的行一个都不多。
+          final isCurrent = song.id == currentSongId;
+          final row = SongRow(
             song: song,
             coverUri: (id) => repo!.coverUri(id, size: 128),
-            playing: song.id == currentSongId && playing,
+            playing: isCurrent && playing,
             onTap: () => playable.playAll(library.songs, index: index - 1),
+          );
+          if (!isCurrent) return row;
+          return _LocatePulse(
+            key: playingRowKey,
+            located: located,
+            accent: context.accentSafe,
+            child: row,
           );
         },
       ),
@@ -758,5 +895,37 @@ class _PlaylistsTab extends StatelessWidget {
     } on MusicSourceException {
       return null;
     }
+  }
+}
+
+/// 「回到正在播放」落点那一下的亮 —— 只包在**正在放的那一行**上。
+///
+/// 听一条通道而不是跟着整屏重建:定位真正变的只有这一行,而这一屏背后挂着
+/// 四百多张专辑的网格。淡入淡出交给 `AnimatedContainer`;1.2 秒后通道被清回 null,
+/// 它自己退回去 —— 亮一下是「落点在这儿」,不是「这一行被选中了」。
+class _LocatePulse extends StatelessWidget {
+  const _LocatePulse({
+    super.key,
+    required this.located,
+    required this.accent,
+    required this.child,
+  });
+
+  final ValueListenable<String?> located;
+  final Color accent;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<String?>(
+      valueListenable: located,
+      child: child,
+      builder: (context, id, child) => AnimatedContainer(
+        duration: const Duration(milliseconds: 240),
+        curve: NordicMotion.ease,
+        color: id == null ? Colors.transparent : accent.withValues(alpha: 0.16),
+        child: child,
+      ),
+    );
   }
 }

@@ -226,6 +226,16 @@ String formatBytes(int bytes) {
   return '${mb.round()} MB';
 }
 
+/// 日期 → `2026 年 10 月 12 日`。歌曲信息里那条「入库时间」用它。
+///
+/// **不比 `StaleBanner` 那口钟详到分钟**:那一条说的是「这一份是什么时候同步的」,
+/// 分钟有意义;这一条说的是「这首曲子什么时候进的库」,年比分钟要紧得多
+/// (库里大部分曲子是几年前进来的)。
+String formatDay(DateTime at) {
+  final local = at.toLocal();
+  return '${local.year} 年 ${local.month} 月 ${local.day} 日';
+}
+
 /// 横滑货架的高度 —— 按内容算,不写死。
 ///
 /// 写死过 214 / 220 两处,结果中文名换行或系统字体调大时就会溢出

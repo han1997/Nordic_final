@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.41+42
+version: 1.0.42+43
 
 environment:
   sdk: ^3.12.1
@@ -77,6 +77,11 @@ dependencies:
   # 不许有运行时的 CDN 依赖(见 tool/build.sh 的守卫与 web/index.html 的注释)。
   # web 上 `ScanCapability` 一律返回 false,那个控件从不被构造。
   mobile_scanner: ^7.4.2
+  # 「关于」页上那个版本号。它读的是**平台包里那份版本**,而那份正是从这份
+  # pubspec 生成的 —— 不是第二份真值(见 CLAUDE.md 那条「版本号的真值只有一处」)。
+  # 六个平台都支持:web 上读的就是构建落下的 `version.json`(tool/build.sh 已经在
+  # 逐字核对它),桌面读 exe 的版本信息。纯读取,没有网络、没有运行时依赖。
+  package_info_plus: ^10.2.2
 
 dev_dependencies:
   flutter_test:
@@ -103,6 +108,12 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # 「关于」页上那颗图标。它引的是 **tool/app_icon.py 的产物之一**
+  # (`web/icons/Icon-512.png`,与 Android 那五档 mipmap、favicon 同一次生成),
+  # 所以这里不另存一份图形 —— 要改图标请改生成脚本(见 README 的图标那一节)。
+  assets:
+    - web/icons/Icon-512.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

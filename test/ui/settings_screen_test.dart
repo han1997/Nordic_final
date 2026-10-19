@@ -13,6 +13,8 @@ import 'package:nordic/playback/quality.dart';
 import 'package:nordic/state/app_state.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/tokens.dart';
+import 'package:nordic/ui/routes.dart';
+import 'package:nordic/ui/screens/about_screen.dart';
 import 'package:nordic/ui/screens/settings_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -93,7 +95,11 @@ void main() {
         ],
         child: MaterialApp(
           theme: NordicTheme.build(NordicTokens.dark),
-          home: const SettingsScreen(),
+          // 「关于」那一条是**推入的路由** —— 路由表得在场,与产品里同一份。
+          onGenerateRoute: (settings) =>
+              settings.name == Navigator.defaultRouteName
+                  ? MaterialPageRoute<void>(builder: (_) => const SettingsScreen())
+                  : AppRoutes.generate(settings),
         ),
       ),
     );
@@ -143,6 +149,10 @@ void main() {
       find.byType(ListView),
       const Offset(0, -120),
     );
+    // 与下面那条同一件事:半截在屏幕上时点击会落空(点了没反应,不报错)——
+    // 「存储」合并成一栏之后这一行离屏幕下沿更近了,不先摆正就点不着。
+    await tester.ensureVisible(find.text('歌曲缓存'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('歌曲缓存'));
     await tester.pumpAndSettle();
 
@@ -279,6 +289,49 @@ void main() {
     // 扫码那一行一直在 —— 没连服务器时它正是要用的那一条。
     expect(find.text('扫码同步'), findsOneWidget);
     expect(find.text('导出配置'), findsNothing);
+  });
+
+testWidgets('「存储」把缓存与下载收在一栏里', (tester) async {
+    await pumpSettings(tester);
+
+    await tester.dragUntilVisible(
+      find.text('仅 Wi-Fi 下载'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pump();
+
+    // 四条在一栏:手动的(下载)与顺手的(缓存)摆在一起 ——「清缓存会不会连下载
+    // 一起清掉」这件事于是不用靠一行小字解释。
+    expect(find.text('存储'), findsOneWidget);
+    expect(find.text('歌曲缓存'), findsOneWidget);
+    expect(find.text('已用空间'), findsOneWidget);
+    expect(find.text('下载管理'), findsOneWidget);
+    expect(find.text('仅 Wi-Fi 下载'), findsOneWidget);
+
+    // 原先那两栏的名字不该再各占一个标题,「隐私」那一栏整个没了
+    // (那两条陈述搬去了「关于」)。
+    expect(find.text('缓存'), findsNothing);
+    expect(find.text('下载'), findsNothing);
+    expect(find.text('隐私'), findsNothing);
+  });
+
+  testWidgets('「关于」那一栏在，点进去是那一页', (tester) async {
+    await pumpSettings(tester);
+
+    await tester.dragUntilVisible(
+      find.text('关于 Nordic'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pump();
+
+    expect(find.text('关于'), findsOneWidget);
+    expect(find.text('关于 Nordic'), findsOneWidget);
+
+    await tester.tap(find.text('关于 Nordic'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AboutScreen), findsOneWidget);
   });
 
 }
