@@ -29,7 +29,7 @@ class StaleBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    final when = savedAt == null ? null : '上次同步 ${_clock(savedAt!)}';
+    final when = savedAt == null ? null : '上次同步 ${formatClock(savedAt!)}';
 
     return Padding(
       padding: padding,
@@ -68,13 +68,7 @@ class StaleBanner extends StatelessWidget {
     );
   }
 
-  /// `10 月 16 日 17:20` —— 只到分钟:再细没有意义,这里只想说「是哪时候的」。
-  static String _clock(DateTime at) {
-    final local = at.toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${local.month} 月 ${local.day} 日 '
-        '${two(local.hour)}:${two(local.minute)}';
-  }
+  /// 见文件末尾的 [formatClock]。
 }
 
 /// 加载中。
@@ -416,4 +410,15 @@ class NordicTextField extends StatelessWidget {
       ),
     );
   }
+}
+
+/// `10 月 16 日 17:20` —— 只到分钟:再细没有意义,这里只想说「是哪时候的」。
+///
+/// 两个地方用:库快照那条「上次同步」,以及「曲库扫描」那张纸上的上次扫描时间。
+/// (顶层的函数而不是某个类的私有静态:后一处不在 [StaleBanner] 里。)
+String formatClock(DateTime at) {
+  final local = at.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${local.month} 月 ${local.day} 日 '
+      '${two(local.hour)}:${two(local.minute)}';
 }

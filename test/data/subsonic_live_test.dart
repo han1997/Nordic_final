@@ -178,4 +178,43 @@ void main() {
     expect(uri.queryParameters['maxBitRate'], '192');
     expect(uri.queryParameters['format'], 'mp3');
   });
+
+  /// 曲库扫描的状态 —— **只读那一条**。
+  ///
+  /// 这一条的价值在于**形状**:`getScanStatus` 回的 `scanStatus` 里到底有没有
+  /// `count` / `lastScan`,笔头上的文档说不准(实测 Navidrome 0.64.2 三个都有)。
+  /// **不测 `startScan`** —— 那会让用户的服务器当场扫盘,是这台机器的副作用,
+  /// 不该由一条用例触发。
+  test('扫描状态：服务器答得出在做没在做', () async {
+    if (!await reachable()) {
+      markTestSkipped('Navidrome 不可达，跳过');
+      return;
+    }
+    final status = await repo.scanStatus();
+
+    // 扫描中不中是一个真值(不是 null) —— 这一条正是「端点通不通」。
+    expect(status.scanning, isA<bool>());
+    if (status.count != null) {
+      expect(status.count, greaterThan(0), reason: '真实库不该报 0 首');
+    }
+  });
+
+  /// 播放队列:**读**一条。写(savePlayQueue)会改掉用户服务器上那份队列,
+  /// 那不该由用例去动。
+  test('播放队列读得回来 —— 空队列是「没有 entry」而不是报错', () async {
+    if (!await reachable()) {
+      markTestSkipped('Navidrome 不可达，跳过');
+      return;
+    }
+    final queue = await repo.playQueue();
+
+    // 不支持这个端点的实现会返回 null;这一台是支持的。
+    expect(queue, isNotNull, reason: 'Navidrome 支持 getPlayQueue');
+    // 有没有内容取决于这台服务器上有没有别的客户端存过队列 —— 两种都合法,
+    // 要紧的是**空的时候也不报错**(实测:没有 entry 键)。
+    if (queue!.songs.isNotEmpty) {
+      expect(queue.currentId, isNotNull);
+    }
+  });
+
 }

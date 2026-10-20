@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nordic/data/models.dart';
 import 'package:nordic/data/subsonic_auth.dart';
 import 'package:nordic/data/subsonic_client.dart';
 import 'package:nordic/data/subsonic_payload.dart';
@@ -169,6 +170,44 @@ void main() {
       expect(seen.single.queryParameters['submission'], 'true');
       expect(seen.single.queryParameters.containsKey('time'), isFalse);
     });
+  });
+
+test('队列同步：savePlayQueue 的 id 重复出现，current 与 position 各一份', () async {
+    await repo.savePlayQueue(
+      songs: [
+        const Song(id: 's1', title: '一', artist: '甲', album: 'A', albumId: 'al-1'),
+        const Song(id: 's2', title: '二', artist: '乙', album: 'A', albumId: 'al-1'),
+        const Song(id: 's3', title: '三', artist: '丙', album: 'A', albumId: 'al-1'),
+      ],
+      currentId: 's2',
+      position: const Duration(seconds: 92),
+    );
+
+    final uri = seen.single;
+    expect(uri.path, '/rest/savePlayQueue.view');
+    // **同一个名字出现三次** —— 协议就是这么定的,压成最后一个的话
+    // 服务器只认得队列里的一首歌(恢复出来的队列就只剩一首)。
+    expect(uri.queryParametersAll['id'], ['s1', 's2', 's3']);
+    expect(uri.queryParameters['current'], 's2');
+    // 毫秒,不是秒。
+    expect(uri.queryParameters['position'], '92000');
+  });
+
+  test('空队列一条都不发 —— 那是「把服务器上那份清掉」，不是同步', () async {
+    // 实测(Navidrome 0.64.2):不带 `id` 的 savePlayQueue **就是把队列清空**。
+    // 所以这一层要拦住它 —— 本地队列空掉(比如清空了播放队列)不该顺手
+    // 把另一台设备正在听的那一份抹掉。
+    await repo.savePlayQueue(songs: const [], currentId: null);
+
+    expect(seen, isEmpty);
+  });
+
+  test('扫描状态：getScanStatus / startScan 两个端点', () async {
+    await repo.scanStatus();
+    expect(seen.last.path, '/rest/getScanStatus.view');
+
+    await repo.startScan();
+    expect(seen.last.path, '/rest/startScan.view');
   });
 
 }

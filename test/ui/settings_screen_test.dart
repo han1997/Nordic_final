@@ -334,4 +334,20 @@ testWidgets('「存储」把缓存与下载收在一栏里', (tester) async {
     expect(find.byType(AboutScreen), findsOneWidget);
   });
 
+testWidgets('服务器那一栏里有「曲库扫描」—— 三处空态那句承诺落在这儿', (tester) async {
+    await pumpSettings(tester);
+
+    await tester.dragUntilVisible(
+      find.text('曲库扫描'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pump();
+
+    expect(find.text('曲库扫描'), findsOneWidget);
+    // 还没点过那一行时它**如实说不知道** —— 进设置页不该悄悄打一次服务器,
+    // 而编一个「未在扫描」出来是假的(见 settings_screen 里那一行)。
+    expect(find.text('看看服务器上有没有新加的歌'), findsOneWidget);
+  });
+
 }

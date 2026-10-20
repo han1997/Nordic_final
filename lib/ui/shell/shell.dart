@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:provider/provider.dart';
 
+import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
@@ -10,6 +13,7 @@ import '../../theme/tokens.dart';
 import '../routes.dart';
 import '../screens/home_screen.dart';
 import '../screens/library_screen.dart';
+import '../screens/queue_restore_sheet.dart';
 import '../screens/settings_screen.dart';
 import '../widgets/components.dart';
 import 'bottom_stack.dart';
@@ -103,7 +107,42 @@ class _NordicShellState extends State<NordicShell>
       } else if (state.libraryFromCache) {
         state.loadLibrary(silent: true);
       }
+
+      // 「接着上次听」:服务器上要是留着一份**别的设备**写的队列,问一句。
+      // 与拉库同一处(首帧之后),但它自己会判断值不值得问 —— 我们自己刚写的那
+      // 一份不会问(见 AppState.checkPlayQueue 的指纹比对)。
+      unawaited(_maybeOfferQueueRestore(state));
     });
+  }
+
+  /// 值得问的时候问一句「接着上次听?」。
+  ///
+  /// 「继续」= 装载那份队列 + 摆好落点,**但不出声**(`autoPlay: false`)——
+  /// 打开应用自己放起来是很吓人的事,让用户自己按播放。
+  ///
+  /// 两种回答都调 [AppState.forgetPendingQueue]:那一步会把这一次的**指纹**
+  /// 记下来 —— 「忽略」是他刚说了不要,「继续」是这一份已经装载过了。
+  /// 下次换个队列(另一台设备又改了)才会再问。
+  Future<void> _maybeOfferQueueRestore(AppState state) async {
+    await state.checkPlayQueue();
+    if (!mounted) return;
+    final pending = state.pendingQueueRestore;
+    if (pending == null) return;
+
+    final accepted = await showQueueRestoreSheet(context, pending);
+    if (!mounted) return;
+
+    if (accepted) {
+      final playable = context.read<PlaybackController>();
+      await playable.playAll(
+        pending.songs,
+        index: queueRestoreIndex(pending),
+        autoPlay: false,
+      );
+      // 落点单独 seek:装载那一趟给的是 0,而这里说的是「上次听到哪儿」。
+      await playable.seek(pending.position);
+    }
+    await state.forgetPendingQueue();
   }
 
   @override

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/media_cache.dart';
+import '../../data/music_source.dart';
 import '../../data/server_config.dart';
 import '../../playback/quality.dart';
 import '../../state/app_state.dart';
@@ -17,6 +18,7 @@ import '../widgets/rows.dart';
 import 'config_export_sheet.dart';
 import 'cache_sheet.dart';
 import 'quality_sheet.dart';
+import 'scan_sheet.dart';
 
 /// 这一屏真正订阅的那几件 `AppState` 数据。
 ///
@@ -160,6 +162,9 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 // 只在真连着的时候出现。[_SettingRow] 没有禁用态,给一个
                 // `onTap: null` 的行既不置灰也不回弹,读起来就是个坏按钮。
+                // 曲库扫描 —— 这一行原先**只存在于文案里**:首页 / 音乐库 / 搜索的
+                // 空态都写着「到设置里重新扫描一次曲库」,而设置里没有这一条。
+                if (view.server != null) const _ScanRow(),
                 if (view.server != null)
                   _SettingRow(
                     icon: Icons.qr_code_2,
@@ -496,6 +501,45 @@ class _SettingRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 设置页里「曲库扫描」那一行。
+///
+/// 副标题报服务器那边的状态,**但这一行自己不去问** —— 它在打开那张纸的时候
+/// 问(`scan_sheet.dart`),问过之后这里就跟着显示。理由有两条:
+///
+///   1. 「进一次设置页 = 打一次服务器」是不该有的副作用(它在别的 tab 上也被保活);
+///   2. 进了设置页还没点过那一行时,说「看看服务器上有没有新加的歌」是**真的**
+///      —— 我们此刻确实不知道;编一个「未在扫描」出来才是假的。
+///
+/// 做成一个自己订阅的小组件,而不是往设置页那份 select 记录里再加一件:
+/// 扫描状态与这一屏其余部分无关,加进那张表等于让主题 / 播放 / 服务器每一栏
+/// 都跟着它重建(那张表的口径是「表里每一件都必须被 build 体读到」)。
+class _ScanRow extends StatelessWidget {
+  const _ScanRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final status = context.select<AppState, ScanStatus?>((s) => s.scanStatus);
+    final String subtitle;
+    if (status == null) {
+      subtitle = '看看服务器上有没有新加的歌';
+    } else if (status.scanning) {
+      subtitle = '正在扫描 · 已扫 ${status.count ?? 0} 首';
+    } else if (status.count != null) {
+      subtitle = '上次扫到 ${status.count} 首 · 随时可以再扫';
+    } else {
+      subtitle = '看看服务器上有没有新加的歌';
+    }
+
+    return _SettingRow(
+      icon: Icons.refresh,
+      title: '曲库扫描',
+      subtitle: subtitle,
+      trailing: Icon(Icons.chevron_right, size: 18, color: context.nordic.fg3),
+      onTap: () => showScanSheet(context),
     );
   }
 }

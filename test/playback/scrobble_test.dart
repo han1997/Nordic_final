@@ -87,7 +87,7 @@ void main() {
       source = _FakeSource(sent);
     });
 
-    test('判据说该报了才真的发；同一首不重复发', () {
+    test('判据说该报了才真的发；同一首不重复发', () async {
       final r = PlaybackReporter(() => source);
 
       r.nowPlaying('s1');
@@ -95,15 +95,18 @@ void main() {
       r.position('s1', position: const Duration(minutes: 1), duration: const Duration(minutes: 2));
       r.position('s1', position: const Duration(minutes: 2), duration: const Duration(minutes: 2));
 
+      // 发是**串着做的**(补报与去重都要讲顺序),所以要等那一串走完再断言。
+      await r.settled;
       expect(sent, [('s1', false), ('s1', true)]);
     });
 
-    test('没有仓库（还没连服务器）时一条都不发', () {
+    test('没有仓库（还没连服务器）时一条都不发', () async {
       final r = PlaybackReporter(() => null);
 
       r.nowPlaying('s1');
       r.position('s1', position: const Duration(minutes: 9), duration: const Duration(minutes: 10));
 
+      await r.settled;
       expect(sent, isEmpty);
     });
 
@@ -111,11 +114,10 @@ void main() {
       final r = PlaybackReporter(() => _FakeSource(sent, fail: true));
 
       r.nowPlaying('s1');
-      // 让那一趟 `unawaited` 的 future 跑完;它要是没被吞掉,这里会冒出
-      // 「Unhandled exception」把用例打红。
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+      // 等那一串后台动作走完;失败要是没被吞掉,这里会冒出「Unhandled exception」
+      // 把用例打红。
 
+      await r.settled;
       expect(sent, [('s1', false)]);
     });
   });

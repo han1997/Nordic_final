@@ -1,7 +1,9 @@
 import 'package:meta/meta.dart';
 
 import 'json_list.dart';
+import 'models.dart';
 import 'music_source.dart';
+import 'subsonic_mapper.dart';
 
 /// Subsonic / OpenSubsonic 响应外壳。
 ///
@@ -178,6 +180,61 @@ abstract final class SubsonicPayload {
   static Map<String, dynamic> lyrics(Map<String, dynamic> body) {
     final lyrics = _root(body)['lyrics'];
     return lyrics is Map ? lyrics.cast<String, dynamic>() : const {};
+  }
+
+  /// `getPlayQueue` → 队列与落点。
+  ///
+  /// 三条**实测过**的边界(2026-10-19,Navidrome 0.64.2):
+  ///
+  ///   - 空队列时**根本没有 `entry` 键**(整块 `playQueue` 只有 username/changed
+  ///     那几项)—— 缺失就是空,不是「解析失败」;
+  ///   - 从没存过时 `changed` 是**零时间**(`0001-01-01T00:00:00Z`)——
+  ///     那不是「很久以前改过」,是「从没改过」,一律当 null:界面拿它判断
+  ///     「这是不是别的设备留下的」,把它当成一个真实时刻就永远判错;
+  ///   - 不支持这个端点的实现会回一个错误(仓库那一层已经吞掉,返回 null)。
+  static ({
+    List<Song> songs,
+    String? currentId,
+    Duration position,
+    DateTime? changed,
+  }) playQueue(Map<String, dynamic> body) {
+    final queue = _root(body)['playQueue'];
+    final map = queue is Map ? queue.cast<String, dynamic>() : const <String, dynamic>{};
+    final changed = map['changed'] is String
+        ? DateTime.tryParse(map['changed'] as String)
+        : null;
+    return (
+      songs: SubsonicMapper.songs(mapList(map['entry'])),
+      currentId: map['current'] as String?,
+      // 毫秒。给了负数 / 没给都当 0(从这一刻开头)。
+      position: Duration(milliseconds: (map['position'] as num?)?.toInt() ?? 0),
+      // **零时间不是「很久以前改过」,是「从没改过」** —— 一律当 null,
+      // 否则界面拿它判断「这是不是别的设备留下的」时会永远判错。
+      //
+      // 判据不能写成「毫秒数为 0」:`0001-01-01T00:00:00Z` 的毫秒数是个
+      // **负数**(公历 1 年在 1970 之前),那个等式永远不成立 ——
+      // 实测踩过(用例里钉着)。
+      changed: (changed == null || changed.year <= 1) ? null : changed,
+    );
+  }
+
+  /// `getScanStatus` / `startScan` → 扫描状态。
+  ///
+  /// `scanning` 缺省按 false:`startScan` 有的实现只回一个空载荷(那意味着
+  /// 「收下了,开始扫了」,但这一刻它还没报状态)—— 那时界面照实说「未在扫描」,
+  /// 下一秒轮询就会拿到真值。**不编一个 true 出来**。
+  static ScanStatus scanStatus(Map<String, dynamic> body) {
+    final root = _root(body);
+    final status = root['scanStatus'];
+    final map = status is Map ? status.cast<String, dynamic>() : const <String, dynamic>{};
+    final lastScan = map['lastScan'] is String
+        ? DateTime.tryParse(map['lastScan'] as String)
+        : null;
+    return (
+      scanning: map['scanning'] == true,
+      count: (map['count'] as num?)?.toInt(),
+      lastScan: lastScan,
+    );
   }
 
   static Map<String, dynamic> _root(Map<String, dynamic> body) {

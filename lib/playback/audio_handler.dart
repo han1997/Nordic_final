@@ -12,6 +12,7 @@ import '../data/media_cache.dart';
 import '../data/models.dart';
 import '../data/music_source.dart';
 import '../data/network_status.dart';
+import '../data/scrobble_store.dart';
 import 'quality.dart';
 import 'scrobble.dart';
 
@@ -148,6 +149,7 @@ Future<NordicAudioHandler> startAudioService({
   required QualityController quality,
   DownloadStore? downloads,
   MediaCache? cache,
+  ScrobbleStore? scrobbles,
   bool Function()? wifiOnly,
 }) =>
     AudioService.init(
@@ -156,6 +158,7 @@ Future<NordicAudioHandler> startAudioService({
         quality,
         downloads: downloads,
         cache: cache,
+        scrobbles: scrobbles,
         wifiOnly: wifiOnly,
       ),
       config: const AudioServiceConfig(
@@ -185,6 +188,7 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     this._quality, {
     this._downloads,
     this._cache,
+    this._scrobbles,
     bool Function()? wifiOnly,
     NetworkProbe? probe,
     AudioPlayer? player,
@@ -280,11 +284,15 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// 取值函数而非实例 —— 见 startAudioService 的说明。
   final MusicSource? Function() _repository;
 
+  /// 待补的「听过一次」落在哪儿(见 `data/scrobble_store.dart`)。
+  /// null = 不落盘:发不出去的那几笔就丢了(与接上它之前一样)。
+  final ScrobbleStore? _scrobbles;
+
   /// 播放状态回报 —— 判断由 [ScrobbleTracker] 做,失败一律静默
   /// (见 `playback/scrobble.dart`)。仓库是**每一次现取**的:播放层先建、
   /// 仓库后配(见 `main.dart` 的接线顺序),拿一份旧的会永远报不出去。
   late final PlaybackReporter _reporter =
-      PlaybackReporter(() => _repository());
+      PlaybackReporter(() => _repository(), store: _scrobbles);
   final QualityController _quality;
 
   /// 本机下载内容。为 null 表示这块存储用不了,一切照旧走网络。
@@ -461,7 +469,7 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   ///
   /// 整批交给 just_audio 装载(而不是逐首 setUrl),它才能预加载下一首,
   /// 切歌没有空档。
-  Future<void> setQueue(List<Song> songs, {int index = 0}) async {
+  Future<void> setQueue(List<Song> songs, {int index = 0, bool autoPlay = true}) async {
     if (songs.isEmpty) return;
     _queue = List.of(songs);
 
@@ -482,7 +490,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       initialIndex: start,
       initialPosition: Duration.zero,
     );
-    await play();
+    // **autoPlay: false 是给「接着上次听」用的** —— 那一趟要把队列与落点摆好,
+    // 但**不出声**:打开应用就开始放是很吓人的事(见 `queue_restore_sheet.dart`)。
+    if (autoPlay) await play();
   }
 
   /// 追加到队列末尾。

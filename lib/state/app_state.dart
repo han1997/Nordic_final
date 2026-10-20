@@ -13,6 +13,7 @@ import '../data/library_cache.dart';
 import '../data/media_cache.dart';
 import '../data/models.dart';
 import '../data/music_source.dart';
+import '../data/play_queue.dart';
 import '../data/server_config.dart';
 import '../data/subsonic_client.dart';
 import '../data/sorting.dart';
@@ -659,6 +660,92 @@ class AppState extends ChangeNotifier {
     } catch (_) {
       // 收藏名单取不到不该阻断浏览 —— 界面显示未收藏即可。
     }
+  }
+
+  // ---------------- 曲库扫描 ----------------
+
+  /// 服务器上那次扫描的状态。null = 还没问过 / 问不到。
+  ScanStatus? _scanStatus;
+  ScanStatus? get scanStatus => _scanStatus;
+
+  /// 问一次扫描状态。**失败不切错误态** —— 那不是「库读不出来」,只是这一格
+  /// 问不到;保持旧值比把整屏拖进错误态好。
+  Future<void> refreshScanStatus() async {
+    final repo = _repository;
+    if (repo == null) return;
+    try {
+      _scanStatus = await repo.scanStatus();
+      notifyListeners();
+    } on MusicSourceException {
+      // 问不到就算了 —— 这条不是屏幕上任何一处的主角。
+    }
+  }
+
+  /// 让服务器现在扫一遍曲库 —— 设置里「曲库扫描」那个入口。
+  ///
+  /// **失败如实抛**(界面把服务器那句话转述出来):这一条与上面那条**故意不同**
+  /// —— 它是用户点下去的动作,不能一声不响。**扫描要管理员权限**:
+  /// 非管理员账号拿到的就是服务器的拒绝(Navidrome 回「not authorized」),
+  /// 那句话得说给用户听,而不是假装扫上了。
+  Future<void> startLibraryScan() async {
+    final repo = _repository;
+    if (repo == null) {
+      throw const MusicSourceException('还没有连接服务器');
+    }
+    _scanStatus = await repo.startScan();
+    notifyListeners();
+  }
+
+  // ---------------- 换设备接着听 ----------------
+
+  /// 服务器上留着一份**别的设备**写的队列,等界面问一句要不要接着听。
+  /// null = 没有 / 问过了 / 是我们自己写的那一份。
+  ({
+    List<Song> songs,
+    String? currentId,
+    Duration position,
+    String mark,
+  })? _pendingQueueRestore;
+
+  ({
+    List<Song> songs,
+    String? currentId,
+    Duration position,
+    String mark,
+  })? get pendingQueueRestore => _pendingQueueRestore;
+
+  /// 启动时读一次服务器上的队列,决定要不要问那一句。
+  ///
+  /// **只在这三种情况下问**:服务器上真有队列、且它的指纹与本机记着的
+  /// (`ConfigStore.loadPlayQueueMark`)不一样 —— 一样就说明那是我们自己刚写的,
+  /// 每次都问会很烦。不支持这个端点的服务器给 null,一样什么都不做。
+  ///
+  /// 失败一律静默:冷启动时服务器不通是常态,而缓存里那份库照旧能看。
+  Future<void> checkPlayQueue() async {
+    final repo = _repository;
+    if (repo == null) return;
+    final remote = await repo.playQueue();
+    if (remote == null || remote.songs.isEmpty) return;
+    final mark = queueMark(songs: remote.songs, currentId: remote.currentId);
+    if (configStore.loadPlayQueueMark() == mark) return;
+    _pendingQueueRestore = (
+      songs: remote.songs,
+      currentId: remote.currentId,
+      position: remote.position,
+      mark: mark,
+    );
+    notifyListeners();
+  }
+
+  /// 这一份**不再提** —— 用户按了「忽略」,或者「继续」已经把队列装载好了。
+  ///
+  /// 两种情形都记下这个指纹:忽略的那次说明他刚说了不要,下次换个队列才会再问。
+  Future<void> forgetPendingQueue() async {
+    final pending = _pendingQueueRestore;
+    if (pending == null) return;
+    _pendingQueueRestore = null;
+    notifyListeners();
+    await configStore.savePlayQueueMark(pending.mark);
   }
 
   /// 切换收藏。**乐观更新**:先改本地再发请求,失败时回滚。

@@ -8,6 +8,7 @@ import 'data/download_manager.dart';
 import 'data/download_store.dart';
 import 'data/library_cache.dart';
 import 'data/media_cache.dart';
+import 'data/scrobble_store.dart';
 import 'data/server_config.dart';
 import 'playback/audio_handler.dart';
 import 'playback/playback_controller.dart';
@@ -29,10 +30,12 @@ Future<void> main() async {
   //
   // 三条兜底:下载的与缓存的存储建不出来时各自退化成「用不了」(照常起);
   // 密码读不出来就等于「没配过」(见 server_config 的说明),不该把启动拖塌。
-  final (configStore, downloads, libraryCache, savedPassword) = await (
+  final (configStore, downloads, libraryCache, scrobbles, savedPassword) = await (
     ConfigStore.open(),
     DownloadStore.open(),
     LibraryCache.open(),
+    // 「听过一次」发不出去时先落在这里,下次有机会补报(见 scrobble_store)。
+    ScrobbleStore.open(),
     credentialStore.readPassword().catchError((Object _) => null),
   ).wait;
 
@@ -86,7 +89,8 @@ Future<void> main() async {
 
   // 播放服务与「铺缓存」**并行**:前者要等平台把前台服务与媒体会话拉起来
   // (这一步通常是启动里的大头),后者只是一次文件读 —— 串起来等于白等。
-  final service = _startPlayback(appState, quality, downloads, mediaCache, configStore);
+  final service = _startPlayback(
+    appState, quality, downloads, mediaCache, configStore, scrobbles);
 
   if (configured) {
     // 先把上次的库铺出来:冷启动不必空等一次全量拉取,随后主壳会静默刷新
@@ -97,7 +101,13 @@ Future<void> main() async {
   final audioHandler = await service;
   // 把偏好交进播放层:循环 / 随机要跨冷启动记住(构造时摆回播放器,
   // 之后每点一下记一笔)。见 PlaybackController 的 _restoreModes / toggleShuffle。
-  final playback = PlaybackController(audioHandler, config: configStore);
+  // `repository` 是队列同步那条路的入口(写回服务器 / 启动时读回来)。
+  // 给的是**取值函数**:服务器配置可以在运行时换,而这里每次都要问最新的那一个。
+  final playback = PlaybackController(
+    audioHandler,
+    config: configStore,
+    repository: () => appState.repository,
+  );
 
   // 换线路之后把正在放的那一首也挪过去 —— 流地址是装载时拼好的,不重新装载的话
   // 界面会说「正在走新线路」,声音却还在旧那条流里(真机报的「线路切换无效」)。
@@ -143,6 +153,7 @@ Future<NordicAudioHandler> _startPlayback(
   DownloadStore downloads,
   MediaCache mediaCache,
   ConfigStore configStore,
+  ScrobbleStore scrobbles,
 ) async {
   try {
     final handler = await startAudioService(
@@ -154,6 +165,8 @@ Future<NordicAudioHandler> _startPlayback(
       cache: mediaCache,
       // 「仅 Wi-Fi 下载」同时管着新缓存 —— 开关右边那句就是「流量下不缓存」。
       wifiOnly: configStore.loadWifiOnlyDownload,
+      // 播放状态回报:发不出去的那几笔排在这里,联网之后补报。
+      scrobbles: scrobbles,
     ).timeout(const Duration(seconds: 8));
     await handler.configureSession();
     return handler;
@@ -169,5 +182,6 @@ Future<NordicAudioHandler> _startPlayback(
     downloads: downloads,
     cache: mediaCache,
     wifiOnly: configStore.loadWifiOnlyDownload,
+    scrobbles: scrobbles,
   );
 }

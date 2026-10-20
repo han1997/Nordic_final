@@ -161,6 +161,19 @@ class ConfigStore {
   static const _repeatKey = 'nordic.pref.repeat';
   static const _shuffleKey = 'nordic.pref.shuffle';
 
+  /// 「上一次我们**自己**写回服务器的那份队列」的指纹(见
+  /// `playback/play_queue_sync.dart` 的 `queueMark`)。
+  ///
+  /// 启动时读到服务器上那份队列,指纹一样就说明**那是我们自己刚写的** ——
+  /// 不该每次都问「接着上次听?」。另一台设备改过 → 指纹不一样 → 问。
+  /// 用户点了「忽略」也记下这一个:他刚说了不要。
+  static const _playQueueMarkKey = 'nordic.playqueue.mark';
+
+  String? loadPlayQueueMark() => _prefs.getString(_playQueueMarkKey);
+
+  Future<void> savePlayQueueMark(String mark) =>
+      _prefs.setString(_playQueueMarkKey, mark);
+
   String? loadThemeMode() => _prefs.getString(_themeKey);
 
   Future<void> saveThemeMode(String mode) => _prefs.setString(_themeKey, mode);

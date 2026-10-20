@@ -5,8 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../data/models.dart';
+import '../data/music_source.dart';
 import '../data/server_config.dart';
 import 'audio_handler.dart';
+import 'play_queue_sync.dart';
 import 'quality.dart';
 
 /// 循环模式。
@@ -136,7 +138,21 @@ Duration tailDurationAfter(List<Song> queue, int index) {
 }
 
 class PlaybackController extends ChangeNotifier {
-  PlaybackController(this._handler, {this.config}) {
+  PlaybackController(
+    this._handler, {
+    this.config,
+    MusicSource? Function()? repository,
+  }) {
+    // 队列同步**要一个仓库才建得起来**(没配服务器时它什么都不做)。
+    // 给的是取值函数:服务器配置可以在运行时换,而队列同步每次都得问最新的那一个。
+    if (repository != null) {
+      _queueSync = PlayQueueSync(
+        repository,
+        // 保存成功之后把这一份的指纹记下 —— 下次启动读到相同的一份就知道
+        // 「那是我们自己写的」,不再问「接着上次听?」(见 queueMark)。
+        onSaved: config?.savePlayQueueMark,
+      );
+    }
     _wire();
     _restoreModes();
   }
@@ -146,6 +162,9 @@ class PlaybackController extends ChangeNotifier {
   /// 循环 / 随机的落盘处。**没传就是「不记忆」** —— 测试与假播放层照旧,
   /// 不该为一个偏好白白多出一次 prefs 访问。
   final ConfigStore? config;
+
+  /// 队列与进度写回服务器(见 `play_queue_sync.dart`)。null = 没有仓库 / 没接。
+  PlayQueueSync? _queueSync;
 
   final List<StreamSubscription<dynamic>> _subs = [];
 
@@ -210,6 +229,16 @@ class PlaybackController extends ChangeNotifier {
     // 位置单独走一条订阅,而且**只更新那条通道**(见 [position] 的说明)。
     _track(_subs, player.positionStream.listen((next) {
       position.value = next;
+      // 播放中每 30 秒把进度补写一次(用户听到一半锁屏时,落点才准)。
+      // 问得很密,但判据在 PlayQueueSync 里,不到点就直接返回。
+      final sync = _queueSync;
+      if (sync != null && _handler.player.playing) {
+        sync.progress(
+          songs: _handler.songs,
+          currentId: _currentSongId,
+          position: next,
+        );
+      }
     }));
 
     // 缓冲位置走**同一套**:一条自己的通道。`ValueNotifier` 自带相等判断,
@@ -255,6 +284,7 @@ class PlaybackController extends ChangeNotifier {
         hasNext: _handler.player.hasNext,
         hasPrevious: _handler.player.hasPrevious,
       ));
+      if (trackChanged) _syncQueue();
     }));
 
     // 时长单独一条:切歌时 [PlayerState] 上的值会短暂为空,
@@ -270,6 +300,7 @@ class PlaybackController extends ChangeNotifier {
         hasNext: player.hasNext,
         hasPrevious: player.hasPrevious,
       ));
+      _syncQueue();
     }));
 
     // 随机开关**单独一条**。just_audio 的 `setShuffleModeEnabled` 只改序列状态、
@@ -316,6 +347,27 @@ class PlaybackController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 当前这一首的 id(队列里那个)。
+  String? get _currentSongId {
+    final index = _handler.player.currentIndex;
+    final songs = _handler.songs;
+    if (index == null || index < 0 || index >= songs.length) return null;
+    return songs[index].id;
+  }
+
+  /// 把队列与进度交给 [PlayQueueSync](防抖 1.5 秒; 是暂停那一下)。
+  void _syncQueue({bool immediate = false}) {
+    final sync = _queueSync;
+    if (sync == null) return;
+    final songs = _handler.songs;
+    if (songs.isEmpty) return;
+    if (immediate) {
+      sync.flushNow(songs: songs, currentId: _currentSongId, position: position.value);
+    } else {
+      sync.schedule(songs: songs, currentId: _currentSongId, position: position.value);
+    }
+  }
+
   void _refreshLoadedOrigin() {
     final song = _state.song;
     final origin = song == null ? null : _handler.loadedOriginOf(song);
@@ -341,9 +393,11 @@ class PlaybackController extends ChangeNotifier {
   // ---------------- 命令 ----------------
 
   /// 用整个列表替换队列并从 [index] 开播。
-  Future<void> playAll(List<Song> songs, {int index = 0}) async {
+  Future<void> playAll(List<Song> songs, {int index = 0, bool autoPlay = true}) async {
     try {
-      await _handler.setQueue(songs, index: index);
+      // [autoPlay] 为假时只装载、不出声 —— 「接着上次听」要的正是这个
+      // (摆好队列与落点,让用户自己按播放)。
+      await _handler.setQueue(songs, index: index, autoPlay: autoPlay);
       _emit(_state.copyWith(error: null, clearError: true));
     } catch (e) {
       _emit(_state.copyWith(error: '$e', playing: false));
@@ -353,11 +407,19 @@ class PlaybackController extends ChangeNotifier {
   /// 播一首单曲 —— 队列就是它自己。
   Future<void> playSong(Song song) => playAll([song]);
 
-  Future<void> toggle() =>
-      _state.playing ? _handler.pause() : _handler.play();
+  Future<void> toggle() async {
+    if (_state.playing) return pause();
+    await _handler.play();
+  }
 
   /// 暂停。与 [toggle] 分开:退到后台时的暂停不该依赖界面上的状态判断。
-  Future<void> pause() => _handler.pause();
+  ///
+  /// **暂停那一刻立刻把进度写回服务器**:用户松手的位置就是他要接着听的位置,
+  /// 而心跳最多晚 30 秒 —— 等他再打开应用时,落点可能差着半分钟。
+  Future<void> pause() async {
+    await _handler.pause();
+    _syncQueue(immediate: true);
+  }
 
   Future<void> next() => _handler.skipToNext();
 
@@ -447,6 +509,7 @@ class PlaybackController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _queueSync?.dispose();
     for (final sub in _subs) {
       sub.cancel();
     }

@@ -9,6 +9,13 @@ import 'sorting.dart';
 // 写一个 implements MusicSource 的类、在 `server_config.dart` 的 sourceFor
 // 里加一支,别处不用再动。
 
+/// 服务器上那次曲库扫描的状态(Subsonic 的 `getScanStatus`)。
+///
+/// [count] 是**服务器说它库里有几首**(扫描中时是这一趟已经数到的数),
+/// [lastScan] 是上一次扫完的时刻。三个字段各自可能缺 —— 有的实现只报其中一两件,
+/// 缺的那件给 null,**界面照实不印**,不编一个 0 出来。
+typedef ScanStatus = ({bool scanning, int? count, DateTime? lastScan});
+
 /// 一条线路的可用性、择优与测速 —— 「**怎么连**」。
 ///
 /// 与 [MusicSource] 分开是有意的:线路(多地址、择优、故障切换、锁定)是
@@ -112,6 +119,47 @@ abstract interface class MusicSource {
     required bool submission,
     DateTime? at,
   });
+
+  // ---------------- 播放队列 ----------------
+
+  /// 把队列与进度写回服务器 —— Subsonic 的 `savePlayQueue`。
+  ///
+  /// 用途只有一个:**换设备接着听**。另一台设备(或另一个客户端)读它,
+  /// 就能把队列摆在同一个位置。
+  ///
+  /// [songs] 只该给**当前曲目前后的一段**(调用方负责截断,见
+  /// `playback/play_queue_sync.dart`)—— 这是一条 GET 查询串,几千个 id
+  /// 拼出来的 URL 会被反向代理挡下。[currentId] 必须是 [songs] 里的一首。
+  Future<void> savePlayQueue({
+    required List<Song> songs,
+    String? currentId,
+    Duration position = Duration.zero,
+  });
+
+  /// 读回服务器上的队列。**没有 / 不支持就返回 null** ——
+  /// 这是可选能力,不能因为对面不实现就把启动路径拖红。
+  ///
+  /// [changed] 是**服务器记的**「上一次改动时刻」:我们自己写的那一份也会让它变,
+  /// 所以界面要拿它跟本机记着的那个比,才分得清「这是别的设备留下的」。
+  /// 服务器从没存过时给的是零时间 —— 那种情况一律当 null(见实现)。
+  Future<
+      ({
+        List<Song> songs,
+        String? currentId,
+        Duration position,
+        DateTime? changed,
+      })?> playQueue();
+
+  // ---------------- 曲库扫描 ----------------
+
+  /// 服务器上那次扫描的状态 —— Subsonic 的 `getScanStatus`。
+  Future<ScanStatus> scanStatus();
+
+  /// 让服务器**现在扫一遍自己的曲库** —— `startScan`,返回它报的新状态。
+  ///
+  /// 这是服务器端的活(扫的是它自己的盘),而它**要管理员权限**:非管理员账号
+  /// 会拿到服务器的拒绝 —— 实现如实抛出,界面把服务器那句话转述出来。
+  Future<ScanStatus> startScan();
 
   // ---------------- 地址 ----------------
 

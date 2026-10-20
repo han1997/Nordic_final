@@ -171,6 +171,34 @@ class SubsonicClient implements ServerConnection {
     throw lastError ?? const SubsonicException('所有线路都连不上');
   }
 
+  /// 与 [call] 同一趟流程,区别只有一个:**参数名可以重复出现**。
+  ///
+  /// Subsonic 里少数端点就是这样(`savePlayQueue` 的 `id` 有几个队列项就出现几次),
+  /// 而 `Map<String, String>` 表达不了 —— 拼进查询串时会被压成最后一个。
+  /// 用 `Map<String, List<String>>`,值有几个就重复几遍。
+  Future<Map<String, dynamic>> callMulti(
+    String path,
+    Map<String, List<String>> params,
+  ) async {
+    final candidates = _candidateOrder();
+    if (candidates.isEmpty) {
+      throw const SubsonicException('还没有配置任何服务器线路');
+    }
+
+    SubsonicException? lastError;
+    for (final route in candidates) {
+      try {
+        final body = await _get(route, path, params);
+        _activeRouteId = route.id;
+        return body;
+      } on SubsonicException catch (e) {
+        if (!e.isNetworkFailure) rethrow;
+        lastError = e;
+      }
+    }
+    throw lastError ?? const SubsonicException('所有线路都连不上');
+  }
+
   /// 候选线路顺序:当前生效的排第一,其余按延迟升序兜底。
   ///
   /// **用户手动锁定了一条,就只有那一条**。锁定这件事的含义在原型与线路面板里
@@ -195,7 +223,7 @@ class SubsonicClient implements ServerConnection {
   Future<Map<String, dynamic>> _get(
     ServerRoute route,
     String path,
-    Map<String, String> params,
+    Map<String, dynamic> params,
   ) async {
     final uri = buildUri(route, path, params, auth);
     Response<String> response;
@@ -244,10 +272,14 @@ class SubsonicClient implements ServerConnection {
   }
 
   /// 拼出最终 URL。公开出来是为了让单元测试能直接钉住鉴权参数与路径格式。
+  /// [params] 的值类型是 dynamic —— 少数端点(如 `savePlayQueue` 的 `id`)
+  /// **同一个参数名要重复出现**,那种情况传一个 `List<String>`:
+  /// `Uri.replace` 会把可迭代值逐个展开成同名参数。
+  /// 普通端点照旧传 `Map<String, String>`,它本来就是它的子类型。
   static Uri buildUri(
     ServerRoute route,
     String path,
-    Map<String, String> params,
+    Map<String, dynamic> params,
     SubsonicAuth auth, {
     String? salt,
   }) {

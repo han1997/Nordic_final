@@ -261,6 +261,12 @@ const STATE = {
   /* 「回到正在播放」那一下高亮的时间戳(0 = 没亮)。
      **走 STATE 而不是往 DOM 上加 class**:下载计时器每 1.2 秒整屏重绘一次,
      直接加的那份 class 会被重绘抹掉,高亮没亮完就没了。 */
+  /* 曲库扫描(设置 → 服务器)。原型只演三个时刻:没扫过 / 正在扫 / 扫完。 */
+  scanning: false,
+  scannedCount: 0,
+  /* 「接着上次听」那张纸要问的东西 —— 有值才铺得出来(设计板上给一份示意)。
+     应用里它是「服务器上的队列与本机记着的那个 changed 不一样」时才出现。 */
+  queueRestore: { songs: 3, index: 1, artist: '程响', position: 92 },
   locateAt: 0,
   /* 搜索页与添加服务器页的实时状态 —— 输入框、分段选中都要有反馈 */
   query: '程响',
@@ -1352,7 +1358,68 @@ function sheetSongInfo() {
   </div>`;
 }
 
-   /* ---------------- 下载 ----------------
+/* 曲库扫描那一行的副标题 —— 三个时刻各一句话。
+   扫描是**服务器在扫自己的盘**,这边只是问一句:所以文案里不说「正在扫描曲库」,
+   而说清「那边在扫,这边照旧能听」。 */
+function scanLine() {
+  if (STATE.scanning) return `正在扫描 · 已扫 ${STATE.scannedCount} 首`;
+  if (!STATE.scannedCount) return '看看服务器上有没有新加的歌';
+  return `上次扫到 ${STATE.scannedCount} 首 · 随时可以再扫`;
+}
+
+/* 曲库扫描面板 —— 照缓存那张纸的骨架(状态 + 说明 + 一颗动作)。 */
+function sheetScan() {
+  const scanning = STATE.scanning;
+  const rows = [
+    ['状态', scanning ? `正在扫描 · 已扫 ${STATE.scannedCount} 首` : '未在扫描'],
+    ['上次扫描', STATE.scannedCount ? `扫到 ${STATE.scannedCount} 首` : '还没扫过'],
+  ];
+  return `<div class="sheet-scrim">
+    <div class="sheet">
+      <div class="handle"></div>
+      <h2>曲库扫描 <span>服务器端的活</span></h2>
+      <div class="sheet-body">
+        <div class="info-list">
+          ${rows.map(([k, v]) => `<div class="info-row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}
+        </div>
+        <div class="list-note" style="padding:0 var(--s5) var(--s4)">
+          扫描是**服务器在扫它自己的磁盘**:扫的时候这边照旧听、照旧翻库,
+          扫完之后音乐库会自己刷新一次。
+        </div>
+        <div style="padding:0 var(--s5) var(--s5)">
+          <button class="btn primary" data-act="start-scan" style="height:46px"
+            ${scanning ? 'disabled style="opacity:.45;cursor:default"' : ''}>
+            ${scanning ? '正在扫描...' : '开始扫描'}</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* 「接着上次听」—— 启动时服务器上还有一份别人(另一台设备)留下的队列。
+   **问一句再放**:换设备、隔几天再打开,莫名其妙开始出声很奇怪;
+   而「继续」也**不自动开声** —— 装载完停在暂停态,用户自己按播放。 */
+function sheetResume() {
+  const r = STATE.queueRestore;
+  if (!r) return '';
+  return `<div class="sheet-scrim">
+    <div class="sheet">
+      <div class="handle"></div>
+      <h2>接着上次听? <span>${r.songs} 首 · 第 ${r.index + 1} 首</span></h2>
+      <div class="sheet-body">
+        <div class="list-note" style="padding:0 var(--s5) var(--s4)">
+          服务器上还留着一份播放队列,停在 <b>${r.artist}</b> 那首的 ${mmss(r.position)}。
+          这一份是**别的设备**留下的 —— 要不要接着放?
+        </div>
+        <div class="menu-item" data-menu-go="act:resume-yes">${ic('play2', 20)}<span>继续</span></div>
+        <div class="menu-item" data-menu-go="act:resume-no">${ic('x', 20)}<span>忽略</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+
+/* ---------------- 下载 ----------------
    队列是真的:点下载按钮往 STATE.downloads 记一笔,这张页铺的就是队列本身。
    进度是模拟的 —— 每次渲染往前挪一点,直到 100 停住,状态从「下载中」变「已完成」。
    条目可删,删完剩下的接着排;空队列是真实空态(带说明),不是假骨架。 */
@@ -1869,6 +1936,13 @@ function screenSettings() {
           ${ic('chevron', 18)}
         </div>
         <div class="divider"></div>
+        <div class="divider"></div>
+        <div class="row" data-sheet="scan">
+          <span class="set-icon">${ic('refresh', 18)}</span>
+          <div class="grow"><div class="line1">曲库扫描</div>
+            <div class="line2">${scanLine()}</div></div>
+          ${ic('chevron', 18)}
+        </div>
         <div class="row" data-sheet="exportConfig">
           <span class="set-icon">${ic('qr', 18)}</span>
           <div class="grow"><div class="line1">导出配置</div>
@@ -1943,7 +2017,7 @@ function screenSettings() {
    (`package_info_plus` 读出的那份就是 `pubspec.yaml` 那一行,不是另存的一份);
    服务器那行读当前配置;隐私那两条是**陈述不是开关** —— 原先它们和开关混在
    同一屏里,读起来像可以关掉的东西。 */
-const ABOUT_VERSION = '1.0.43+44';
+const ABOUT_VERSION = '1.0.44+45';
 
 function screenAbout() {
   return `<div class="appbar nav">
@@ -2075,7 +2149,7 @@ function screenIcon() {
 
 /* ---------------- 视图表 ---------------- */
 
-const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort, cache: sheetCache, exportConfig: sheetExportConfig, songInfo: sheetSongInfo };
+const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort, cache: sheetCache, exportConfig: sheetExportConfig, songInfo: sheetSongInfo, scan: sheetScan, resume: sheetResume };
 
 /* 弹层是叠在当前屏上的，不是某一屏专属 —— 专辑页的「队列」、设置里的
    「默认转码质量」、音乐库的「排序」都要能把同一张面板揭起来。之前只有
@@ -2134,6 +2208,8 @@ const BOARD = [
   ['搜索',            '输入即筛选',           () => shell(screenSearch())],
   ['设置',            '播放 / 服务器 / 存储', () => shell(screenSettings())],
   ['关于',            '许可 · 隐私 · 播放记录', () => shell(screenAbout())],
+  ['曲库扫描',        '服务器端的活 · 状态与开扫', () => shell(screenSettings() + sheetScan())],
+  ['接着上次听',      '别的设备留下的队列',     () => shell(screenHome() + sheetResume())],
   /* 这三张是新增的整屏功能页,设计板一并铺出来 —— 它们不再是 toast,
      是真的能走进去、能提交的页面。 */
   ['下载管理',        '队列 + 进度',          () => shell(screenDownloads())],
@@ -2614,6 +2690,18 @@ function renderStage(root) {
             const ar = ARTIST_BY_ID(STATE.params.artist || STATE.artistId);
             songsOf(ar.name).forEach((s) => dlEnqueue('song', s));
             toast('这位艺人的歌曲已加入下载队列');
+          } else if (val === 'resume-yes' || val === 'resume-no') {
+            /* 「继续」**不自动开声** —— 装载完停在暂停态(原型的播放页默认是暂停,
+               所以这里只把队列的那一首摆上去)。 */
+            const r = STATE.queueRestore;
+            if (val === 'resume-yes' && r) {
+              STATE.playing = false;
+              toast('已装载上次的队列,停在 ${mmss(r.position)} —— 按播放继续');
+            } else {
+              toast('忽略了这次 —— 不再提这一份队列');
+            }
+            STATE.queueRestore = null;
+            STATE.overlay = '';
           } else if (val === 'fav') {
             toast('已更新收藏');
           }
@@ -2667,6 +2755,23 @@ function renderStage(root) {
           : Promise.reject(new Error('no clipboard'))
         ).then(() => toast('已复制到剪贴板'))
           .catch(() => toast('复制不了,选中下面那段文本手动复制'));
+        return;
+      }
+      if (d.act === 'start-scan') {
+        /* 原型只演「服务器在扫」这件事:数字自己往上走,走到 522 停。
+           真实那条路是 startScan + 每秒问一次 getScanStatus(见 scan_sheet.dart)。 */
+        if (STATE.scanning) return;
+        STATE.scanning = true;
+        STATE.scannedCount = 0;
+        render();
+        const tick = () => {
+          if (!STATE.scanning) return;
+          STATE.scannedCount = Math.min(522, STATE.scannedCount + 37);
+          if (STATE.scannedCount >= 522) STATE.scanning = false;
+          render();
+          if (STATE.scanning) setTimeout(tick, 260);
+        };
+        setTimeout(tick, 260);
         return;
       }
       if (d.act === 'clear-cache') {

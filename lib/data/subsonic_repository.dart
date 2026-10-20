@@ -443,6 +443,63 @@ class SubsonicRepository implements MusicSource {
     });
   }
 
+  // ---------------- 播放队列 ----------------
+
+  /// 把队列与进度写回服务器。`id` 这个参数**重复出现**若干次(协议就是这么定的),
+  /// 所以不能塞进 `Map<String, String>` —— 见 [SubsonicClient.callMulti]。
+  ///
+  /// 队列长的时候调用方会截断(见 `play_queue_sync.dart`):这是一条 GET 查询串。
+  @override
+  Future<void> savePlayQueue({
+    required List<Song> songs,
+    String? currentId,
+    Duration position = Duration.zero,
+  }) async {
+    if (songs.isEmpty) return;
+    await client.callMulti('savePlayQueue', {
+      'id': [for (final s in songs) s.id],
+      // 当前曲目**必须在这份名单里**(服务器按 id 找它);调用方负责截断时保住它。
+      if (currentId != null) 'current': [currentId],
+      'position': ['${position.inMilliseconds}'],
+    });
+  }
+
+  /// 读回服务器上的队列。
+  ///
+  /// **不实现这个端点的服务器一律当「没有队列」**:它是个可选能力,
+  /// 抛出去只会让启动路径上多一条没人处理的失败(界面上什么也做不了)。
+  /// 网络错误同样吞掉 —— 冷启动时服务器不通是常态,而缓存里那份库照旧能看。
+  @override
+  Future<
+      ({
+        List<Song> songs,
+        String? currentId,
+        Duration position,
+        DateTime? changed,
+      })?> playQueue() async {
+    final Map<String, dynamic> body;
+    try {
+      body = await client.call('getPlayQueue');
+    } on MusicSourceException {
+      return null;
+    }
+    return SubsonicPayload.playQueue(body);
+  }
+
+  // ---------------- 曲库扫描 ----------------
+
+  @override
+  Future<ScanStatus> scanStatus() async =>
+      SubsonicPayload.scanStatus(await client.call('getScanStatus'));
+
+  /// 让服务器现在扫一遍。**要管理员权限** —— 非管理员会拿到服务器的拒绝
+  /// (Navidrome 回「not authorized」),这里如实抛出,界面把那一句转述出来。
+  ///
+  /// 返回的是服务器报的**新状态**(它已经在扫了,`scanning` 为真)。
+  @override
+  Future<ScanStatus> startScan() async =>
+      SubsonicPayload.scanStatus(await client.call('startScan'));
+
   // ---------------- 歌单写操作 ----------------
 
   /// 建一个空歌单。返回新建的歌单。

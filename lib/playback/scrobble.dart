@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../data/music_source.dart';
+import '../data/scrobble_store.dart';
 
 /// 播放状态回报的**判据** —— 纯逻辑,不碰网络、不碰播放器。
 ///
@@ -57,25 +58,62 @@ class ScrobbleTracker {
   }
 }
 
-/// 把 [ScrobbleTracker] 的判据落成真请求。
+/// 把 [ScrobbleTracker] 的判据落成真请求,并把**发不出去的**那几笔排起来。
 ///
 /// **一律静默**:这是后台动作,失败弹一条错误没有意义(离线、服务器不可达、
-/// 对面不认这个端点都会失败)。代价是离线听的那些不计入服务器统计 ——
-/// 与「本机不另存一份播放记录」是同一件事的两面:这条记录的去处只有服务器。
+/// 对面不认这个端点都会失败)。
+///
+/// 但「静默」不等于「丢掉」—— 上一版就是丢掉的,于是**断开网络听的这一趟在
+/// 服务器统计里完全不存在**,而「最近播放」正是用户会去对照的东西。
+/// 现在「听过一次」发不出去时进 [ScrobbleStore],下一次有机会(下一条 scrobble
+/// 或下一次启动)连着 `time` 一起补报。
+///
+/// **「正在播放」永不入队**:它说的是「此刻」,而此刻已经过去了 ——
+/// 补报一条过期的「正在播放」只会让服务器显示错误的东西。
+///
+/// 一条说清楚的边界:请求**超时但服务器其实收到了**的话,补报会让它计两次
+/// (Subsonic 没有幂等键)。宁可偶尔多一次,也别整趟丢掉。
 class PlaybackReporter {
-  PlaybackReporter(this._repo, {ScrobbleTracker? tracker})
-      : _tracker = tracker ?? ScrobbleTracker();
+  PlaybackReporter(
+    this._repo, {
+    ScrobbleTracker? tracker,
+    ScrobbleStore? store,
+    DateTime Function()? now,
+  })  : _tracker = tracker ?? ScrobbleTracker(),
+        _now = now ?? DateTime.now {
+    // 在体里赋值而不是初始化列表:`_store` 是私有字段,而命名参数不能以下划线
+    // 开头 —— 初始化列表那条写法会撞上 `prefer_initializing_formals`,
+    // 而它建议的 `this._store` 在这里是非法的。
+    _store = store;
+  }
 
   final MusicSource? Function() _repo;
   final ScrobbleTracker _tracker;
 
-  /// 有没有一个能说话的仓库 —— 没有就什么都不做(还没连服务器)。
-  bool get _canReport => _repo() != null;
+  /// 待补队列的落盘处。null = 不落盘(测试 / 存储建不出来),那时行为退回
+  /// 「发不出去就算了」—— 与上一版一样,只是不会更坏。
+  late final ScrobbleStore? _store;
+
+  final DateTime Function() _now;
+
+  /// 待补的那几笔,按时间从早到晚。第一次用到时从盘上读一次。
+  List<PendingScrobble>? _pending;
+
+  /// 串起来做:几条 scrobble 可能前后脚到(换歌 + 位置),而补报与去重都要讲顺序。
+  Future<void> _chain = Future<void>.value();
+
+  /// 把这一串后台动作串成一件事。测试要等它落地才能断言。
+  Future<void> get settled => _chain;
 
   /// 切到某一首在放。
   void nowPlaying(String songId) {
     if (!_tracker.noteNowPlaying(songId)) return;
-    _send(songId, submission: false);
+    _enqueue(() async {
+      // 「正在播放」**不入队**:它说的是此刻,补报没有意义。
+      await _trySend(songId, submission: false);
+      // 顺手把积压的补掉 —— 「正在播放」也是个机会。
+      await _flush();
+    });
   }
 
   /// 位置报到了 [position]。
@@ -91,15 +129,64 @@ class PlaybackReporter {
     )) {
       return;
     }
-    _send(songId, submission: true);
+    final at = _now();
+    _enqueue(() async {
+      await _flush();
+      if (!await _trySend(songId, submission: true, at: at)) {
+        _pendingItems.add(PendingScrobble(songId: songId, at: at));
+        await _persist();
+      }
+    });
   }
 
-  void _send(String songId, {required bool submission}) {
-    if (!_canReport) return;
-    // **不 await**:回报是后台动作,不该让播放事件、位置流等它一个网络往返。
-    unawaited(_repo()!.reportPlayback(songId, submission: submission).catchError(
-          // 静默失败 —— `catchError` 要有返回值,而这里是 `Future<void>`。
-          (_) {},
-        ));
+  void _enqueue(Future<void> Function() work) {
+    _chain = _chain.then((_) => work()).catchError((_) {});
+  }
+
+  /// 发一条。**成功返回 true,失败(含没有仓库)返回 false** —— 不抛。
+  Future<bool> _trySend(
+    String songId, {
+    required bool submission,
+    DateTime? at,
+  }) async {
+    final repo = _repo();
+    if (repo == null) return false;
+    try {
+      await repo.reportPlayback(songId, submission: submission, at: at);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 把积压的补报掉,**从最早的开始**。
+  ///
+  /// 第一条发不出去就停(网络不通,后面几条也别白试一遍);成功的逐条落盘。
+  Future<void> _flush() async {
+    await _ensureLoaded();
+    final pending = _pendingItems;
+    if (pending.isEmpty || _repo() == null) return;
+
+    var sent = 0;
+    for (final item in pending) {
+      if (!await _trySend(item.songId, submission: true, at: item.at)) break;
+      sent++;
+    }
+    if (sent == 0) return;
+    pending.removeRange(0, sent);
+    await _persist();
+  }
+
+  List<PendingScrobble> get _pendingItems => _pending ??= <PendingScrobble>[];
+
+  Future<void> _ensureLoaded() async {
+    if (_pending != null) return;
+    _pending = List<PendingScrobble>.of(await _store?.load() ?? const []);
+  }
+
+  Future<void> _persist() async {
+    final store = _store;
+    if (store == null) return;
+    await store.replaceAll(_pendingItems);
   }
 }
