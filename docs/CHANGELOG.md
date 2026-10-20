@@ -1725,3 +1725,84 @@ Navidrome 的「正在播放」恒为空、播放次数永远是 0,而「关于�
 3. **非管理员那条错误读起来清不清楚**:这台账号是管理员,那条路只能在用例里模拟。
 4. **补报什么时候真的发出去**:要等下一次有机会(下一条 scrobble),真机上看
    「离线听几首、再联网听一首」之后服务器上有没有补上。
+
+## 第二十一轮(2026-10-20):包体积按 ABI 拆分
+
+用户原话:「细节优化;现在软件体积很大有没有办法优化」。**先量账再动手** —— 把
+`build/dist/Nordic-1.0.44+45-release.apk`(74.6 MB)拆开,按目录汇总体积:
+
+| 部分 | 体积 | 备注 |
+| --- | --- | --- |
+| `lib/x86_64/*` | 26.6 MB | 模拟器专用,真机永远用不到 |
+| `lib/arm64-v8a/*` | 24.2 MB | 现代手机要的就是这一份 |
+| `lib/armeabi-v7a/*` | 20.0 MB | 32 位 ARM 老设备 |
+| `classes.dex` | 3.96 MB | 未开 R8 |
+| `assets/` | 1.3 MB | ML Kit 模型 0.88 MB + `CupertinoIcons.ttf` 0.26 MB |
+| `res/` + `resources.arsc` | 0.5 MB | |
+
+结论是:**体积几乎全在 `lib/`,根因是三个 ABI 打进了同一个包**。一台设备只用得到其中
+一份,另外两份引擎(`libflutter.so`,每份 8.4~12.9 MB)加两份 Dart 快照
+(`libapp.so`,每份 7.5~8.2 MB)是白背的 —— 三份 `.so` 合计约 71 MB。
+
+顺带把 1.0.38 那次「56 MB 跳到 73 MB」也对上了:`git log -S mobile_scanner` 指到
+`535c1a4`(扫码同步),它带进来的 `libbarhopper_v3.so` 三份合计 14.1 MB,加 ML Kit 的
+三个 `.tflite` 共 0.88 MB —— 那一跳几乎全是扫码模型的体积。
+
+### 一、三个决策(问过用户,不是自己拍的)
+
+1. **按 ABI 分三份**,而不是只出 arm64 单包 —— 模拟器仍装得上 `x86_64` 那份;
+2. **扫码的 ML Kit 模型继续内置** —— mobile_scanner 支持换成走 Play 服务的 unbundled
+   版(能再省 5.9 MB),但那三个字是「静默失效」:中国区设备多数没有 Play 服务,
+   扫不出结果也不报错;
+3. **这轮不开 R8** —— 只省约 1.5 MB,却要重验 audio_service / just_audio /
+   flutter_secure_storage 的反射路径,值得单独一轮。
+
+### 二、改了什么
+
+- **`tool/build.sh`**:`release` 分支加 `--split-per-abi`;`standardize_apk()` →
+  `standardize_apks()`,收目录、按 `arm64-v8a` / `armeabi-v7a` / `x86_64` 循环落名
+  (`Nordic-<版本>-<abi>-release.apk`)。**校验一条没放松**:三个包逐个跑
+  `apksigner verify` 与 `aapt dump badging` 核包名与 `versionName`,任一个不过就整批
+  失败 —— 免得 `build/dist` 里出现「一半新版、一半旧版」。
+- **逃生通道没有新写**:脚本的 `*)` 分支本来就是 `exec flutter "$@"`,所以
+  `tool/build.sh build apk --release` 照样出那个 74.6 MB 的万能包(只是不落
+  `build/dist`)。这条在脚本注释与 README 里都点明了。
+- **`pubspec.yaml`**:删掉模板自带的 `cupertino_icons`(全仓库 grep 零引用,
+  `CupertinoIcons` 一处都没有),顺带省掉 `CupertinoIcons.ttf` 那 257 KB。
+- **`README.md` 构建节**:产物名改示例、写明手机该装哪一份、以及分 ABI 的理由。
+
+### 三、实测
+
+| 产物 | 体积 |
+| --- | --- |
+| 改前 `Nordic-1.0.44+45-release.apk`(万能包) | 74.6 MB |
+| 改后 `Nordic-1.0.45+46-arm64-v8a-release.apk` | **26.4 MB(-65%)** |
+| 改后 `Nordic-1.0.45+46-armeabi-v7a-release.apk` | 22.4 MB |
+| 改后 `Nordic-1.0.45+46-x86_64-release.apk` | 28.7 MB |
+
+`arm64-v8a` 那份里 `lib/` 只剩 7 个文件、全是 `lib/arm64-v8a/`(对照:旧万能包里
+21 个);`mlkit_barcode_models` 三个模型仍在;Cupertino 字体已不在。
+
+### 这一轮没做(及理由)
+
+- **`--obfuscate --split-debug-info`**:会打乱 Dart 符号名,而本仓库排障靠真机
+  logcat,混淆之后栈就不可读了 —— 不值那 1 MB 上下;
+- **`.so` 改回压缩(`useLegacyPackaging`)**:包会小一截,但每次启动要解压,是性能
+  倒退;现代 AGP 默认 Stored 就是为了免解压,这一条不动。
+
+### 版本与提交
+
+版本 1.0.44+45 → 1.0.45+46。一个提交(构建脚本 + 依赖 + 文档)。
+
+验证:`flutter analyze` 干净;`flutter test` **474 passed / 18 skipped / 0 failed**;
+三个包都出得来,`build/dist/` 下三个名字都在,脚本那三条校验(签名 / 包名 / 版本)
+逐个过。
+
+### 这一轮没验到的(只有人或真机能看)
+
+1. **手机上装 `arm64-v8a` 那份能不能正常装、正常跑** —— 打包方式换了,虽然校验都过,
+   真机装一次才算数;
+2. **模拟器装 `x86_64` 那份** —— 同理,而这台机器上的音频隧道验证本来就走模拟器;
+3. **扫码有没有受影响** —— 模型是内置的、没动,但换了分包也值得扫一次确认;
+4. **后台播放 / 下载 / 缓存各走一遍** —— 这几条是「换打包方式会不会顺手打坏别的」的
+   哨兵。

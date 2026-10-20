@@ -8,7 +8,7 @@
 #
 # 用法:
 #   tool/build.sh                  # 打 debug APK
-#   tool/build.sh release         # 打 release APK(并落成标准化名字,见下)
+#   tool/build.sh release         # 打 release APK(按 ABI 三个包,落成标准化名字,见下)
 #   tool/build.sh windows         # 打 Windows release(整目录打成标准名的 zip)
 #   tool/build.sh web             # 打 Web release(整目录打成标准名的 zip)
 #   tool/build.sh run -d windows  # 在桌面跑
@@ -22,10 +22,19 @@ cd "$(dirname "$0")/.."
 # 本机不通;上海交大镜像 source 镜像同构,换掉基址即可。
 export FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL:-https://storage.flutter-io.cn}"
 
-# 标准化产物名:`Nordic-<版本>-release.apk`,如 `Nordic-1.0.17+18-release.apk`。
+# 标准化产物名:`Nordic-<版本>-<abi>-release.apk`,如
+# `Nordic-1.0.45+46-arm64-v8a-release.apk`。
 #
-# 默认产物叫 `app-release.apk` —— 侧载到手机上、发给别人、丢进下载目录之后,
+# 默认产物叫 `app-<abi>-release.apk` —— 侧载到手机上、发给别人、丢进下载目录之后,
 # 几版攒在一起分不清谁是谁,连「是哪个应用」都得点开才知道。
+#
+# **为什么按 ABI 出三个包**:`flutter build apk` 默认把 armeabi-v7a / arm64-v8a /
+# x86_64 三份原生库塞进同一个包,而一台设备只用得到其中一份 —— 另外两份引擎
+# (`libflutter.so` 8.4~12.9 MB)加两份 Dart 快照(`libapp.so` 7.5~8.2 MB)是白背的。
+# 实测这个万能包 74.6 MB,而按 ABI 分开之后手机上该装的 arm64-v8a 那份约 26 MB。
+# 三条 `.so` 在包里是 Stored(不压缩,加载时免解压,AGP 现代默认),这一条不动。
+# 要那个万能包(比如分不出对方是什么设备)走脚本的透传分支:
+# `tool/build.sh build apk --release` —— 出得来,只是不落 build/dist。
 #
 # **为什么放在脚本里而不是 Gradle 里**:AGP 9 把 `VariantOutput.outputFileName`
 # 从公开 API 里拿掉了(只剩 versionCode / versionName),要用得伸进内部实现。
@@ -38,49 +47,71 @@ read_version() {
   sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -1
 }
 
-standardize_apk() {
-  local built="$1"
-  local version apk_name out
+standardize_apks() {
+  local built_dir="$1"
+  local version abi built out apk_name badging verified
   version="$(read_version)"
   if [ -z "$version" ]; then
     echo "读不出 pubspec.yaml 里的 version,产物名没法标准化" >&2
     return 1
   fi
 
-  apk_name="Nordic-${version}-release.apk"
-  out="build/dist/${apk_name}"
-  mkdir -p build/dist
-  cp "$built" "$out"
-
-  # 校验一遍再报成。**名字是从 pubspec 拼的,包里的版本必须真是它** ——
-  # 改了版本忘了重建,否则会得到一个「名字是新版、内容是旧版」的包,
-  # 那种包装上手机才被发现,比没有名字还糟。
-  local sdk bt apksigner aapt badging
+  # build-tools 只找一次 —— 三个包用的是同一套工具。找不到就只落名、跳过校验
+  # (与从前单包时同一个处置)。
+  local sdk bt apksigner aapt
   sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$LOCALAPPDATA/Android/Sdk}}"
   bt="$(ls -d "$sdk"/build-tools/*/ 2>/dev/null | tail -1)" || true
-  if [ -z "${bt:-}" ]; then
-    echo "找不到 Android build-tools,跳过签名 / 版本校验" >&2
-    echo "$out"
-    return 0
+  if [ -n "${bt:-}" ]; then
+    apksigner="${bt}apksigner"; [ -f "${apksigner}.bat" ] && apksigner="${apksigner}.bat"
+    aapt="${bt}aapt";           [ -f "${aapt}.exe" ]      && aapt="${aapt}.exe"
   fi
 
-  apksigner="${bt}apksigner"; [ -f "${apksigner}.bat" ] && apksigner="${apksigner}.bat"
-  aapt="${bt}aapt";           [ -f "${aapt}.exe" ]      && aapt="${aapt}.exe"
+  mkdir -p build/dist
+  verified=0
 
-  "$apksigner" verify "$out" >/dev/null
-  badging="$("$aapt" dump badging "$out" | head -1)"
-  case "$badging" in
-    *"package: name='fun.han1997.nordic'"*) ;;
-    *) echo "包名不对:$badging" >&2; return 1 ;;
-  esac
-  case "$badging" in
-    *"versionName='${version%%+*}'"*) ;;
-    *) echo "包里的 versionName 与 pubspec 的 $version 对不上:$badging" >&2; return 1 ;;
-  esac
+  # arm64-v8a 排第一:手机侧载装的就是它,先落、先报。
+  for abi in arm64-v8a armeabi-v7a x86_64; do
+    built="$built_dir/app-${abi}-release.apk"
+    if [ ! -f "$built" ]; then
+      echo "找不到 $built —— --split-per-abi 没产出这个 ABI 的包" >&2
+      return 1
+    fi
 
-  echo "✓ $out"
-  echo "  签名有效 · 包名 fun.han1997.nordic · 版本 ${version}"
-  echo "  (flutter 默认那个 build/app/outputs/flutter-apk/app-release.apk 照旧保留,"
+    apk_name="Nordic-${version}-${abi}-release.apk"
+    out="build/dist/${apk_name}"
+    cp "$built" "$out"
+
+    if [ -z "${bt:-}" ]; then
+      echo "$out"
+      continue
+    fi
+    verified=1
+
+    # 校验一遍再报成。**名字是从 pubspec 拼的,包里的版本必须真是它** ——
+    # 改了版本忘了重建,否则会得到一个「名字是新版、内容是旧版」的包,
+    # 那种包装上手机才被发现,比没有名字还糟。三个包任何一个不过就整批失败,
+    # 免得 build/dist 里出现「一半新版一半旧版」。
+    "$apksigner" verify "$out" >/dev/null
+    badging="$("$aapt" dump badging "$out" | head -1)"
+    case "$badging" in
+      *"package: name='fun.han1997.nordic'"*) ;;
+      *) echo "包名不对:$badging" >&2; return 1 ;;
+    esac
+    case "$badging" in
+      *"versionName='${version%%+*}'"*) ;;
+      *) echo "包里的 versionName 与 pubspec 的 $version 对不上:$badging" >&2; return 1 ;;
+    esac
+
+    echo "✓ $out"
+  done
+
+  if [ "$verified" = 1 ]; then
+    echo "  签名有效 · 包名 fun.han1997.nordic · 版本 ${version}"
+    echo "  手机侧载装 arm64-v8a 那份;x86_64 是模拟器用的;armeabi-v7a 是 32 位老设备。"
+  else
+    echo "找不到 Android build-tools,签名 / 版本未校验" >&2
+  fi
+  echo "  (flutter 默认那组 build/app/outputs/flutter-apk/app-<abi>-release.apk 照旧保留,"
   echo "   flutter install / run --release 认的是它)"
 }
 
@@ -250,8 +281,11 @@ case "${1:-debug}" in
     ;;
   release)
     shift
-    flutter build apk --release "$@"
-    standardize_apk build/app/outputs/flutter-apk/app-release.apk
+    # 按 ABI 分包(理由见上面 standardize_apks 那段)。三个包一起出:手机上侧载
+    # arm64-v8a,模拟器装 x86_64,32 位老设备用 armeabi-v7a。想要那个万能包
+    # 走透传:`tool/build.sh build apk --release`。
+    flutter build apk --release --split-per-abi "$@"
+    standardize_apks build/app/outputs/flutter-apk
     ;;
   windows|win)
     shift

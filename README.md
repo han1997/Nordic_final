@@ -111,24 +111,32 @@ M2 收口时留下的、**只剩真机走查**的几条:
 
 ```bash
 tool/build.sh            # debug APK
-tool/build.sh release    # release APK
+tool/build.sh release    # release APK(按 ABI 三个包)
 tool/build.sh windows    # Windows release(整目录打成标准名的 zip)
 tool/build.sh web        # Web release(整目录打成标准名的 zip)
 tool/build.sh run        # 在设备上跑
 ```
 
-侧载用的 release 包由这个脚本**落成标准名字**:
+侧载用的 release 包由这个脚本**按 ABI 分三份**、各落成标准名字:
 
 ```
-build/dist/Nordic-1.0.17+18-release.apk
-             └ 应用  └ pubspec 的版本
+build/dist/Nordic-1.0.45+46-arm64-v8a-release.apk
+             └ 应用  └ pubspec 的版本  └ CPU 架构
 ```
 
-默认那个 `app-release.apk` 装上手机、发给别人之后分不清是哪一版,连「是哪个应用」
+**手机侧载装 `arm64-v8a` 那份,模拟器装 `x86_64` 那份,32 位老设备用 `armeabi-v7a`。**
+为什么分三份:`flutter build apk` 默认把三套原生库塞进同一个包,而一台设备只用得到其中
+一份 —— 另外两份引擎(每份 8.4~12.9 MB)与 Dart 快照(每份 7.5~8.2 MB)是白背的。
+实测那个万能包 74.6 MB,按 ABI 分开之后手机该装的 `arm64-v8a` 约 26 MB。真要那个万能包
+(比如分不出对方是什么设备)走脚本的透传分支:`tool/build.sh build apk --release` ——
+出得来,只是不落 `build/dist`。
+
+默认那个 `app-<abi>-release.apk` 装上手机、发给别人之后分不清是哪一版,连「是哪个应用」
 都得点开看。版本号**只从 `pubspec.yaml` 读**,不另存一份;脚本还会顺手校验
-签名、包名与包内 `versionName` 是否真与 pubspec 对得上 —— 改了版本忘了重建,
-否则会得到一个「名字是新版、内容是旧版」的包,那种包装上手机才发现,比没有名字更糟。
-(浮出来的默认产物 `build/app/outputs/flutter-apk/app-release.apk` 照旧保留:
+签名、包名与包内 `versionName` 是否真与 pubspec 对得上(三个包逐个验,任一个不过就整批
+失败)—— 改了版本忘了重建,否则会得到一个「名字是新版、内容是旧版」的包,
+那种包装上手机才发现,比没有名字更糟。
+(浮出来的产物 `build/app/outputs/flutter-apk/app-<abi>-release.apk` 照旧保留:
 `flutter install` / `run --release` 认的是它。)
 
 Windows 侧同理:`tool/build.sh windows` 落成
