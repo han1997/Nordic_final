@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'tokens.dart';
-
 /// 主题模式偏好。
 ///
 /// 默认**深色**而不是跟随系统:这个设计的主场是近黑底 + 封面光晕,
@@ -28,15 +26,4 @@ enum NordicThemeMode {
     }
     return NordicThemeMode.dark;
   }
-}
-
-/// 把 [NordicThemeMode] 解析成实际用的 token。
-NordicTokens tokensFor(BuildContext context, NordicThemeMode mode) {
-  final platformDark =
-      MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
-  return switch (mode) {
-    NordicThemeMode.dark => NordicTokens.dark,
-    NordicThemeMode.light => NordicTokens.light,
-    NordicThemeMode.follow => platformDark ? NordicTokens.dark : NordicTokens.light,
-  };
 }

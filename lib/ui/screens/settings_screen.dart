@@ -68,9 +68,9 @@ class SettingsScreen extends StatelessWidget {
             ),
             const _ThemeSection(),
             const SectionHeader(title: '播放'),
-            _Card(
+            NordicCard(
               children: [
-                _SettingRow(
+                NordicIconRow(
                   icon: Icons.graphic_eq,
                   title: '默认转码质量',
                   subtitle: quality.description,
@@ -90,7 +90,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   onTap: () => showQualitySheet(context),
                 ),
-                _SettingRow(
+                NordicIconRow(
                   icon: Icons.route_outlined,
                   title: '线路自动择优',
                   subtitle: view.autoRoute ? '按延迟选择最快可用地址' : '每条线路要手动锁定',
@@ -99,7 +99,7 @@ class SettingsScreen extends StatelessWidget {
                     onChanged: state.setAutoRoute,
                   ),
                 ),
-                _SettingRow(
+                NordicIconRow(
                   icon: Icons.notifications_none,
                   title: '播放时后台运行',
                   subtitle: view.backgroundPlay
@@ -113,9 +113,9 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
             const SectionHeader(title: '服务器'),
-            _Card(
+            NordicCard(
               children: [
-                _SettingRow(
+                NordicIconRow(
                   icon: Icons.dns_outlined,
                   title: view.server?.name ?? '还没有连接服务器',
                   subtitle: view.server == null
@@ -142,7 +142,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   onTap: () => AppRoutes.openServers(context),
                 ),
-                _SettingRow(
+                NordicIconRow(
                   icon: Icons.add_circle_outline,
                   title: '添加服务器',
                   subtitle: '用另一个账号或另一台机器',
@@ -152,7 +152,7 @@ class SettingsScreen extends StatelessWidget {
                   // 「服务器设置」(那是改现有配置的入口)。
                   onTap: () => AppRoutes.openServers(context, form: true),
                 ),
-                _SettingRow(
+                NordicIconRow(
                   icon: Icons.qr_code_scanner,
                   title: '扫码同步',
                   subtitle: '扫码或粘贴，把服务器与线路带到这台设备',
@@ -160,13 +160,13 @@ class SettingsScreen extends StatelessWidget {
                       size: 18, color: context.nordic.fg3),
                   onTap: () => AppRoutes.openSync(context),
                 ),
-                // 只在真连着的时候出现。[_SettingRow] 没有禁用态,给一个
+                // 只在真连着的时候出现。[NordicIconRow] 没有禁用态,给一个
                 // `onTap: null` 的行既不置灰也不回弹,读起来就是个坏按钮。
                 // 曲库扫描 —— 这一行原先**只存在于文案里**:首页 / 音乐库 / 搜索的
                 // 空态都写着「到设置里重新扫描一次曲库」,而设置里没有这一条。
                 if (view.server != null) const _ScanRow(),
                 if (view.server != null)
-                  _SettingRow(
+                  NordicIconRow(
                     icon: Icons.qr_code_2,
                     title: '导出配置',
                     subtitle: '二维码 · 可复制成一段文本',
@@ -178,9 +178,9 @@ class SettingsScreen extends StatelessWidget {
             ),
             const _StorageSection(),
             const SectionHeader(title: '关于'),
-            _Card(
+            NordicCard(
               children: [
-                _SettingRow(
+                NordicIconRow(
                   icon: Icons.info_outline,
                   title: '关于 Nordic',
                   subtitle: '版本 · 开源许可 · 服务器与隐私',
@@ -223,9 +223,9 @@ class _StorageSection extends StatelessWidget {
     return Column(
       children: [
         const SectionHeader(title: '存储'),
-        _Card(
+        NordicCard(
           children: [
-            _SettingRow(
+            NordicIconRow(
               icon: Icons.storage_outlined,
               title: '歌曲缓存',
               subtitle: limit.isOff
@@ -247,7 +247,7 @@ class _StorageSection extends StatelessWidget {
               ),
               onTap: () => showCacheSheet(context),
             ),
-            _SettingRow(
+            NordicIconRow(
               icon: Icons.album_outlined,
               title: '已用空间',
               // 关掉缓存那一刻占用会被清成 0,但**账还没数到**的窗口里可能还有数 ——
@@ -271,7 +271,7 @@ class _StorageSection extends StatelessWidget {
                     ),
             ),
             // 「仅 Wi-Fi 下载」原先挂在**播放**那一栏里 —— 它管的是下载,不是播放。
-            _SettingRow(
+            NordicIconRow(
               icon: Icons.download_outlined,
               title: '下载管理',
               subtitle: downloadCount == 0
@@ -280,7 +280,7 @@ class _StorageSection extends StatelessWidget {
               trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
               onTap: () => AppRoutes.openDownloads(context),
             ),
-            _SettingRow(
+            NordicIconRow(
               icon: Icons.wifi,
               title: '仅 Wi-Fi 下载',
               subtitle: wifiOnly ? '流量下不缓存' : '流量下也会预取',
@@ -354,7 +354,7 @@ class _ThemeSection extends StatelessWidget {
     return Column(
       children: [
         const SectionHeader(title: '外观'),
-        _Card(
+        NordicCard(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
@@ -408,103 +408,6 @@ class _ThemeSection extends StatelessWidget {
   }
 }
 
-/// 设置里的一张卡 —— `.card`,带发丝分隔线。
-class _Card extends StatelessWidget {
-  const _Card({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
-      decoration: BoxDecoration(
-        color: t.glass3,
-        borderRadius: BorderRadius.circular(NordicRadius.lg),
-        border: Border.all(color: t.line2),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          for (var i = 0; i < children.length; i++) ...[
-            if (i > 0 && children[i] is! Divider)
-              Divider(height: 1, thickness: 1, color: t.line, indent: NordicSpace.s5),
-            children[i],
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// 设置行 —— `.row`。图标 + 标题 + 说明 + 右侧控件。
-class _SettingRow extends StatelessWidget {
-  const _SettingRow({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.trailing,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final Widget? trailing;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return Pressable(
-      onTap: onTap,
-      pressedDecoration: BoxDecoration(color: t.fill1),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
-        child: Row(
-          children: [
-            SettingIcon(icon: icon),
-            const SizedBox(width: NordicSpace.s3),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyLarge
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle!,
-                      maxLines: 2,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: t.fg3),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (trailing != null) ...[
-              const SizedBox(width: NordicSpace.s3),
-              trailing!,
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// 设置页里「曲库扫描」那一行。
 ///
 /// 副标题报服务器那边的状态,**但这一行自己不去问** —— 它在打开那张纸的时候
@@ -534,7 +437,7 @@ class _ScanRow extends StatelessWidget {
       subtitle = '看看服务器上有没有新加的歌';
     }
 
-    return _SettingRow(
+    return NordicIconRow(
       icon: Icons.refresh,
       title: '曲库扫描',
       subtitle: subtitle,

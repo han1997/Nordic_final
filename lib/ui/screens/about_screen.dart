@@ -40,11 +40,16 @@ class AboutScreen extends StatelessWidget {
               padding: EdgeInsets.only(bottom: NordicSpace.s6),
               children: [
                 const _Hero(),
-                _Card(
+                NordicCard(
                   children: [
-                    _InfoRow(
+                    NordicIconRow(
                       icon: Icons.book_outlined,
                       title: '开源许可',
+                      trailing: Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: context.nordic.fg3,
+                      ),
                       subtitle: 'Flutter 与各第三方包各自的许可证',
                       onTap: () => showLicensePage(
                         context: context,
@@ -59,20 +64,19 @@ class AboutScreen extends StatelessWidget {
                   ],
                 ),
                 const SectionHeader(title: '隐私'),
-                _Card(
+                NordicCard(
                   children: const [
                     // 这两条**不是开关**:凭据怎么存、播放记录发到哪儿,都是这个应用
                     // 已经定死的行为,给一个可以关掉的开关才是骗人。
-                    _InfoRow(
+                    NordicIconRow(
                       icon: Icons.shield_outlined,
                       title: '凭据仅存本机',
                       subtitle: '密码交给系统密钥库加密保存，不上传任何数据',
                     ),
-                    Divider(height: 1, thickness: 1),
                     // 措辞按**实际行为**写(见 playback/scrobble.dart):开播报一次
                     // 「正在播放」、听够一半报一次「听过」。原先那句「只用于服务器端的
                     // 播放统计」在真的接了 scrobble 之前是一句空话 —— 现在它说的是真的。
-                    _InfoRow(
+                    NordicIconRow(
                       icon: Icons.history,
                       title: '播放记录',
                       subtitle: '开播报一次「正在播放」，听够一半报一次「听过」——'
@@ -190,98 +194,3 @@ class _VersionText extends StatelessWidget {
 String versionLabel(PackageInfo info) => info.buildNumber.isEmpty
     ? info.version
     : '${info.version}+${info.buildNumber}';
-
-/// 「关于」里的一行:图标 + 标题 + 说明。
-///
-/// 与设置页那张卡同一副骨架(`_SettingRow`),但没有开关、也没有右侧的值 ——
-/// 这一屏上只剩下**陈述**(隐私那两条)与**一条去路**(开源许可),
-/// 而每条陈述要说的话就是它自己那句说明。「版本」那一行删掉之后 `trailing`
-/// 再没人用过,一并去掉,免得留一个永远空着的口子。
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return Pressable(
-      onTap: onTap,
-      pressedDecoration: BoxDecoration(color: t.fill1),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: NordicSpace.s5,
-          vertical: NordicSpace.s4,
-        ),
-        child: Row(
-          children: [
-            SettingIcon(icon: icon),
-            const SizedBox(width: NordicSpace.s3),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyLarge
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle!,
-                      maxLines: 2,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: t.fg3),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (onTap != null) ...[
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right, size: 18, color: t.fg3),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 「关于」里的一张卡 —— 与设置页那张同一副材质(那一张是私有的,这一屏
-/// 照搬一层壳;两边哪天合并成一个共享组件也不亏)。
-class _Card extends StatelessWidget {
-  const _Card({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
-      decoration: BoxDecoration(
-        color: t.glass3,
-        borderRadius: BorderRadius.circular(NordicRadius.lg),
-        border: Border.all(color: t.line2),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(children: children),
-    );
-  }
-}

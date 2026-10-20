@@ -1229,3 +1229,232 @@ class NordicScrim extends StatelessWidget {
     );
   }
 }
+
+// ---------------- 卡片与行 ----------------
+//
+// 下面这四件原先散在设置页 / 关于页 / 三张面板里 —— 同一件东西在几个文件里
+// 各写了一遍(有的还各写了两三份),改一次要找好几处。
+
+/// 一张卡 —— `.card`。设置页与「关于」页共用。
+///
+/// 子项之间自动补一条 [NordicDivider](原型的那 12 处 `class="divider"` 也是这么
+/// 铺的)。**只有一项时不补** —— 那种卡本来就没有可分隔的东西。
+class NordicCard extends StatelessWidget {
+  const NordicCard({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
+      decoration: BoxDecoration(
+        color: t.glass3,
+        borderRadius: BorderRadius.circular(NordicRadius.lg),
+        border: Border.all(color: t.line2),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) const NordicDivider(),
+            children[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 设置项 / 信息项那一行 —— `.row`:图标 + 标题 + 说明 + 右侧。
+///
+/// 右边挂什么由调用方给(开关、一段值、或一枚箭头),间距与图标列统一 ——
+/// 原型 `.row { gap: var(--s3) }` 说的是同一件事。
+class NordicIconRow extends StatelessWidget {
+  const NordicIconRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+
+  /// 右侧控件。不给就只留标题与说明。
+  final Widget? trailing;
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Pressable(
+      onTap: onTap,
+      pressedDecoration: BoxDecoration(color: t.fill1),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
+        child: Row(
+          children: [
+            SettingIcon(icon: icon),
+            const SizedBox(width: NordicSpace.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyLarge
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle!,
+                      maxLines: 2,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: t.fg3),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (trailing != null) ...[
+              const SizedBox(width: NordicSpace.s3),
+              trailing!,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 面板里的一行选项 —— 勾选圆点在右,标题 + 可选标记 + 可选说明。
+///
+/// 转码档位 / 缓存上限 / 排序三张面板铺的是同一副骨架(都是「选一档,立刻生效
+/// 并记住」),原先各写了一份,措辞与留白各漂各的 —— 比如排序那张的勾就贴得
+/// 比另两张近。
+class NordicOptionRow extends StatelessWidget {
+  const NordicOptionRow({
+    super.key,
+    required this.label,
+    this.tag,
+    this.description,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+
+  /// 标题右边那枚小标记(如「无损」)。不给就不出现。
+  final String? tag;
+
+  final String? description;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Pressable(
+      onTap: onTap,
+      // 玻璃里的行**不能用 InkWell**:涟漪画在 Material 的墨层上,而那一层在这张
+      // 纸的玻璃底下 —— 按下去屏幕上什么都不动。原型的 `.qopt:hover` 本来就是
+      // 换一层底色,这里照它来。
+      pressedDecoration: BoxDecoration(color: t.fill1),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: selected ? context.accentSafe : null,
+                              ),
+                        ),
+                      ),
+                      if (tag != null) ...[
+                        const SizedBox(width: 8),
+                        NordicTag(label: tag!),
+                      ],
+                    ],
+                  ),
+                  if (description != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      description!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: t.fg3,
+                            height: 1.5,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: NordicSpace.s3),
+            NordicTick(selected: selected),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 一枚小标记 —— `.tag`。线路标记 / 档位标记 / 「已锁定」「使用中」都用它。
+class NordicTag extends StatelessWidget {
+  const NordicTag({super.key, required this.label, this.highlight = false});
+
+  final String label;
+
+  /// 高亮那一档用来报「现在走的是它 / 它被锁了」—— 语气比中性标记重。
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: highlight
+            ? context.accent.accent.withValues(alpha: 0.18)
+            : t.fill2,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: highlight ? context.accentSafe : t.fg3,
+        ),
+      ),
+    );
+  }
+}

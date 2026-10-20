@@ -1,3 +1,4 @@
+import 'iterables.dart';
 import 'models.dart';
 
 /// 歌曲的排序口径。
@@ -134,10 +135,3 @@ int _text(String a, String b) => a.compareTo(b);
 
 /// 先比第一个,平了再比第二个。
 int _then(int first, int second) => first != 0 ? first : second;
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
-  }
-}

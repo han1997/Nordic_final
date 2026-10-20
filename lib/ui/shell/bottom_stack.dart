@@ -139,7 +139,7 @@ class _PlayerDock extends StatelessWidget {
               Cover(
                 coverArtId: song.coverArtId,
                 seed: song.albumId,
-                uri: _coverUriFor(repo, song),
+                uri: albumCoverUri(repo, song.coverArtId, size: 128),
                 size: 46,
                 radius: 13,
                 showShadow: false,
@@ -189,16 +189,6 @@ class _PlayerDock extends StatelessWidget {
     );
   }
 
-  static Uri? _coverUriFor(MusicSource? repo, Song song) {
-    final id = song.coverArtId;
-    if (repo == null || id == null) return null;
-    try {
-      return repo.coverUri(id, size: 128);
-    } on MusicSourceException {
-      // 还没配好线路时取不到 —— 坞里退回渐变兜底即可,不必报错。
-      return null;
-    }
-  }
 }
 
 /// 托盘中间那条细线 —— **同时就是进度**。

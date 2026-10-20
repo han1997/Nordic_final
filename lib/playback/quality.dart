@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../data/iterables.dart';
+
 /// 转码档位 —— 原型 `QUALITIES` 的四档。
 ///
 /// 档位最终落成 `stream` 端点的两个查询参数:
@@ -86,13 +88,6 @@ class QualityController extends ValueNotifier<QualityOption> {
   void set(QualityOption option) {
     if (value == option) return;
     value = option;
-  }
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
   }
 }
 

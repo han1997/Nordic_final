@@ -400,7 +400,12 @@ class PlaybackController extends ChangeNotifier {
       await _handler.setQueue(songs, index: index, autoPlay: autoPlay);
       _emit(_state.copyWith(error: null, clearError: true));
     } catch (e) {
-      _emit(_state.copyWith(error: '$e', playing: false));
+      // 音源自己造的失败带着一句能直接给用户看的话(见 [MusicSourceException]);
+      // 别的(平台来的、运行时的)照旧印原文。
+      _emit(_state.copyWith(
+        error: e is MusicSourceException ? e.message : '$e',
+        playing: false,
+      ));
     }
   }
 

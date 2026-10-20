@@ -7,6 +7,7 @@ import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
+import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
@@ -150,7 +151,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 Cover(
                   coverArtId: playlist.coverArtId,
                   seed: playlist.id,
-                  uri: _coverUri(repo, playlist.coverArtId),
+                  uri: albumCoverUri(repo, playlist.coverArtId),
                   size: 140,
                   radius: 24,
                 ),
@@ -237,12 +238,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             ),
           ),
         ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
-            child: Divider(height: 1, color: context.nordic.line),
-          ),
-        ),
+        const SliverToBoxAdapter(child: NordicDivider()),
         if (_songs.isEmpty)
           const SliverToBoxAdapter(
             child: EmptyState(
@@ -259,7 +255,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             itemCount: _songs.length,
             itemBuilder: (context, i) => SongRow(
               song: _songs[i],
-              coverUri: (id) => _coverUri(repo, id, size: 128),
+              coverUri: (id) => albumCoverUri(repo, id, size: 128),
               playing: _songs[i].id == currentId && playing,
               onTap: () => playable.playAll(_songs, index: i),
               trailing: playlist.readonly
@@ -299,18 +295,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         ),
       ],
     );
-  }
-
-  /// 拼封面地址。**仓库可为空** —— 服务器在浏览途中被移除时这一屏还在栈上,
-/// 那时给一个空地址(封面走渐变兜底),而不是拿 `repo!` 崩掉整张列表。
-  /// 早先曲子那一行是直接 `repo!.coverUri(...)` 的,同一屏里两处口径不一致。
-  Uri? _coverUri(MusicSource? repo, String? artId, {int size = 512}) {
-    if (repo == null || artId == null) return null;
-    try {
-      return repo.coverUri(artId, size: size);
-    } on MusicSourceException {
-      return null;
-    }
   }
 
   Future<void> _addAll(PlaybackController playable) async {

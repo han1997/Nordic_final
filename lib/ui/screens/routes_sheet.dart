@@ -197,22 +197,7 @@ class _RouteRow extends StatelessWidget {
                         Icon(Icons.push_pin, size: 13, color: context.accentSafe),
                         const SizedBox(width: 5),
                       ],
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: t.fill2,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          route.tag.label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: t.fg3,
-                          ),
-                        ),
-                      ),
+                      NordicTag(label: route.tag.label),
                     ],
                   ),
                   const SizedBox(height: 4),

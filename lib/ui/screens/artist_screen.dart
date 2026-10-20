@@ -218,7 +218,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                           Cover(
                             coverArtId: album.coverArtId,
                             seed: album.id,
-                            uri: _cover(repo, album.coverArtId),
+                            uri: albumCoverUri(repo, album.coverArtId),
                             size: 142,
                             radius: 22,
                           ),
@@ -262,15 +262,6 @@ class _ArtistScreenState extends State<ArtistScreen> {
         ),
       ],
     );
-  }
-
-  Uri? _cover(MusicSource? repo, String? artId) {
-    if (repo == null || artId == null) return null;
-    try {
-      return repo.coverUri(artId, size: 512);
-    } on MusicSourceException {
-      return null;
-    }
   }
 
   Future<void> _toggleStar() async {

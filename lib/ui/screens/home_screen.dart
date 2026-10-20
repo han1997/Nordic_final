@@ -407,7 +407,7 @@ class _NowPlayingCard extends StatelessWidget {
                   Cover(
                     coverArtId: song.coverArtId,
                     seed: song.albumId,
-                    uri: _cover(repo, song.coverArtId),
+                    uri: albumCoverUri(repo, song.coverArtId, size: 256),
                     size: 92,
                     radius: 20,
                   ),
@@ -507,15 +507,6 @@ class _NowPlayingCard extends StatelessWidget {
       ),
     );
   }
-
-  static Uri? _cover(MusicSource? repo, String? artId) {
-    if (repo == null || artId == null) return null;
-    try {
-      return repo.coverUri(artId, size: 256);
-    } on MusicSourceException {
-      return null;
-    }
-  }
 }
 
 /// 一条横滑货架。**没内容就整条不出现** —— 空标题挂一行「暂无」只是噪音。
@@ -611,7 +602,7 @@ class _SongShelf extends StatelessWidget {
                         Cover(
                           coverArtId: song.coverArtId,
                           seed: song.albumId,
-                          uri: _coverUri(repo, song.coverArtId),
+                          uri: albumCoverUri(repo, song.coverArtId, size: 256),
                           size: _artwork,
                           radius: 20,
                         ),
@@ -645,15 +636,6 @@ class _SongShelf extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  static Uri? _coverUri(MusicSource? repo, String? artId) {
-    if (repo == null || artId == null) return null;
-    try {
-      return repo.coverUri(artId, size: 256);
-    } on MusicSourceException {
-      return null;
-    }
   }
 }
 
@@ -704,7 +686,7 @@ class _PlaylistShelf extends StatelessWidget {
                       Cover(
                         coverArtId: playlist.coverArtId,
                         seed: playlist.id,
-                        uri: _coverUri(repo, playlist.coverArtId),
+                        uri: albumCoverUri(repo, playlist.coverArtId, size: 128),
                         size: 30,
                         radius: 9,
                         showShadow: false,
@@ -735,14 +717,5 @@ class _PlaylistShelf extends StatelessWidget {
         const SizedBox(height: NordicSpace.s4),
       ],
     );
-  }
-
-  static Uri? _coverUri(MusicSource? repo, String? artId) {
-    if (repo == null || artId == null) return null;
-    try {
-      return repo.coverUri(artId, size: 128);
-    } on MusicSourceException {
-      return null;
-    }
   }
 }

@@ -179,16 +179,9 @@ class _HeroStack extends StatelessWidget {
       (s) => s.repository,
     );
 
-    Uri? coverUri;
-    if (repo != null && song.hasCover) {
-      try {
-        // 512 与专辑页 / 网格同一张 —— 从那儿进播放页时直接命中缓存,
-        // 不再为了更大的 700 重新下一张(那一下正好落在滑入动画上)。
-        coverUri = repo.coverUri(song.coverArtId!, size: 512);
-      } on MusicSourceException {
-        coverUri = null;
-      }
-    }
+    // 512 与专辑页 / 网格同一张 —— 从那儿进播放页时直接命中缓存,
+    // 不再为了更大的 700 重新下一张(那一下正好落在滑入动画上)。
+    final coverUri = albumCoverUri(repo, song.coverArtId, size: 512);
 
     // 原型:`.hero-cover` 上限 292,光晕比封面大一圈(inset -6%)。
     final size = maxSize.clamp(140.0, 292.0);
@@ -342,7 +335,6 @@ class _SongInfo extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(
         NordicSpace.s6, NordicSpace.s5, NordicSpace.s6, NordicSpace.s3),
       child: Column(
-
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -520,8 +512,4 @@ class _OriginNote extends StatelessWidget {
     );
   }
 }
-
-
-
-/// 弹层里的通用条目 —— `.menu-item`。
 

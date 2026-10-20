@@ -134,6 +134,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
     // 同 [LibraryScreen]:只订阅高亮要的两件,动作走 read。
     final playable = context.read<PlaybackController>();
+    // 封面地址由仓库拼 —— 还没配好服务器时给 null,封面走渐变兜底。
+    final repo = context.read<AppState>().repository;
     final (currentId, playing) = context
         .select<PlaybackController, (String?, bool)>(
       (p) => (p.state.song?.id, p.state.playing),
@@ -148,7 +150,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
         SliverToBoxAdapter(
           child: _AlbumHead(
             album: album,
-            repoCoverUri: _coverUri(album.coverArtId, 512),
+            repoCoverUri: albumCoverUri(repo, album.coverArtId),
             heroTag: widget.heroTag,
           ),
         ),
@@ -196,16 +198,6 @@ class _AlbumScreenState extends State<AlbumScreen> {
         ),
       ],
     );
-  }
-
-  Uri? _coverUri(String? artId, int size) {
-    final repo = context.read<AppState>().repository;
-    if (repo == null || artId == null) return null;
-    try {
-      return repo.coverUri(artId, size: size);
-    } on MusicSourceException {
-      return null;
-    }
   }
 
   Future<void> _toggleStar() async {
@@ -442,6 +434,4 @@ class _PlayButton extends StatelessWidget {
     );
   }
 }
-
-/// 上下文菜单的一行 —— `.menu-item`。
 

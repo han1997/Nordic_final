@@ -32,8 +32,9 @@ class SubsonicRepository implements MusicSource {
   /// 「这张封面在本机有没有」—— 有就返回磁盘路径。
   ///
   /// 由状态层从下载索引里接过来(见 `state/app_state.dart`)。放在这个类里
-  /// 而不是各页面的 `_coverUri` 里,是因为封面地址**只有这一处**在拼:
-  /// 十几处调用点各自判断一次,迟早会有一处漏掉,表现成「断网时只有那一个
+  /// 而不是界面那一层,是因为封面地址**只有这一处**在拼:界面那边只经
+  /// `ui/widgets/cover.dart` 的 `albumCoverUri` 一份包装过来 —— 判断散在
+  /// 各写一遍的十几处的话,迟早会有一处漏掉,表现成「断网时只有那一个
   /// 角落的封面没了」。
   final String? Function(String coverArtId)? _localCover;
 

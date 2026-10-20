@@ -18,10 +18,7 @@ class NordicGlass extends StatelessWidget {
     required this.child,
     this.panel = NordicGlassPanel.thin,
     this.borderRadius,
-    this.blurOverride,
-    this.saturationOverride,
     this.border = true,
-    this.shadow = true,
   });
 
   final Widget child;
@@ -30,26 +27,21 @@ class NordicGlass extends StatelessWidget {
   /// 未指定时跟随面板默认圆角。
   final BorderRadius? borderRadius;
 
-  /// 需要按组件微调模糊半径时用(如顶栏比面板更薄)。
-  final double? blurOverride;
-  final double? saturationOverride;
-
   final bool border;
-  final bool shadow;
 
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
     final spec = switch (panel) {
       // 面板玻璃:卡片 / 弹层 / 分段控件 —— 底下的内容透得最少,文字最稳。
-      NordicGlassPanel.panel => (t.glass3, t.blur, NordicRadius.lg, shadow),
+      NordicGlassPanel.panel => (t.glass3, t.blur, NordicRadius.lg, true),
       // 薄玻璃:输入框 / 筛选胶囊 —— 能透出较多背景,但不承载长文本。
       NordicGlassPanel.thin => (t.glass4, t.blurSm, NordicRadius.full, false),
       // 导航玻璃:播放坞 / 标签栏 —— 常驻且要压住滚过去的列表。
-      NordicGlassPanel.nav => (t.glass, t.blur, NordicRadius.full, shadow),
+      NordicGlassPanel.nav => (t.glass, t.blur, NordicRadius.full, true),
     };
     final fill = spec.$1;
-    final blur = blurOverride ?? spec.$2;
+    final blur = spec.$2;
     final radius = borderRadius ?? BorderRadius.circular(spec.$3);
     final wantsShadow = spec.$4;
 
@@ -128,18 +120,19 @@ enum NordicGlassPanel {
 }
 
 /// 玻璃上的 1px 发丝分隔线 —— `.divider`。
+///
+/// **两侧都留 `s5`**:原型那句 `margin: 0 var(--s5)` 就是这个意思。早先各处手写的
+/// `Divider(...)` 只写了 `indent`(或者一整个都没写、或者由外层再包一层 Padding),
+/// 与原型对不上 —— 收成一份,两侧的留白只有一处说法。
 class NordicDivider extends StatelessWidget {
-  const NordicDivider({super.key, this.indent = NordicSpace.s5, this.endIndent});
-
-  final double indent;
-  final double? endIndent;
+  const NordicDivider({super.key});
 
   @override
   Widget build(BuildContext context) => Divider(
         height: 1,
         thickness: 1,
-        indent: indent,
-        endIndent: endIndent ?? indent,
+        indent: NordicSpace.s5,
+        endIndent: NordicSpace.s5,
         color: context.nordic.line,
       );
 }

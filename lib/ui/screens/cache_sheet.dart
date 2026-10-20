@@ -52,8 +52,9 @@ class _CacheSheet extends StatelessWidget {
                 ),
               ),
               for (final option in CacheLimit.all)
-                _CacheOptionRow(
-                  option: option,
+                NordicOptionRow(
+                  label: option.name,
+                  description: option.description,
                   selected: option.id == current.id,
                   onTap: () async {
                     Navigator.of(context).pop();
@@ -63,62 +64,6 @@ class _CacheSheet extends StatelessWidget {
               const SizedBox(height: NordicSpace.s2),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CacheOptionRow extends StatelessWidget {
-  const _CacheOptionRow({
-    required this.option,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final CacheLimit option;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    // 玻璃里的行**不能用 InkWell**:涟漪画在 Material 的墨层上,而那一层在这张
-    // 纸的玻璃底下 —— 按下去屏幕上什么都不动。原型的 `.qopt:hover` 本来就是
-    // 换一层底色,这里照它来。
-    return Pressable(
-      onTap: onTap,
-      pressedDecoration: BoxDecoration(color: t.fill1),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    option.name,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: selected ? context.accentSafe : t.fg,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    option.description,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: t.fg3,
-                          height: 1.5,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: NordicSpace.s3),
-            NordicTick(selected: selected),
-          ],
         ),
       ),
     );

@@ -6,6 +6,7 @@ import '../../data/download_store.dart';
 import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
+import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
@@ -91,9 +92,7 @@ class DownloadsScreen extends StatelessWidget {
                           child: Column(
                             children: [
                               for (var i = 0; i < jobs.length; i++) ...[
-                                if (i > 0)
-                                  Divider(
-                                      height: 1, thickness: 1, color: t.line),
+                                if (i > 0) const NordicDivider(),
                                 _DownloadRow(
                                   job: jobs[i],
                                   onOpen: _openable(jobs[i])

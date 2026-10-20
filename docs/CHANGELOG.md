@@ -1806,3 +1806,113 @@ Navidrome 的「正在播放」恒为空、播放次数永远是 0,而「关于�
 3. **扫码有没有受影响** —— 模型是内置的、没动,但换了分包也值得扫一次确认;
 4. **后台播放 / 下载 / 缓存各走一遍** —— 这几条是「换打包方式会不会顺手打坏别的」的
    哨兵。
+
+## 第二十二轮(2026-10-20):通审 lib/ —— 去重 / 清死代码 / 补两处「说了没做」
+
+起点是「把 `lib/` 通读一遍,能优化的优化」。74 个文件、24.5k 行全读过,`flutter analyze`
+干净、474 条用例全过。这一轮**净减 326 行**,没有新功能 —— 下面按类分组,每一条都是
+能指到具体文件与行的。
+
+### 一、先修两处「文档说了、代码没做」
+
+1. **`PlaybackState.error` 是个死字段。** `playback_controller.dart` 上写着「非空时
+   界面要显示错误而不是空态」,而全仓**没有任何一处读它** —— 写它的倒有四处(播放流的
+   `onError`、`playAll` 的 `catch`、`playbackEventStream` 的 `onError`、那几处 clear)。
+   后果是「点一首播不出来的歌」在界面上**一点反馈都没有**:坞不出现、播放页仍是
+   「还没有在播的歌」。
+   **这一轮没做** —— 补一个播放错误态是界面交互的增删改,按规矩要先改 `prototype/`
+   (原型里现在也没有这个态),单独一轮。
+
+2. **`setQueue` 的注释说它拦了「没有仓库」,实际没拦。** `retargetCurrentRoute` 照着
+   这条假设写了提前返回,而 `setQueue` 从头到尾没有那个判断 —— 没有仓库且这首不是本机
+   文件时,`_sourceFor` 的 `remote()` 闭包会抛。这一轮把**抛出来的那句话**改成中文的
+   `MusicSourceException`(原先是英文的 `StateError('还没有配置服务器,无法构建播放源')`),
+   并让 `PlaybackController` 对音源自造的失败取 `message` 而不是 `'$e'` —— 这样等第一条
+   做完,那句话就是能直接摆上屏幕的。注释也改对了:这一支**不自己收手**,因为
+   「什么都不做」同样是静默。
+
+   另修一处同类:`search_screen` 与 `library_screen` 的歌曲行原先用 `repo!.coverUri(...)`,
+   而 `playlist_screen` 明确写着「仓库可为空......不拿 `repo!` 崩掉整张列表」——
+   同一件事一处防一处不防。三处现在走同一份包装。
+
+### 二、删掉没人用的(6 处)
+
+| 位置 | 情况 |
+| --- | --- |
+| `NordicGlass.saturationOverride` | 收了、存了、**从头到尾没读过** —— 传进来会被静默丢弃,这是 API 在撒谎 |
+| `NordicGlass.blurOverride` / `shadow` | 被读,但没有任何调用点传过 |
+| `NordicToast`(`states.dart`) | 零引用。它的文档还在解释「用 overlay 而不是 SnackBar,因为 SnackBar 会顶起底部内容」,而全应用用的都是 `showSnackBar` —— 类和理由一起过期了 |
+| `NordicAudioHandler` 的五个流 getter | `positionStream` / `bufferedPositionStream` / `durationStream` / `playerStateStream` / `processingStateStream` —— `lib/` 与 `test/` 都没有调用点(`PlaybackController` 直接订 `_handler.player.*`) |
+| `CredentialStore.hasPassword` | 零引用 |
+| `tokensFor()`(`theme_mode.dart`) | 零引用,连 `tokens.dart` 的 import 一起删 |
+
+### 三、去重(省下的行数几乎全在这里)
+
+1. **封面地址那份包装,原先只有 2 处在用。** `cover.dart` 的 `albumCoverUri` 写着
+   「十几处各写一遍 try/catch 是同一份逻辑......收成一处」,而实际**还有 12 处**各写各的:
+   `home_screen.dart` 一个文件里三份(其中两份**逐字相同**)、`library_screen.dart` 两份,
+   album / artist / playlist / bottom_stack / player 各一份。全部改走 `albumCoverUri`。
+2. **`extension _FirstOrNull` 被复制了五份**(media_cache / download_manager /
+   subsonic_client / sorting / quality,逐字相同)→ 新增 `data/iterables.dart` 一份。
+   没有为此引 `package:collection` —— 那是给这一句加一条直接依赖。
+3. **设置页与关于页原先各有一套卡片与行**(`_Card` / `_SettingRow` 对 `_Card` / `_InfoRow`)
+   → 收成 `NordicCard` / `NordicIconRow`。关于页那份的文档自己就写着「两边哪天合并成
+   一个共享组件也不亏」。
+4. **三张面板的选项行原先各一套**(缓存上限 / 转码档位 / 排序)→ `NordicOptionRow`;
+   顺带把写了三遍的「小标记」收成 `NordicTag`(线路标记、档位「无损」、服务器行的
+   「已锁定 / 使用中」)。
+5. **两条连接流程原先各写一遍**(服务器表单、扫码同步:连上 → 拉一次库 → 兜住
+   `UnsupportedError`)→ 新增 `ui/connect_flow.dart`。连那句「为什么整趟必须接得住
+   `Error`」的解释也只剩一份。
+   **行为上有一处措辞统一**:扫码那条路带密码导入失败时从「没能连上:...」改成
+   「连不上:...」(表单那条一直是这么说的)。
+
+### 四、顺手向原型对齐两处(原型本来是对的,是应用漂了)
+
+核对原型时发现的,不是设计变更 —— 原型里早就这么写着,应用没跟上:
+
+- **`.row { gap: var(--s3) }`** —— 关于页那一行**右侧箭头的间距是 4**,而设置页同类行
+  是 `s3`(12)。合并之后统一按原型取 `s3`。
+- **`.divider { margin: 0 var(--s5) }`** —— 手写的 `Divider(...)` 有的只写了 `indent`
+  (右侧没留白)、有的两侧都没写、有的靠外层 `Padding` 凑。这里要说清一件上一轮的事:
+  上一轮我把它当「零引用的死代码」删掉了,而**它才是跟原型对的那一份**(两侧都留 s5),
+  零引用是因为**从来没人采纳它**。这一轮把它请回来,并铺到全部 7 处。
+
+### 五、小清理
+
+- **四处悬空的文档注释**(底下什么都没有,抽组件时留下的):`states.dart`、
+  `player_screen.dart`(它还带着三行连续空行)、`album_screen.dart`、`tokens.dart`。
+- `LibrarySnapshot.markSongsComplete` 原先把 `copyWith` 的全部字段重抄一遍 ——
+  给 `copyWith` 加一个 `songsComplete` 参数,它就成了两行。
+- `cover.dart` 里一段注释的缩进掉了一级;`player_screen.dart` 里 `Column(` 后面多一个空行。
+- 两处**已经过期的注释**:`subsonic_repository` 里那句「而不是各页面的 `_coverUri` 里」
+  (那些 `_coverUri` 这一轮没了)、`settings_screen` 里 `[_SettingRow]` 的名字。
+
+### 验证
+
+`flutter analyze` 干净;`flutter test` **474 passed / 18 skipped / 0 failed**
+(与改动前同数);标点守卫 0 处。
+
+release 包(1.0.46+47,三个 ABI 逐个校验签名 / 包名 / 版本):
+
+| 产物 | 体积 |
+| --- | --- |
+| `build/dist/Nordic-1.0.46+47-arm64-v8a-release.apk` | 26.4 MB |
+| `build/dist/Nordic-1.0.46+47-armeabi-v7a-release.apk` | 22.4 MB |
+| `build/dist/Nordic-1.0.46+47-x86_64-release.apk` | 28.7 MB |
+
+### 这一轮没验到的(只有人或真机能看)
+
+1. **第四节那两处间距** —— 关于页的箭头、以及 7 处发丝分隔线的两侧留白。改的是往原型
+   上靠,但**肉眼得看一眼**才算数(尤其设置页卡片里那条线的右侧,原先是没有留白的);
+2. **两条连接流程** —— 服务器表单改配置、扫码导入带密码 / 不带密码,四条路各走一遍;
+3. **三张面板**(缓存 / 转码 / 排序)的选项行 —— 抽成一份之后勾的位置统一了,
+   排序那张的勾会比从前贴近一点;
+4. **封面** —— 12 处改走同一份包装,重点看断网时已下载内容的封面还在不在
+   (那是这份包装「本机优先」的承诺)。
+
+### 这一轮没做
+
+- **A1(播放失败要有反馈)** —— 要动原型,单独一轮;
+- 其余改动都是「改名 / 搬位置 / 删没人用的」级别,没有行为变化 —— 除了第四节那两处
+  间距与第三节第 5 条那句措辞。

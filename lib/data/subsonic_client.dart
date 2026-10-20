@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 
+import 'iterables.dart';
 import 'music_source.dart';
 import 'server_route.dart';
 import 'subsonic_auth.dart';
@@ -305,12 +306,5 @@ class SubsonicClient implements ServerConnection {
       return '${route.name} 无法连接';
     }
     return '${route.name} 请求失败：${e.message ?? e.type.name}';
-  }
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
   }
 }

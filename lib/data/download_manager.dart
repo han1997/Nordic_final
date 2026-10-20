@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import 'download_store.dart';
+import 'iterables.dart';
 import 'models.dart';
 import 'music_source.dart';
 import 'network_status.dart';
@@ -870,12 +871,5 @@ class DownloadManager extends ChangeNotifier {
     if (lower.contains('webp')) return 'webp';
     if (lower.contains('gif')) return 'gif';
     return 'jpg';
-  }
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
   }
 }

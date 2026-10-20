@@ -426,22 +426,6 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     return _queue[index];
   }
 
-  /// 播放位置与时长。单独两条流给界面用 —— 位置每秒变很多次,
-  /// 混进 [playbackState] 会让通知栏跟着频繁重建。
-  Stream<Duration> get positionStream => _player.positionStream;
-
-  /// 已经缓冲到哪儿。与位置同源(`playbackEventStream`),噪声量级也一样 ——
-  /// 界面那边照位置的待遇,单开一条通道,别混进 [playbackState]。
-  Stream<Duration> get bufferedPositionStream => _player.bufferedPositionStream;
-
-  Stream<Duration?> get durationStream => _player.durationStream;
-
-  Stream<PlayerState> get playerStateStream => _player.playerStateStream;
-
-  /// 音频会话状态(耳机拔出、被其他应用打断等)。界面可选订阅。
-  Stream<AudioProcessingState> get processingStateStream =>
-      playbackState.map((s) => s.processingState);
-
   /// 当前转码档位(与设置页、播放页共享同一个真值)。
   QualityOption get quality => _quality.value;
 
@@ -606,7 +590,8 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
     // 它与线路无关,重载只是白等一次缓冲。
     final local = _localLoaded['${song.id}@${_quality.value.id}']?.local ?? false;
     if (local || _localFileFor(song) != null) return;
-    // 没有仓库就拼不出新地址 —— 与 [setQueue] 一样,由那一头提前拦下。
+    // 没有仓库就拼不出新地址 —— 这一支**自己**先收手(与 [setQueue] 不同:
+    // 那一头是让 `_sourceFor` 抛出来、由播放控制器记成一条错误)。
     if (_repo == null) return;
 
     final position = _player.position;
@@ -779,7 +764,9 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// 流量(不像「先下完再播」或者「播完再下一遍」)。
   ///
   /// 拿不到仓库说明配置在播放途中被清掉了(用户移除了服务器)。
-  /// 那种情况下没有本机文件的曲子给不出地址 —— 由 [setQueue] 提前拦下。
+  /// 那种情况下没有本机文件的曲子给不出地址 —— 这里抛出去,由
+  /// [PlaybackController.playAll] 收成一条错误记进状态(它**不自己收手**:
+  /// 什么都不做的话,用户按了一首歌却没有任何回音)。
   ///
   /// [item] 是**已经算好的**那一份 `MediaItem`(`setQueue` / `reorder` / 追加
   /// 那几处已经把同一份交给 `queue` 与通知栏了)。不传就自己算一份 —— 一次装载
@@ -817,7 +804,10 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
       remote: () {
         final repo = _repo;
         if (repo == null) {
-          throw StateError('还没有配置服务器，无法构建播放源');
+          // **中文的 [MusicSourceException],不是 `StateError`** —— 这句话会被
+          // `PlaybackController` 原样记进 `state.error`,而英文的
+          // 「Bad state: ...」不该是用户能看到的最后一句。
+          throw const MusicSourceException('还没有连接服务器，这一首播不了');
         }
         return repo.streamUri(
           song.id,

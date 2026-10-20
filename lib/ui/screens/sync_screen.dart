@@ -9,7 +9,9 @@ import '../../data/scan_capability.dart';
 import '../../data/server_route.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
+import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
+import '../connect_flow.dart';
 import '../routes.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
@@ -151,30 +153,25 @@ class _SyncScreenState extends State<SyncScreen> {
     setState(() => _connecting = true);
 
     try {
-      await state.connect(
+      await connectAndLoad(
+        state,
         name: server.name,
         kind: server.kind,
         username: server.username,
         password: password,
         routes: server.routes,
       );
-      if (!mounted) return;
-      // 连上之后立刻拉一次库 —— 让用户当场看到「成没成」,而不是回去看一屏空白。
-      await state.loadLibrary();
-      if (!mounted) return;
-    } catch (e) {
-      // 兜住:`connect` 第一步是把密码写进系统密钥库,而那是个裸 await ——
-      // 存不下时(比如 Web 上没有 secure context)异常会一路穿出去,
-      // 于是按钮会一直转圈,而配置一个字都没存。
+    } on ConnectFailure catch (f) {
       if (!mounted) return;
       setState(() => _connecting = false);
       messenger?.showSnackBar(SnackBar(
-        content: Text('没能连上：$e'),
+        content: Text(f.message),
         duration: const Duration(seconds: 4),
       ));
       return;
     }
 
+    if (!mounted) return;
     setState(() => _connecting = false);
     messenger?.showSnackBar(SnackBar(
       content: Text('连接成功，已读取 ${state.library.totalSongs} 首曲目。'),
@@ -373,7 +370,7 @@ class _SyncScreenState extends State<SyncScreen> {
             child: Column(
               children: [
                 for (var i = 0; i < server.routes.length; i++) ...[
-                  if (i > 0) Divider(height: 1, color: t.line),
+                  if (i > 0) const NordicDivider(),
                   _routeRow(server.routes[i]),
                 ],
               ],

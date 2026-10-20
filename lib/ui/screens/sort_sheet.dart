@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../data/sorting.dart';
 import '../../state/app_state.dart';
-import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../widgets/components.dart';
 
@@ -37,7 +36,7 @@ Future<void> showSortSheet(BuildContext context, {required bool albums}) {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (final row in rows)
-              _SortOptionRow(
+              NordicOptionRow(
                 label: row.label,
                 selected: row.selected,
                 onTap: () {
@@ -86,45 +85,4 @@ class _Option {
   final String name;
   final String label;
   final bool selected;
-}
-
-class _SortOptionRow extends StatelessWidget {
-  const _SortOptionRow({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    // 玻璃里的行不能用 InkWell —— 涟漪会被玻璃盖住(理由见 quality_sheet.dart),
-    // 这里按原型的 `.row:hover` 换一层底色。
-    return Pressable(
-      onTap: onTap,
-      pressedDecoration: BoxDecoration(color: t.fill1),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: NordicSpace.s5, vertical: NordicSpace.s4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: selected ? context.accentSafe : null,
-                    ),
-              ),
-            ),
-            NordicTick(selected: selected),
-          ],
-        ),
-      ),
-    );
-  }
 }

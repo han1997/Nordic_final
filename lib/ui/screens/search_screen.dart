@@ -266,7 +266,7 @@ class _SearchScreenState extends State<SearchScreen> {
             itemCount: _hits.songs.length,
             itemBuilder: (context, i) => SongRow(
               song: _hits.songs[i],
-              coverUri: (id) => repo!.coverUri(id, size: 128),
+              coverUri: (id) => albumCoverUri(repo, id, size: 128),
               playing: _hits.songs[i].id == currentId && playing,
               onTap: () => playable.playAll(_hits.songs, index: i),
             ),

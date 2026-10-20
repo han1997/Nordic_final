@@ -512,7 +512,7 @@ class AlbumTile extends StatelessWidget {
               child: Cover(
                 coverArtId: album.coverArtId,
                 seed: album.id,
-                uri: _uri(repo, album.coverArtId),
+                uri: albumCoverUri(repo, album.coverArtId),
                 width: double.infinity,
                 radius: 22,
               ),
@@ -538,15 +538,6 @@ class AlbumTile extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  static Uri? _uri(MusicSource? repo, String? coverArtId) {
-    if (repo == null || coverArtId == null) return null;
-    try {
-      return repo.coverUri(coverArtId, size: 512);
-    } on MusicSourceException {
-      return null;
-    }
   }
 }
 
@@ -731,7 +722,7 @@ class _SongsTab extends StatelessWidget {
           final isCurrent = song.id == currentSongId;
           final row = SongRow(
             song: song,
-            coverUri: (id) => repo!.coverUri(id, size: 128),
+            coverUri: (id) => albumCoverUri(repo, id, size: 128),
             playing: isCurrent && playing,
             onTap: () => playable.playAll(library.songs, index: index - 1),
           );
@@ -871,7 +862,7 @@ class _PlaylistsTab extends StatelessWidget {
             leading: Cover(
               coverArtId: playlist.coverArtId,
               seed: playlist.id,
-              uri: _uri(repo, playlist.coverArtId),
+              uri: albumCoverUri(repo, playlist.coverArtId, size: 256),
               size: 56,
               radius: 16,
               showShadow: false,
@@ -886,15 +877,6 @@ class _PlaylistsTab extends StatelessWidget {
           );
       },
     );
-  }
-
-  Uri? _uri(MusicSource? repo, String? coverArtId) {
-    if (repo == null || coverArtId == null) return null;
-    try {
-      return repo.coverUri(coverArtId, size: 256);
-    } on MusicSourceException {
-      return null;
-    }
   }
 }
 

@@ -9,7 +9,9 @@ import '../../data/server_url.dart';
 import '../../data/subsonic_client.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
+import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
+import '../connect_flow.dart';
 import '../routes.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
@@ -191,7 +193,8 @@ class _ServersScreenState extends State<ServersScreen> {
     });
 
     try {
-      await appState.connect(
+      await connectAndLoad(
+        appState,
         name: _nameController.text,
         kind: _kind,
         username: _userController.text,
@@ -213,21 +216,11 @@ class _ServersScreenState extends State<ServersScreen> {
       );
 
       if (!mounted) return;
-
-      // 连上之后立刻拉一次库 —— 让用户在这里就看到「成没成」,
-      // 而不是跳到音乐库再看一片空白。
-      await appState.loadLibrary();
-      if (!mounted) return;
-    } catch (e) {
-      // **兜住**:`connect` 的第一步是把密码写进系统密钥库,而那是个裸 await ——
-      // 存不下时(web 上没有 secure context 时,flutter_secure_storage_web 直接
-      // 抛 `UnsupportedError`,**是 Error 不是 Exception**)异常会一路穿出去,
-      // 于是下面那句 `_busy = false` 永远走不到:按钮一直转圈,配置一个字都没存。
-      // 这里退回去并说清是哪一步,别让用户对着一个转不完的圈猜。
+    } on ConnectFailure catch (f) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _formError = _connectFailureText(e);
+        _formError = f.message;
       });
       return;
     }
@@ -258,21 +251,6 @@ class _ServersScreenState extends State<ServersScreen> {
       );
     }
   }
-
-  /// 连不上时给用户看的那句话。
-  ///
-  /// [UnsupportedError] 单独认一下:从局域网的 http 地址打开 Web 时,
-  /// `flutter_secure_storage_web` 因为没有 `window.isSecureContext` 直接抛它,
-  /// 而那时**配置一个字都没存下来**。把它翻译成「该怎么改」,而不是把一行英文
-  /// 丢给用户。
-  ///
-  /// 注意这是让它**响亮地失败**,不是让它能用:`http://` 局域网下系统密码存储
-  /// 本来就是关着的,凭据存不住 —— 就算放过去也会「连上、一刷新就没」,
-  /// 那比连不上更让人糊涂。
-  static String _connectFailureText(Object e) => switch (e) {
-        UnsupportedError() => '这个页面存不下密码 —— 用 https 或 localhost 打开再连。',
-        _ => '连不上：$e',
-      };
 
   /// 表单里那条「地址」拼成一条线路(名字与标记都从地址推)。
   ///
@@ -600,7 +578,7 @@ class _ServersScreenState extends State<ServersScreen> {
                   ],
                 ),
                 const SizedBox(height: NordicSpace.s5),
-                Divider(height: 1, color: t.line),
+                const NordicDivider(),
                 const SizedBox(height: NordicSpace.s4),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -661,8 +639,7 @@ class _ServersScreenState extends State<ServersScreen> {
             child: Column(
               children: [
                 for (var i = 0; i < server.routes.length; i++) ...[
-                  if (i > 0)
-                    Divider(height: 1, thickness: 1, color: t.line),
+                  if (i > 0) const NordicDivider(),
                   _RouteManageRow(
                     route: server.routes[i],
                     ping: state.pings[server.routes[i].id],
@@ -958,15 +935,15 @@ class _RouteManageRow extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      _Tag(label: route.tag.label),
+                      NordicTag(label: route.tag.label),
                       // 锁定的那条标「已锁定」而不是「使用中」:它俩说的是两件事,
                       // 而点一下的结果不同(锁着的点了解锁,没锁的点上锁)。
                       if (route.selected) ...[
                         const SizedBox(width: 6),
-                        _Tag(label: '已锁定', highlight: true),
+                        NordicTag(label: '已锁定', highlight: true),
                       ] else if (selected) ...[
                         const SizedBox(width: 6),
-                        _Tag(label: '使用中', highlight: true),
+                        NordicTag(label: '使用中', highlight: true),
                       ],
                     ],
                   ),
@@ -1015,36 +992,6 @@ class _RouteManageRow extends StatelessWidget {
     );
   }
 }
-
-class _Tag extends StatelessWidget {
-  const _Tag({required this.label, this.highlight = false});
-
-  final String label;
-  final bool highlight;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: highlight
-            ? context.accent.accent.withValues(alpha: 0.18)
-            : t.fill2,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: highlight ? context.accentSafe : t.fg3,
-        ),
-      ),
-    );
-  }
-}
-
 /// 概览卡里的一格统计。
 class _Stat extends StatelessWidget {
   const _Stat({

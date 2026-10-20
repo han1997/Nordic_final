@@ -113,8 +113,6 @@ class CredentialStore {
   Future<String?> readPassword() => _storage.read(key: _passwordKey);
 
   Future<void> clear() => _storage.delete(key: _passwordKey);
-
-  Future<bool> get hasPassword async => (await readPassword()) != null;
 }
 
 /// 服务器配置与界面偏好的持久化。

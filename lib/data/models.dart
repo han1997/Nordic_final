@@ -480,6 +480,9 @@ class LibrarySnapshot {
     // 「最近添加」由 [songs] 派生,所以并页时要能一起换掉(见 `sorting.dart`
     // 的 `mergeSongPage`)。其余两条货架是服务器口径,不在这里改。
     List<Song>? recentlyAddedSongs,
+    // `songsComplete` 不是货架,而是「手头这份 songs 全不全」—— 翻页取全时要能
+    // 一起换掉(见 [markSongsComplete])。
+    bool? songsComplete,
   }) =>
       LibrarySnapshot(
         albums: albums ?? this.albums,
@@ -490,7 +493,7 @@ class LibrarySnapshot {
         recentlyAddedSongs: recentlyAddedSongs ?? this.recentlyAddedSongs,
         recentlyPlayed: recentlyPlayed,
         mostPlayed: mostPlayed,
-        songsComplete: songsComplete,
+        songsComplete: songsComplete ?? this.songsComplete,
       );
 
   /// 手上这份 [songs] 是不是**全集**。
@@ -503,17 +506,10 @@ class LibrarySnapshot {
   /// 「这一页空了,或者已取到的条数追平了服务器报的规模估计」。
   final bool songsComplete;
 
-  LibrarySnapshot markSongsComplete(bool complete) => LibrarySnapshot(
-        albums: albums,
-        artists: artists,
-        songs: songs,
-        playlists: playlists,
-        recentlyAdded: recentlyAdded,
-        recentlyAddedSongs: recentlyAddedSongs,
-        recentlyPlayed: recentlyPlayed,
-        mostPlayed: mostPlayed,
-        songsComplete: complete,
-      );
+  /// 改「这份 songs 全不全」这一个标记 —— [copyWith] 的一层薄壳,
+  /// 名字留着是因为调用点这么读更清楚(`sorting.dart` 的 `mergeSongPage` 用它)。
+  LibrarySnapshot markSongsComplete(bool complete) =>
+      copyWith(songsComplete: complete);
 
   /// 库里的真实曲目数。
   ///

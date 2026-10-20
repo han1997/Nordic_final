@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'iterables.dart';
 import 'media_files.dart';
 import 'models.dart';
 
@@ -727,12 +728,5 @@ class MediaCache extends ChangeNotifier {
       // 删不掉(还有进程占着 / 权限诡异)也只是留着占地方,
       // 下一次淘汰还会再试。
     }
-  }
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
   }
 }

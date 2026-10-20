@@ -67,8 +67,6 @@ class StaleBanner extends StatelessWidget {
       ),
     );
   }
-
-  /// 见文件末尾的 [formatClock]。
 }
 
 /// 加载中。
@@ -226,53 +224,6 @@ class ErrorState extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-/// 全局顶部的气泡提示 —— `.toast`。
-/// 用 overlay 而不是 SnackBar:SnackBar 会顶起底部内容,而底部常驻着播放坞。
-class NordicToast extends StatelessWidget {
-  const NordicToast({super.key, required this.message, this.bottom = 168});
-
-  final String message;
-  final double bottom;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: bottom,
-      child: IgnorePointer(
-        child: Center(
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.sizeOf(context).width * 0.8,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-            decoration: BoxDecoration(
-              color: t.glass,
-              borderRadius: BorderRadius.circular(NordicRadius.full),
-              border: Border.all(color: t.line2),
-              boxShadow: [
-                BoxShadow(
-                  color: t.depth,
-                  blurRadius: 36,
-                  offset: const Offset(0, 18),
-                ),
-              ],
-            ),
-            child: Text(
-              message,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: t.fg),
-            ),
-          ),
-        ),
       ),
     );
   }

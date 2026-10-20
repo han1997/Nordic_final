@@ -484,9 +484,9 @@ class _PlayingBarsState extends State<PlayingBars>
         animation: _controller,
         builder: (context, _) {
           // 暂停时 `_controller` 停在原地(见 [didUpdateWidget] 里的 `stop`),
-        // 取它的值就是「停在当前相位上」—— 早先这里写的是 `playing ? value : 0.0`,
-        // 于是每次暂停三根条都**跳回**同一副样子(与这句注释说的正好相反)。
-        final t = _controller.value;
+          // 取它的值就是「停在当前相位上」—— 早先这里写的是 `playing ? value : 0.0`,
+          // 于是每次暂停三根条都**跳回**同一副样子(与这句注释说的正好相反)。
+          final t = _controller.value;
           return Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
