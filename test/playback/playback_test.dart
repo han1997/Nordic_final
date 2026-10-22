@@ -117,6 +117,20 @@ void main() {
       );
     });
 
+    test('平台报的坏时长不收，正常值照收', () {
+      // 2026-10-23 Windows 实拍：192k 转码流被后端报成 int64 满格按 100ns
+      // 折算的哨兵（约 2.9 万年）—— 就是下面这一个数。
+      const sentinel = Duration(milliseconds: 922337203685477);
+      expect(plausibleDuration(sentinel), isFalse);
+      expect(plausibleDuration(Duration.zero), isFalse,
+          reason: '零会把切歌时铺好的元数据时长盖掉');
+      expect(plausibleDuration(const Duration(seconds: -5)), isFalse);
+      expect(plausibleDuration(const Duration(hours: 30)), isFalse);
+      expect(plausibleDuration(const Duration(hours: 24)), isTrue,
+          reason: '边界本身收（排除式上限，不是「小于」）');
+      expect(plausibleDuration(const Duration(minutes: 3, seconds: 25)), isTrue);
+    });
+
     test('copyWith 能清掉旧错误', () {
       const failed = PlaybackState(error: '连不上');
       expect(failed.copyWith(clearError: true).error, isNull);

@@ -170,7 +170,10 @@ class PrimaryButton extends StatelessWidget {
                   ]
                 : null,
           ),
-          child: Center(child: child),
+          // 别给 child 再包一层 Center:Align 在松约束下会撑满可用宽度,
+          // 胶囊(fillMaxWidth:false)会变成通栏 —— 居中由 Row 自己给
+          // (mainAxisAlignment.center 两种形态下都在)。
+          child: child,
         ),
       ),
     );

@@ -120,6 +120,19 @@ double playbackProgress(Duration position, Duration duration) {
   return ratio.clamp(0.0, 1.0) * 100;
 }
 
+/// 平台上报的时长是否可信。只挡**明显不可能**的值 —— 单曲超过 24 小时
+/// 已经不是「长曲子」,是坏值。提成顶层函数是为了能直接测(与
+/// [tailDurationAfter] 同一条:控制器要真的播放器才建得起来)。
+///
+/// 为什么要这一道:转码流的响应没有 Content-Length,平台报不出时长时
+/// Android / iOS(ExoPlayer / AVPlayer)报 null,由切歌时铺好的元数据时长兜底;
+/// 而 Windows 后端不报 null,**报一个哨兵** —— 2026-10-23 实拍:192k 转码流
+/// 报回 int64 满格按 100ns 折算的时长(约 2.9 万年),进度条右端写成
+/// `-15372286726:04`、滑块瘫在最左。零 / 负值同样不收:那会把已知的
+/// 元数据时长盖掉,进度条又结构性卡在最左。
+bool plausibleDuration(Duration duration) =>
+    duration > Duration.zero && duration <= const Duration(hours: 24);
+
 /// 界面与播放器之间的那层。
 ///
 /// [NordicAudioHandler] 面向系统(通知栏 / 锁屏),这个类面向界面:
@@ -298,7 +311,10 @@ class PlaybackController extends ChangeNotifier {
     // 时长单独一条:切歌时 [PlayerState] 上的值会短暂为空,
     // 用它更新会让进度条先跳到 0 再回来。
     _track(_subs, player.durationStream.listen((duration) {
-      if (duration != null) _emit(_state.copyWith(duration: duration));
+      // 报 null 是「报不出」,报个天文数字是「报坏了」(见 [plausibleDuration]):
+      // 两种都不该盖掉切歌时铺好的元数据时长。
+      if (duration == null || !plausibleDuration(duration)) return;
+      _emit(_state.copyWith(duration: duration));
     }));
 
     // 队列变化(追加 / 移除 / 重排)也要让界面刷新。
