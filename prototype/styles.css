@@ -219,6 +219,10 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   display: flex;
   flex-direction: column;
   isolation: isolate;
+  /* container 查询的锚点:这一台「设备」的宽度决定内部走哪套形态 ——
+     见文件尾「宽屏 / 平板」。挂在 .phone 上而不是看浏览器视口,
+     是因为设计板上每一格、舞台上那一台都是独立的「设备」。 */
+  container-type: inline-size;
   box-shadow:
     0 0 0 11px var(--edge),
     0 0 0 12.5px var(--edge-2),
@@ -660,10 +664,13 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
    音乐库
    ============================================================ */
 
-/* 大封面双列网格 */
+/* 大封面网格 */
 .grid-covers {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* 列数由 JS 同步(--grid-cols,见 app.js 的 gridColsOf / syncGrids)——
+     与应用 NordicWindow.gridColumns **同一条公式**。默认 2 列 = 手机形态,
+     JS 没跑起来时也是今天的样子。 */
+  grid-template-columns: repeat(var(--grid-cols, 2), 1fr);
   gap: var(--s5) var(--s4);
   padding: var(--s2) var(--s5) var(--s3);
 }
@@ -1122,6 +1129,14 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   margin-top: 3px;
   display: flex; align-items: center; justify-content: center; gap: 7px; flex-wrap: wrap;
 }
+/* 2026-10-22:标题 / 艺人 / 元信息包进了一层 —— 宽屏下它们要整体挪到封面右侧
+   (见文件尾「宽屏」);手机形态下这一层只是把三件照原样竖着摞起来,
+   间距与逐条边距都是原值,渲染逐像素不变。 */
+.album-hero .hero-text {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 
 /* 播放独占一行:整屏只有这一颗实心按钮。随机 / 收藏 / 队列进了「⋯」,
    它们不该和「播这张专辑」抢同一条视觉线。
@@ -1173,6 +1188,21 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 /* ============================================================
    播放页
    ============================================================ */
+
+/* 播放页正文的容器(2026-10-22 包的一层):手机形态下只是竖着打包 ——
+   封面区照旧 flex:1、下面三件照旧各自贴底,渲染逐像素不变;
+   宽屏下翻成两栏 —— 见文件尾「宽屏」的 .player-main / .player-side。 */
+.player-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.player-side {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+}
 
 /* 这一整块是「看歌词」的入口 —— 封面本身可点,它四周那一大圈留白也可点
    (原先只有封面那 292px 算数,周围按下去什么也不发生)。 */
@@ -2159,3 +2189,184 @@ html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
 .about-name { font-size: 24px; font-weight: 730; letter-spacing: -0.02em; }
 .about-line { margin-top: 3px; font-size: var(--fs-sm); color: var(--fg-3); }
 .about-ver { margin-top: 9px; font-size: var(--fs-sm); font-weight: 620; color: var(--fg-2); }
+
+/* ============================================================
+   宽屏 / 平板(第二十六轮)
+   ============================================================
+
+   此前原型只有一种形态:390×844 的手机竖屏,尺寸全部写死。从这一版起
+   `.phone` 是一台「任意尺寸的设备」,外壳宽度决定内部走哪套形态 ——
+   容器查询挂在 .phone 上(见上面对 .phone 的那一行),所以设计板每一格、
+   舞台上那一台各自独立判级,不看浏览器视口:
+
+     < 600px        手机(现状)
+     600 – 839      平板竖屏 / 手机横屏:形态不变,网格放宽成多列
+     >= 840px       平板横屏 / 桌面 / TV:左竖栏 + 播放横条 + 两栏播放页
+
+   600 / 840 这两个数与应用的 NordicWindow 是同一套(test/ui/adaptive_test.dart
+   会读这个文件核对);数值只此一处,别在别处再抄一遍。
+
+   类名保持 `phone` 不换:.tmp-shots 里几十个自检脚本全按它选,
+   换名会让整批脚本同时哑掉。平板 / 宽屏只是 .phone 的两个变体类。
+   ============================================================ */
+
+/* ---- 外壳变体:只动尺寸与机壳,不动内容 ---- */
+
+.phone.tablet {
+  width: 834px;
+  height: 1112px;
+  border-radius: 40px;
+}
+/* 平板没有灵动岛;状态栏与底部指示条照旧(那不是手机专属)。 */
+.phone.tablet .island { display: none; }
+
+.phone.wide {
+  width: 1280px;
+  height: 800px;
+  border-radius: 22px;
+}
+/* 宽屏不是一台放大的手机:没有岛、没有系统状态栏、没有指示条。 */
+.phone.wide .island,
+.phone.wide .statusbar,
+.phone.wide .home-ind { display: none; }
+
+/* ---- 左竖栏 —— 宽屏的常驻导航 ----
+   默认 display:none(不占布局);>= 840 的容器查询把它翻出来。
+   铺不铺由 app.js 的 shell(opts.rail) 点名 —— 播放 / 歌词 / 表单页连节点都没有。
+   材质与托盘同一层玻璃、同一套悬浮习语(四周 10px、r-xl)。 */
+.railnav {
+  display: none;
+  position: absolute;
+  left: 10px; top: 10px; bottom: 10px;
+  width: 84px;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: var(--r-xl);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--line-2);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    0 20px 40px -20px var(--depth);
+  z-index: 12;
+}
+.railnav button {
+  width: 72px; height: 60px;
+  flex: 0 0 auto;
+  border-radius: var(--r-full);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  font-size: 10.5px; font-weight: 640;
+  letter-spacing: 0.005em;
+  color: var(--fg-3);
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+}
+.railnav button:hover { color: var(--fg); }
+/* 选中态与底部标签栏逐条相同:记住的是位置,不是颜色。 */
+.railnav button[aria-selected="true"] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 17%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 -1px 0 var(--glass-sh);
+}
+.railnav button[aria-selected="true"] svg { color: var(--accent-safe); }
+
+/* 播放横条里多出来的两件(上一首 / 行内进度):手机形态下不出现,
+   渲染与今天逐像素一致。 */
+.dock .prog-inline { display: none; }
+.dock .rail-only { display: none; }
+
+/* ---- 平板档 / 宽屏档 ----
+   网格列数**不在这里**:由 JS 按应用同一条公式同步(--grid-cols,
+   见 app.js 的 gridColsOf)。CSS 的 auto-fill 是向下取整、应用是向上取整,
+   到位宽边界两边会差一列(1024 / 1280 附近),所以列数交给公式,样式只管形态。 */
+@container (min-width: 840px) {
+  /* 有竖栏的屏,内容整体右移给它让位 —— 与应用侧 NavGutter 同一个口径:
+     104 = 10(边距)+ 84(栏宽)+ 10(边距)。刻意**不**让内容滚到竖栏玻璃底下:
+     玻璃身后要是滚动的字,那层模糊就没个安静的时候。没竖栏的屏(播放 / 歌词)
+     保持满宽居中。 */
+  .screen:has(> .railnav) { padding-left: 104px; }
+
+  .railnav { display: flex; }
+
+  /* 托盘只剩播放横条:左缘从 104 起(与上面 .screen 的让位对齐),
+     标签栏、分隔线收掉,坞加长到 72、进度并进坞里。 */
+  .screen:has(> .railnav) .bottomstack { left: 104px; }
+  .tabbar, .tray-line { display: none; }
+  .dock { height: 72px; padding: 0 12px; }
+  .dock .cover { width: 48px; height: 48px; border-radius: 14px; }
+  .dock .prog-inline {
+    display: block; flex: 1 1 auto;
+    min-width: 160px; height: 2px;
+    margin: 0 var(--s3);
+  }
+  .dock .rail-only { display: grid; }
+  /* 横条只有一行,底部留白比手机少一截(94 = 72 + 10 边距 + 余量)。 */
+  .screen:has(.bottomstack) .scroll { padding-bottom: 94px; }
+
+  /* 专辑头改横排:168 的居中列在 1280 下左右各空 500px,把宽还回去。 */
+  .album-hero {
+    flex-direction: row; align-items: center;
+    text-align: left;
+    gap: var(--s5);
+    padding: var(--s5) var(--s6);
+  }
+  .album-hero .cover { width: 200px; height: 200px; margin-bottom: 0; flex: 0 0 auto; }
+  .album-hero .hero-text { align-items: flex-start; }
+  .album-hero .meta { justify-content: flex-start; }
+
+  /* 播放页两栏:封面居左放大,信息 / 进度 / 控制居右 —— 5:4,整行居中限宽 1120。
+     封面顶到 512(与应用侧同一档解码桶,不新增尺寸)。 */
+  .player-main {
+    flex-direction: row; align-items: center;
+    max-width: 1120px; width: 100%;
+    margin: 0 auto;
+  }
+  .player-hero { flex: 5 1 0; padding: 0 var(--s5) 0 var(--s6); }
+  .player-hero .hero-cover { max-width: 512px; }
+  .player-side { flex: 4 1 0; display: flex; flex-direction: column; justify-content: center; }
+
+  /* 窄内容收成一栏居中的几处:歌词正文 / 搜索框 / 底部控制排。
+     `.controls` 在播放页两栏里本来就是侧栏内的满宽,这几条在那边无副作用。 */
+  .lyrics, .searchfield, .search-empty, .scrub, .controls {
+    max-width: 720px; width: 100%;
+    margin-left: auto; margin-right: auto;
+  }
+  /* 卡片型的屏(设置 / 关于 / 服务器):卡片与章节头一起收成一栏。
+     判定用 :has —— 有卡片的滚动区才收;网格屏的 `.section` 标题要跟着
+     网格满宽走,别去动它。卡片的行内 margin 用 !important 压掉 ——
+     那是手机时代为了满宽随手写的行内值,原型里只有这一处这么干。 */
+  .scroll:has(> .card) > .card {
+    max-width: 720px;
+    margin-left: auto !important; margin-right: auto !important;
+  }
+  .scroll:has(> .card) > .section {
+    max-width: 720px;
+    margin-left: auto; margin-right: auto;
+  }
+}
+
+/* ---- 舞台的尺寸切换(player.html 侧栏那组按钮) ----
+   只动 #phone-slot 那一格(与滑动过渡同一格)。zoom 只缩渲染不缩布局 ——
+   容器查询量到的仍是 834 / 1280,判级不受影响。 */
+html[data-setframe="tablet"] #phone-slot { zoom: 0.8; }
+html[data-setframe="wide"] #phone-slot { zoom: 0.62; }
+html[data-setframe="tablet"] #phone-slot .phone { width: 834px; height: 1112px; border-radius: 40px; }
+html[data-setframe="tablet"] #phone-slot .phone .island { display: none; }
+html[data-setframe="wide"] #phone-slot .phone { width: 1280px; height: 800px; border-radius: 22px; }
+html[data-setframe="wide"] #phone-slot .phone .island,
+html[data-setframe="wide"] #phone-slot .phone .statusbar,
+html[data-setframe="wide"] #phone-slot .phone .home-ind { display: none; }
+
+/* 设计板上那几格宽屏:同样缩到能一眼看全,其余格子不动。 */
+.board .phone.wide { zoom: 0.62; }
+
+/* 设计板越来越长(76 格,其中 12 格是 1280×800、各自带一层玻璃模糊),
+   在一个高视口里整板同绘会让渲染进程撑不住(实测 Target crashed)。
+   给每一格加 content-visibility:没露头的格子直接跳过渲染,滚动到位再铺 ——
+   contain-intrinsic-size 的 auto 会记住上次渲染的高度,滚动条与锚点不受影响。 */
+.board-col { content-visibility: auto; contain-intrinsic-size: auto 900px; }

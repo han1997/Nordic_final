@@ -239,6 +239,9 @@ const CACHE_LIMITS = [
 
 const STATE = {
   theme: 'dark',
+  /* 舞台(交互流)那一台的尺寸:phone / tablet / wide —— 侧栏「尺寸」分段的选中值。
+     只影响 player.html;设计板每一格自带 frame(见 BOARD 的宽屏格)。 */
+  frame: 'phone',
   quality: 'medium',
   routeId: 'lan',
   view: 'servers',
@@ -460,14 +463,21 @@ function statusbar() {
 /* 组装一整台手机:外框 + 灵动岛 + 状态栏 + 内容。
    accent 要写在 .screen 上而不是只写在氛围层里 —— 沉浸式页面的进度条、播放键、
    选中胶囊都在氛围层的兄弟节点上,变量挂在氛围层上的话它们一个也继承不到,
-   会退回 :root 的默认紫。这正是「随封面取色」看上去只对了一半的原因。 */
+   会退回 :root 的默认紫。这正是「随封面取色」看上去只对了一半的原因。
+
+   第二十六轮起它也能组装**平板 / 宽屏**那一台:
+   - `opts.frame`(tablet / wide)换外壳尺寸(样式见 styles.css 尾部的「宽屏 / 平板」);
+   - `opts.rail` 决定铺不铺左侧竖栏,值 = 选中的 tab,'' = 谁都不选中;
+   两个都不传 = 今天的手机形态,逐像素不变。 */
 function shell(inner, opts = {}) {
   const accent = opts.accent ? accentVars(opts.accent) : '';
   const c1 = opts.c1 ? `--c1:${opts.c1};` : '';
   const home = opts.home ? '<div class="home-ind"></div>' : '';
-  return `<div class="phone">
+  const frame = opts.frame ? ` ${opts.frame}` : '';
+  const rail = opts.rail === undefined ? '' : navRail(opts.rail);
+  return `<div class="phone${frame}">
     <div class="island"></div>
-    <div class="screen" style="${accent}${c1}">${statusbar()}${inner}</div>
+    <div class="screen" style="${accent}${c1}">${statusbar()}${rail}${inner}</div>
     ${home}
   </div>`;
 }
@@ -477,31 +487,51 @@ function ambient(album) {
   return `<div class="ambient" style="${accentVars(album.accent)}--c1:${album.c1}"></div>`;
 }
 
+/* 一级三屏 —— 底部标签栏与左竖栏共用这一份。
+   原型原本是「音乐库 / 搜索 / 设置」。**2026-10-17 改成「首页 / 音乐库 / 设置」**:
+   搜索是「知道要找什么」时的动作,用完就退,占一个常驻位置不划算 ——
+   它挪进首页与音乐库顶栏那颗放大镜,变成一张推入的页面(见 data-go="search")。
+   空出来的位置给首页:「不知道听什么」时才需要一个一直能回的地方。 */
+const TABS = [
+  ['home',     'home',   '首页'],
+  ['library',  'book',   '音乐库'],
+  ['settings', 'gear',   '设置'],
+];
+
 function tabbar(active) {
-  /* 原型原本是「音乐库 / 搜索 / 设置」。**2026-10-17 改成「首页 / 音乐库 / 设置」**:
-     搜索是「知道要找什么」时的动作,用完就退,占一个常驻位置不划算 ——
-     它挪进首页与音乐库顶栏那颗放大镜,变成一张推入的页面(见 data-go="search")。
-     空出来的位置给首页:「不知道听什么」时才需要一个一直能回的地方。 */
-  const tabs = [
-    ['home',     'home',   '首页'],
-    ['library',  'book',   '音乐库'],
-    ['settings', 'gear',   '设置'],
-  ];
-  return `<nav class="tabbar">${tabs.map(([id, icon, label]) =>
+  return `<nav class="tabbar">${TABS.map(([id, icon, label]) =>
     `<button data-tab="${id}" aria-selected="${active === id}">${ic(icon, 21)}<span>${label}</span></button>`
   ).join('')}</nav>`;
 }
 
-/* 播放坞 —— 现在只是托盘里的一行(见下)。
-   进度线不在这儿:它挪到托盘中间那条分隔线上,整块东西一起表示「正在放」。 */
-function dock(song = currentSong()) {
+/* 左竖栏 —— 宽屏(>= 840)的常驻导航。铺不铺由 shell() 的 opts.rail 点名:
+   播放 / 歌词 / 各种表单页没有底部托盘,连竖栏节点都不该有。
+   手机形态下即便铺了也只是 display:none(见 styles.css),渲染不变。
+
+   **挂点用 data-rail-tab,不复用 data-tab**:.tmp-shots 里几十个自检脚本
+   按 `#phone-slot [data-tab="library"]` 点击 —— 复用的话每个这样的选择器
+   都会同时命中两颗按钮,playwright 会撞在隐藏的竖栏那颗上超时。
+   代价是委托处多认一个属性(见 click 处理里 `d.tab || d.railTab` 那行)。 */
+function navRail(active) {
+  return `<nav class="railnav">${TABS.map(([id, icon, label]) =>
+    `<button data-rail-tab="${id}" aria-selected="${active === id}" title="${label}">${ic(icon, 21)}<span>${label}</span></button>`
+  ).join('')}</nav>`;
+}
+
+/* 播放坞 —— 托盘里的一行;宽屏(>= 840)下加长成播放横条:
+   多一颗上一首、进度从分隔线并进坞里(见 styles.css 尾部的宽屏档)。
+   多出来的那两件在手机形态下 display:none,渲染逐像素不变。 */
+function dock(song = currentSong(), pct = null) {
   const a = albumOf(song);
+  const bar = pct == null ? progressOf(song, STATE.elapsed) : pct;
   return `<div class="dock" data-go="player">
     ${cover(a, '', 'width:46px;height:46px;border-radius:13px')}
     <div class="grow">
       <div class="line1">${song.title}</div>
       <div class="line2">${song.artist} · ${a.name}</div>
     </div>
+    <span class="prog-inline prog-line" aria-hidden="true"><i style="width:${bar}%"></i></span>
+    <button class="icon-btn rail-only" data-act="prev">${ic('prev', 25)}</button>
     <button class="icon-btn" data-act="toggle-play">${ic(STATE.playing ? 'pause' : 'play', 25)}</button>
     <button class="icon-btn" data-act="next">${ic('next', 23)}</button>
   </div>`;
@@ -516,7 +546,7 @@ function dock(song = currentSong()) {
 const bottom = (song, pct, active) => {
   const bar = pct == null ? progressOf(currentSong(), STATE.elapsed) : pct;
   return `<div class="bottomstack"><div class="tray">
-    ${dock(song)}
+    ${dock(song, bar)}
     <div class="tray-line"><i style="width:${bar}%"></i></div>
     ${tabbar(active)}
   </div></div>`;
@@ -1001,11 +1031,13 @@ function screenAlbum(id) {
            播放一行独占,下面的曲目也不再被一条分隔线断开。 -->
       <div class="album-hero">
         ${cover(a, '', 'width:168px;height:168px;border-radius:26px')}
-        <div class="title">${a.name}</div>
-        ${artistIdOf(a.artist)
-          ? `<div class="artist" data-artist="${artistIdOf(a.artist)}">${a.artist}</div>`
-          : `<div class="artist inert">${a.artist}</div>`}
-        <div class="meta"><span>${a.year}</span>·<span>${a.count} 首</span></div>
+        <div class="hero-text">
+          <div class="title">${a.name}</div>
+          ${artistIdOf(a.artist)
+            ? `<div class="artist" data-artist="${artistIdOf(a.artist)}">${a.artist}</div>`
+            : `<div class="artist inert">${a.artist}</div>`}
+          <div class="meta"><span>${a.year}</span>·<span>${a.count} 首</span></div>
+        </div>
       </div>
       <div class="album-play">
         <button class="btn primary" data-song="${firstId}">${ic('play', 20)} 播放</button>
@@ -1148,9 +1180,15 @@ function playerFail() {
 }
 
 /* 播放页的正文 —— 封面、信息、进度、控制排。抽出来是因为上面那一支要整块换掉它,
-   而不抽的话得把这一整段模板复制一份(复制的那份迟早会两边漂开)。 */
+   而不抽的话得把这一整段模板复制一份(复制的那份迟早会两边漂开)。
+
+   第二十六轮包了两层:`player-main` 是宽屏(>= 840)两栏的容器 ——
+   `player-hero`(封面)居左、`player-side`(信息 / 进度 / 控制)居右;
+   手机形态下 `player-main` 仍是竖列、`player-side` 只是把下面三件打包,
+   渲染逐像素不变(见 styles.css 尾部的宽屏档)。 */
 function playerBody(s, a, origin, pct, elapsed) {
   return `
+    <div class="player-main">
     <!-- 这一整块都是入口:点封面、点封面四周的留白都翻到歌词。原先只有封面本身
          可点,周围那一大圈空白按下去什么也不发生 —— 而这一屏除了控件就没有别的
          去处了。封面背后不再有黑胶盘面:那一圈盘面是为了「转起来表示在放」,
@@ -1163,6 +1201,7 @@ function playerBody(s, a, origin, pct, elapsed) {
       </div>
     </div>
 
+    <div class="player-side">
     <div class="player-info">
       <div class="top-row">
         <div style="min-width:0">
@@ -1186,7 +1225,9 @@ function playerBody(s, a, origin, pct, elapsed) {
     </div>
 
     ${scrubBar(s, elapsed)}
-    ${mediaControls()}`;
+    ${mediaControls()}
+    </div>
+    </div>`;
 }
 
 function sheetQuality() {
@@ -2188,8 +2229,11 @@ const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, 
    所以**每一屏都走这里**,而不是逐个补。 */
 const withOverlay = (inner) => inner + (STATE.overlay && sheets[STATE.overlay] ? sheets[STATE.overlay]() : '');
 
+/* `rail` 点名这一屏在宽屏(>= 840)下铺不铺左竖栏 —— 与 `bottom()` 同一批:
+   有底部托盘的屏才有竖栏,值 = 当前 tab,'' = 谁都不选中(专辑 / 艺人 / 服务器
+   这几屏原型上就是谁都不高亮)。播放 / 歌词 / 表单页没有这两件,连节点都没有。 */
 const VIEWS = {
-  servers:        () => shell(withOverlay(screenServers())),
+  servers:        () => shell(withOverlay(screenServers()), { rail: '' }),
   'server-config':() => shell(withOverlay(screenServerConfig())),
   'add-server':   () => shell(withOverlay(screenAddServer())),
   'add-route':    () => shell(withOverlay(screenAddRoute())),
@@ -2198,16 +2242,16 @@ const VIEWS = {
   'new-playlist': () => shell(withOverlay(screenNewPlaylist())),
   /* 首页与音乐库的未连接态同一个开关:设置页点过「移除该服务器」之后
      (STATE.removed),这两屏铺的就是应用那边 `EmptyState('还没有连接服务器')` 那一支。 */
-  home:           () => shell(withOverlay(screenHome(STATE.removed))),
+  home:           () => shell(withOverlay(screenHome(STATE.removed)), { rail: 'home' }),
   /* 默认落在「歌曲」:打开音乐库多半是想找一首具体的歌(2026-10-17 用户要求)。 */
-  library:        (p) => shell(withOverlay(screenLibrary((p && p.lib) || 'songs', STATE.removed))),
-  album:          (p) => { const a = ALBUM_BY_ID((p && p.album) || STATE.albumId); return shell(withOverlay(screenAlbum(a.id)), { home: true, accent: a.accent, c1: a.c1 }); },
-  artist:         (p) => { const ar = ARTIST_BY_ID((p && p.artist) || STATE.artistId); return shell(withOverlay(screenArtist(ar.id)), { home: true, accent: ar.accent, c1: ar.c1 }); },
+  library:        (p) => shell(withOverlay(screenLibrary((p && p.lib) || 'songs', STATE.removed)), { rail: 'library' }),
+  album:          (p) => { const a = ALBUM_BY_ID((p && p.album) || STATE.albumId); return shell(withOverlay(screenAlbum(a.id)), { rail: '', home: true, accent: a.accent, c1: a.c1 }); },
+  artist:         (p) => { const ar = ARTIST_BY_ID((p && p.artist) || STATE.artistId); return shell(withOverlay(screenArtist(ar.id)), { rail: '', home: true, accent: ar.accent, c1: ar.c1 }); },
   player:         () => shell(withOverlay(screenPlayer()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
   lyrics:         () => shell(withOverlay(screenLyrics()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
-  search:         () => shell(withOverlay(screenSearch())),
-  settings:       () => shell(withOverlay(screenSettings())),
-  about:          () => shell(withOverlay(screenAbout())),
+  search:         () => shell(withOverlay(screenSearch()), { rail: '' }),
+  settings:       () => shell(withOverlay(screenSettings()), { rail: 'settings' }),
+  about:          () => shell(withOverlay(screenAbout()), { rail: 'settings' }),
   /* 设计交付物,不对应应用里的一屏 —— 见 BOARD 的最后一条 */
   icon:           () => shell(withOverlay(screenIcon())),
 };
@@ -2262,6 +2306,16 @@ const BOARD = [
   ['扫码同步 · 没有摄像头', '退成纯粘贴',      () => shell(screenSync(true))],
   ['导出配置',        '二维码 + 复制文本',    () => shell(screenSettings() + sheetExportConfig())],
   ['上下文菜单',      '歌曲的「⋯」',          () => shell(screenPlayer() + sheetMenu(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
+  /* ---- 宽屏 / 平板(第二十六轮)----
+     `frame` 换外壳尺寸(phone.wide 1280×800);>= 840 的形状由容器查询自己翻转
+     (竖栏 / 播放横条 / 多列网格 / 两栏播放页 —— 见 styles.css 尾部)。
+     与上面每一格同一套摆法:宽屏格也铺深 / 浅两套。 */
+  ['音乐库 · 宽屏',   '左竖栏 + 多列网格',    () => shell(screenLibrary('albums'), { frame: 'wide', rail: 'library' })],
+  ['首页 · 宽屏',     '货架 + 播放横条',      () => shell(screenHome(), { frame: 'wide', rail: 'home' })],
+  ['专辑详情 · 宽屏', '横向 hero',            () => shell(screenAlbum('a1'), { frame: 'wide', rail: '', home: true, accent: ALBUM_BY_ID('a1').accent, c1: ALBUM_BY_ID('a1').c1 })],
+  ['播放页 · 宽屏',   '封面居左 · 控制居右',  () => shell(screenPlayer(), { frame: 'wide', home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
+  ['歌词 · 宽屏',     '正文收成一栏',         () => shell(screenLyrics(), { frame: 'wide', home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
+  ['设置 · 宽屏',     '正文限宽',             () => shell(screenSettings(), { frame: 'wide', rail: 'settings' })],
   /* 最后一格不是应用里的页面,是**设计交付物**:图标的候选与定稿。
      放最后是因为它不参与上面那条「服务器 → 首页 → 库 → 详情 → 播放」的链路
      —— 它回答的是「这个应用在启动器里长什么样」,跟界面结构无关。 */
@@ -2276,6 +2330,25 @@ function boardFrames() {
     </div>`).join('');
 }
 
+/* ---- 网格列数(宽屏) ----
+   与应用 NordicWindow.gridColumns **同一条公式**:ceil(可用宽 / 296),
+   296 = 单格上限 280 + 间距 16;最少 2 列;>= 840 才放开(手机 / 平板竖屏恒 2 列)。
+   可用宽 = 设备宽 − 竖栏让位 104(>= 840 才有)− 网格自身左右 padding(52)。
+
+   为什么不用 CSS auto-fill:它按「放下几格」**向下取整**,应用按可用宽**向上取整**,
+   到位宽边界两边会差一列(1024 / 1280 附近)。列数这件事只留一条公式:
+   设计板每一格、舞台那一台,都由这里写进 --grid-cols(.grid-covers 的 CSS 取它)。 */
+const gridColsOf = (phoneW) => {
+  if (phoneW < 840) return 2;
+  return Math.max(2, Math.ceil((phoneW - 104 - 52) / 296));
+};
+function syncGrids(root) {
+  (root || document).querySelectorAll('.grid-covers').forEach((g) => {
+    const phone = g.closest('.phone');
+    if (phone) g.style.setProperty('--grid-cols', gridColsOf(phone.clientWidth || 390));
+  });
+}
+
 function renderBoard(root) {
   /* 设计板也要看得见搜索页的真实样子 —— 直接拿「程响」去搜，
      铺出来的就是交互流里同一组结果，而不是一张手写的假结果。 */
@@ -2288,9 +2361,10 @@ function renderBoard(root) {
     <div class="board-wrap">
       <div class="board-head">
         <h1>Nordic — 音乐播放器原型</h1>
-        <p>手机竖屏，26 格（25 屏 + 应用图标），<b>深色 / 浅色两套</b>。强调色<b>从当前封面里提取</b> —— 每张专辑驱动界面的光晕、进度条与选中态，
+        <p>手机竖屏为主，另铺<b>平板 / 宽屏</b>形态，共 ${BOARD.length} 格，<b>深色 / 浅色两套</b>。强调色<b>从当前封面里提取</b> —— 每张专辑驱动界面的光晕、进度条与选中态，
           所以每张专辑有自己的气质。深色靠发光撑层次，浅色把发光几乎关掉、改用留白与描边；两套共用同一份结构，差异全部落在 token 上。
-          这是并排铺开的设计板；<b>要点击走完整条链路，请开 <a href="player.html">player.html</a></b>，那边的搜索、开关、进度都能直接上手点。</p>
+          形态由外壳宽度自己翻转（容器查询，见 styles.css 的「宽屏 / 平板」）：宽屏是左竖栏 + 播放横条 + 多列网格 + 两栏播放页。
+          这是并排铺开的设计板；<b>要点击走完整条链路（含尺寸切换），请开 <a href="player.html">player.html</a></b>，那边的搜索、开关、进度都能直接上手点。</p>
       </div>
 
       <section class="board-sec" data-theme="dark">
@@ -2303,6 +2377,8 @@ function renderBoard(root) {
         <div class="board">${light}</div>
       </section>
     </div>`;
+  /* 列数是按宽度算出来的:设计板刚铺完同步一遍(每格宽度固定,之后不会变)。 */
+  syncGrids(root);
 }
 
 /* ============================================================
@@ -2324,6 +2400,10 @@ function toastMarkup(override = '') {
 
 function renderStage(root) {
   const slot = () => root.querySelector('#phone-slot');
+
+  /* 舞台的尺寸选择跨重绘存续(<html> 上的属性不会被 render 清掉),进来时对齐一次;
+     切换见下面 data-set-frame 那一条。设计板不走这里。 */
+  if (STATE.frame && STATE.frame !== 'phone') document.documentElement.dataset.setframe = STATE.frame;
 
   /* ---- 封面共享元素过渡 ----
      点专辑封面 → 播放页那一小段「封面飞过去并放大」的动画，用 View Transitions
@@ -2373,6 +2453,8 @@ function renderStage(root) {
         const screen = slot().querySelector('.screen');
         if (screen) screen.style.animation = 'none';
       }
+      /* 网格列数跟着这一屏的设备宽度走 —— 每次重绘都同步一遍。 */
+      syncGrids(slot());
     };
 
     if ((!morph && !nav) || !supportsVT) { clearMorph(); return paint(); }
@@ -2465,6 +2547,16 @@ function renderStage(root) {
           </div>
         </div>
         <div style="border-top:1px solid var(--line);padding-top:16px">
+          <h2 style="margin-bottom:8px">尺寸</h2>
+          <div class="segmented" style="margin-bottom:10px">
+            ${[['phone', '手机'], ['tablet', '平板'], ['wide', '宽屏']].map(([id, label]) =>
+              `<button data-set-frame="${id}" aria-selected="${(STATE.frame || 'phone') === id}">${label}</button>`).join('')}
+          </div>
+          <div style="font-size:11px;color:var(--fg-3);line-height:1.7">
+            宽屏（>= 840）换左竖栏 + 播放横条 + 多列网格 + 两栏播放页；平板档形态不变，网格放宽。与应用同一套分级。
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--line);padding-top:16px">
           <h2 style="margin-bottom:6px">随封面取色</h2>
           每张专辑给界面一套自己的强调色：
           <div class="swatches" id="sw"></div>
@@ -2549,11 +2641,11 @@ function renderStage(root) {
        <body> 上，而 body 是所有点击的祖先。closest() 在没命中更近的 [data-*] 元素时
        会一路匹配到 body，于是「点遮罩关闭弹层」这条分支永远走不到（点遮罩会变成
        重新应用一次主题）。所以主题按钮改用独立属性 data-set-theme。 */
-    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-seek-line],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-dl-del],[data-hue],[data-route-tag],[data-sync-mode],[data-sort-for],[data-sort],[data-cache]');
+    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-seek-line],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-set-frame],[data-rail-tab],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-dl-del],[data-hue],[data-route-tag],[data-sync-mode],[data-sort-for],[data-sort],[data-cache]');
     if (t) {
       const d = t.dataset;
       if (d.back !== undefined) return back();
-      if (d.tab) { STATE.history = []; return go(d.tab, null, ''); }
+      if (d.tab || d.railTab) { STATE.history = []; return go(d.tab || d.railTab, null, ''); }
       if (d.lib) { STATE.params = { lib: d.lib }; return render(); }
       if (d.song) {
         /* 从顶部播放坞点进播放页时，坞里也有同一张封面 —— 但那块的尺寸太小，
@@ -2590,6 +2682,18 @@ function renderStage(root) {
         return render();
       }
       if (d.setTheme) { applyTheme(d.setTheme); return render(); }
+      /* 舞台的尺寸切换:只改 <html data-setframe> 与按钮选中态,**不整屏重绘** ——
+         重绘会把当前走到的页面弹回起点。样式在 styles.css 尾部「舞台的尺寸切换」。 */
+      if (d.setFrame !== undefined) {
+        STATE.frame = d.setFrame;
+        if (d.setFrame === 'phone') delete document.documentElement.dataset.setframe;
+        else document.documentElement.dataset.setframe = d.setFrame;
+        root.querySelectorAll('[data-set-frame]').forEach((b) =>
+          b.setAttribute('aria-selected', b.dataset.setFrame === d.setFrame));
+        /* 设备宽度变了,网格列数跟着重算(不整屏重绘,单独同步这一格)。 */
+        syncGrids(slot());
+        return;
+      }
       if (d.kindCfg) { STATE.serverKindCfg = d.kindCfg; STATE.serverDirty = true; return render(); }
       if (d.quality) { STATE.quality = d.quality; STATE.overlay = ''; return render(); }
       /* 换上限只是改个数 —— 已经用掉的照旧留在那儿(等它自然被淘汰)。
