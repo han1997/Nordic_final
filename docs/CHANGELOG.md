@@ -2044,7 +2044,7 @@ release 包(1.0.47+48,三个 ABI 逐个校验签名 / 包名 / 版本):
 
 ### 三、换档位也要说话
 
-`PlaybackController.setQuality` 的返回值从 `Future<void>` 改成 `Future<String?> ` 之外,与上一轮 `playAll` 同一套。原先 `quality_sheet` 上是裸 `await`:换档要整队重装,
+`PlaybackController.setQuality` 的返回值从 `Future<void>` 改成 `Future<String?>`，与上一轮 `playAll` 同一套。原先 `quality_sheet` 上是裸 `await`:换档要整队重装,
 那一步会失败(没有仓库 / 服务器不给这一首),异常从 `onTap` 冒出去,用户看到的是
 「点了一档、没有任何反应,档位也还是旧的」。现在弹一句「没能切到「X」 —— 原因」。
 
