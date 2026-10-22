@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
 import 'playback/playback_controller.dart';
@@ -39,10 +40,17 @@ class NordicApp extends StatelessWidget {
       // 设计的主场是深色(近黑底靠光晕撑层次),系统没表态时按深色走。
       themeMode: mode.material,
       navigatorKey: navigatorKey,
+      // 提示气泡走这一把全局钥匙 —— 播放中途断流要**当场**说一句,而那一下
+      // 用户可能停在音乐库、专辑页、随便哪一屏:按 context 找 messenger 会
+      // 漏掉那些没有 Scaffold 的树,或者干脆找不到。
+      scaffoldMessengerKey: scaffoldMessengerKey,
       // 生命周期规则挂在 MaterialApp 的 builder 上而不是各页面里 ——
       // 它是应用级的一条,页面来去都不该影响它。
-      builder: (context, child) =>
-          _BackgroundPlayGuard(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => _BackgroundPlayGuard(
+        child: PlaybackInterruptionEcho(
+          child: child ?? const SizedBox.shrink(),
+        ),
+      ),
       // 全部页面(含三个 tab 的主壳)都由 AppRoutes 出路由 —— 那里统一了
       // 过渡,见 AppRoutes.generate 的说明。
       onGenerateRoute: AppRoutes.generate,
@@ -94,3 +102,86 @@ class _BackgroundPlayGuardState extends State<_BackgroundPlayGuard>
 
 /// 全局导航键 —— 播放通知栏点回来、以及「从任意位置跳播放页」都要用。
 final navigatorKey = GlobalKey<NavigatorState>();
+
+/// 全局提示通道 —— 见 [scaffoldMessengerKey]。
+final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
+/// 「播着播着断了」的那一句回声。
+///
+/// 原先断流只写进播放状态(`PlaybackState.error`),而那个字段要**进播放页**
+/// 才读得到 —— 用户正听着,线路断了,界面上什么都不发生:分不清是暂停了、
+/// 还是线路没了。这条监听把播放层那条事件当场变成一句提示,与「点一首播不了」
+/// 走同一套气泡(原型设计板「播放中断流」那一格)。
+///
+/// 挂在根 builder 上而不是各页面里:断流不看用户停在哪一屏。
+/// 公开是为了**能测** —— 这件事的判据是「值出现之后屏幕上多了一句话」,
+/// 而它在整棵应用树的最外层:不公开的话只能用一整个 `NordicApp` 去验。
+class PlaybackInterruptionEcho extends StatefulWidget {
+  const PlaybackInterruptionEcho({
+    super.key,
+    required this.child,
+    this.messengerKey,
+  });
+
+  final Widget child;
+
+  /// 提示通道。生产上留空走 [scaffoldMessengerKey];测试给一把自己的,
+  /// 免得几棵树共用一个 GlobalKey。
+  final GlobalKey<ScaffoldMessengerState>? messengerKey;
+
+  @override
+  State<PlaybackInterruptionEcho> createState() =>
+      _PlaybackInterruptionEchoState();
+}
+
+class _PlaybackInterruptionEchoState extends State<PlaybackInterruptionEcho> {
+  PlaybackController? _playback;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final next = context.read<PlaybackController>();
+    if (identical(next, _playback)) return;
+    _playback?.interruption.removeListener(_speak);
+    _playback = next..interruption.addListener(_speak);
+  }
+
+  @override
+  void dispose() {
+    _playback?.interruption.removeListener(_speak);
+    super.dispose();
+  }
+
+  /// null 是「上一次那句已经说完了」的复位信号,跳过即可。
+  void _speak() {
+    final message = _playback?.interruption.value;
+    if (message == null) return;
+    // 播放层的通知可能落在 build 期间 —— 那就排到这一帧末尾再弹。
+    // 其余情况(绝大多数:流事件在帧与帧之间到达)**直接说**,不排期:
+    // 排期要有下一帧才跑得起来,而这一下本来就没有别的活要干,
+    // 那句话就永远排在那里 —— 表现为「值变了,屏幕上没动静」。
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _show(message));
+      WidgetsBinding.instance.scheduleFrame();
+      return;
+    }
+    _show(message);
+  }
+
+  void _show(String message) {
+    final messenger =
+        (widget.messengerKey ?? scaffoldMessengerKey).currentState;
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('播放中断了 —— $message'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+  }
+  @override
+  Widget build(BuildContext context) => widget.child;
+}

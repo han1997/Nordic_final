@@ -999,6 +999,52 @@ void main() {
     });
   });
 
+  group('播放中途断流', () {
+    // 这一组钉的是那一句回声的**源头**:播放层得把流上的错误当成一条事件交出去。
+    // 界面那边怎么说话见 test/ui 的用例 —— 两处说的是同一件事。
+    late _FakePlayer player;
+    late NordicAudioHandler handler;
+    late PlaybackController playback;
+
+    setUp(() {
+      player = _FakePlayer();
+      handler = NordicAudioHandler(() => null, QualityController(), player: player);
+      playback = PlaybackController(handler);
+    });
+
+    tearDown(() {
+      playback.dispose();
+      player.dispose();
+    });
+
+    // 挑一条**只被这一层订阅**的流来报错:位置流与播放事件流播放层自己也挂着
+    // 订阅,往那两条上灌错误会把处理器一起拖进来,验的就不是这一条兜底了。
+    test('流上报错 → 交出那一句，音源自己的话原样给用户', () async {
+      player.shuffles.addError(const MusicSourceException('线路断了'));
+      await pumpEventQueue();
+
+      expect(playback.interruption.value, '线路断了');
+      expect(playback.state.error, '线路断了');
+      expect(playback.state.playing, isFalse);
+    });
+
+    test('连着断两次就说两次 —— 中间那次归零是刻意的', () async {
+      // ValueNotifier 见同值不通知;不留中间那次归零,第二次断流就没人说话。
+      final spoken = <String?>[];
+      playback.interruption.addListener(
+          () => spoken.add(playback.interruption.value));
+
+      player.shuffles.addError(const MusicSourceException('线路断了'));
+      await pumpEventQueue();
+      player.shuffles.addError(const MusicSourceException('线路断了'));
+      await pumpEventQueue();
+
+      // 第一次断流时它本来就是 null,置 null 不会通知 —— 所以只有三条。
+      // 关键是**两次非空都在**:中间那次归零让第二次也说得出口。
+      expect(spoken, ['线路断了', null, '线路断了']);
+    });
+  });
+
 }
 
 /// 可摆布的播放器 —— 位置监察那条护栏只吃这几样(位置流、下标、循环模式、

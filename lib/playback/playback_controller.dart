@@ -168,6 +168,14 @@ class PlaybackController extends ChangeNotifier {
 
   final List<StreamSubscription<dynamic>> _subs = [];
 
+  /// 播放**中途**断掉的那一句 —— 事件,不是状态。
+  ///
+  /// 与 [PlaybackState.error] 分工不同:那一份回答「这一刻该怎么显示」,
+  /// 要进播放页才看得到;这一条回答「刚刚出了事」,界面得**当场**说一句。
+  /// 原先只有前者 —— 播着播着线路断了,屏幕上什么都不会发生,用户分不清
+  /// 是自己误触了暂停、还是线路断了。
+  final ValueNotifier<String?> interruption = ValueNotifier(null);
+
   /// 播放位置 —— **单独一条通道,不进 [state] 的通知**。
   ///
   /// 位置每秒变好几次,而 [state] 一变,所有盯着它的界面都要重建:
@@ -331,7 +339,12 @@ class PlaybackController extends ChangeNotifier {
   void _track(List<StreamSubscription<dynamic>> bucket, StreamSubscription<dynamic> sub) {
     bucket.add(sub);
     sub.onError((Object e) {
-      _emit(_state.copyWith(error: '$e', playing: false));
+      final message = e is MusicSourceException ? e.message : '$e';
+      _emit(_state.copyWith(error: message, playing: false));
+      // 断流是**事件**:连着断两次就该说两次,而 ValueNotifier 见同值不通知。
+      // 先归零再置值,订阅方跳过 null 即可。
+      interruption.value = null;
+      interruption.value = message;
     });
   }
 
@@ -545,6 +558,7 @@ class PlaybackController extends ChangeNotifier {
     }
     position.dispose();
     buffered.dispose();
+    interruption.dispose();
     super.dispose();
   }
 }
