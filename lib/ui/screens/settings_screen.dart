@@ -10,6 +10,7 @@ import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/theme_mode.dart';
 import '../../theme/tokens.dart';
+import '../adaptive/window.dart';
 import '../routes.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
@@ -57,11 +58,14 @@ class SettingsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: context.nordic.bg,
       body: DismissKeyboardOnTap(
-        child: ListView(
-          padding: EdgeInsets.only(
-            bottom: BottomStack.listInset(context),
-          ),
-          children: [
+        // 宽屏下正文收成一栏(720)。ListView 本体不动(有几个按
+        // find.byType(ListView) 找它 / 拖它的用例),只在外面包一层限宽。
+        child: NarrowContent(
+          child: ListView(
+            padding: EdgeInsets.only(
+              bottom: BottomStack.listInset(context),
+            ),
+            children: [
             NordicAppBar(
               title: '设置',
               subtitle: 'Nordic',
@@ -191,7 +195,8 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: NordicSpace.s6),
-          ],
+            ],
+          ),
         ),
       ),
     );

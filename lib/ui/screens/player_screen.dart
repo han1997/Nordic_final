@@ -11,6 +11,7 @@ import '../../state/app_state.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
+import '../adaptive/window.dart';
 import '../routes.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
@@ -93,38 +94,81 @@ class PlayerScreen extends StatelessWidget {
           // 滚动兜底。
           Expanded(
             child: LayoutBuilder(
-              builder: (context, constraints) => Column(
-                children: [
-                  Expanded(
-                    // **整块封面区(含四周留白)都是「看歌词」的入口**,与原型一致:
-                    // 原先只有封面那一块算数,周围按下去什么也不发生 ——
-                    // 而这一屏除了控件就没有别的去处了。
-                    //
-                    // `opaque`:这一片大多是空白,默认的 hit test 只认画了东西的地方。
-                    child: GestureDetector(
+              builder: (context, constraints) {
+                // **整块封面区(含四周留白)都是「看歌词」的入口**,与原型一致:
+                // 原先只有封面那一块算数,周围按下去什么也不发生 ——
+                // 而这一屏除了控件就没有别的去处了。
+                //
+                // `opaque`:这一片大多是空白,默认的 hit test 只认画了东西的地方。
+                Widget hero(double maxSize) => GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () => AppRoutes.openLyrics(context),
                       child: Center(
                         child: _HeroStack(
                           song: song,
                           playing: playable.state.playing,
-                          maxSize: math.min(
-                            math.min(
-                              constraints.maxWidth - NordicSpace.s6 * 2,
-                              292,
+                          maxSize: maxSize,
+                        ),
+                      ),
+                    );
+                final side = Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _SongInfo(song: song),
+                    PlaybackScrubber(playable: playable),
+                    MediaControls(playable: playable),
+                  ],
+                );
+
+                // 宽屏(>= 840)翻两栏:封面居左放大(上限 512),信息 / 进度 /
+                // 控制居右并垂直居中 —— 整行限宽 1120(与原型同一条口径)。
+                if (context.isExpanded) {
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1120),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: hero(
+                              math.min(
+                                math.min(
+                                  constraints.maxWidth * 5 / 9 -
+                                      NordicSpace.s6 * 2,
+                                  512,
+                                ),
+                                constraints.maxHeight * 0.8,
+                              ),
                             ),
-                            // 高度也吃得下才行 —— 0.55 是给下面那组留的位置。
-                            constraints.maxHeight * 0.55,
                           ),
+                          Expanded(
+                            flex: 4,
+                            child: Center(child: side),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: [
+                    Expanded(
+                      child: hero(
+                        math.min(
+                          math.min(
+                            constraints.maxWidth - NordicSpace.s6 * 2,
+                            292,
+                          ),
+                          // 高度也吃得下才行 —— 0.55 是给下面那组留的位置。
+                          constraints.maxHeight * 0.55,
                         ),
                       ),
                     ),
-                  ),
-                  _SongInfo(song: song),
-                  PlaybackScrubber(playable: playable),
-                  MediaControls(playable: playable),
-                ],
-              ),
+                    side,
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -205,8 +249,9 @@ class _HeroStack extends StatelessWidget {
     // 不再为了更大的 700 重新下一张(那一下正好落在滑入动画上)。
     final coverUri = albumCoverUri(repo, song.coverArtId, size: 512);
 
-    // 原型:`.hero-cover` 上限 292,光晕比封面大一圈(inset -6%)。
-    final size = maxSize.clamp(140.0, 292.0);
+    // 原型:`.hero-cover` 手机上限 292、宽屏上限 512(512 与网格 / 专辑页
+    // 同一档解码桶,不新增尺寸);光晕比封面大一圈(inset -6%)。
+    final size = maxSize.clamp(140.0, 512.0);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s6),

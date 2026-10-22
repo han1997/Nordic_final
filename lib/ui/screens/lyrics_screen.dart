@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +10,7 @@ import '../../state/app_state.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
+import '../adaptive/window.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/playback_controls.dart';
@@ -255,12 +258,15 @@ class _LyricsScreenState extends State<LyricsScreen> {
       accent: accent,
       // 与播放页**同一份**控制区(进度条 + 五键)—— 两页是同一件东西的两面,
       // 翻过去不该像换了台设备。
-      bottomBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PlaybackScrubber(playable: playable),
-          MediaControls(playable: playable),
-        ],
+      bottomBar: NarrowContent(
+        // 宽屏下控制排与正文同宽收成一栏(窄屏原样)。
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PlaybackScrubber(playable: playable),
+            MediaControls(playable: playable),
+          ],
+        ),
       ),
       child: Column(
         children: [
@@ -324,14 +330,18 @@ class _LyricsScreenState extends State<LyricsScreen> {
                 }
                 return false;
               },
-              child: _LyricsList(
-                lyrics: _lyrics,
-                duration: _duration,
-                activeLine: _activeLine,
-                pendingLine: _pendingLine,
-                controller: _scrollController,
-                lineKeys: _lineKeys,
-                onLineTap: _onLineTap,
+              child: NarrowContent(
+                // 宽屏下正文收成一栏(720)—— 只加一层限宽,**不动**列结构与
+                // 26px 胶囊:行高与选中胶囊有用例按 Rect 钉着(lyrics_screen_test)。
+                child: _LyricsList(
+                  lyrics: _lyrics,
+                  duration: _duration,
+                  activeLine: _activeLine,
+                  pendingLine: _pendingLine,
+                  controller: _scrollController,
+                  lineKeys: _lineKeys,
+                  onLineTap: _onLineTap,
+                ),
               ),
             ),
           ),
@@ -435,8 +445,12 @@ class _LyricsList extends StatelessWidget {
       child: SingleChildScrollView(
         controller: controller,
         // 上下各留出半屏,让第一句与最后一句也能滚到中央。
+        // 宽屏下屏更高、这条列也更窄,0.28 会空得离谱 —— 收个 220 上限
+        // (窄屏一个数都不改)。
         padding: EdgeInsets.symmetric(
-          vertical: MediaQuery.sizeOf(context).height * 0.28,
+          vertical: context.isExpanded
+              ? math.min(MediaQuery.sizeOf(context).height * 0.28, 220)
+              : MediaQuery.sizeOf(context).height * 0.28,
           horizontal: NordicSpace.s6,
         ),
         child: Column(

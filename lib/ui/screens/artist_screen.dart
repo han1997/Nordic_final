@@ -13,6 +13,7 @@ import '../../theme/tokens.dart';
 import '../play_tapped.dart';
 import '../routes.dart';
 import 'song_menu_sheet.dart';
+import '../adaptive/window.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
@@ -384,7 +385,9 @@ class _ArtistHead extends StatelessWidget {
         NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s5),
       child: Row(
         children: [
-          ArtistPlate(artist: artist, size: 104, radius: 30),
+          // 宽屏(>= 840)头像放大一档 —— 104 的方块在 1280 宽的横排里会显小。
+          ArtistPlate(
+              artist: artist, size: context.isExpanded ? 140 : 104, radius: 30),
           const SizedBox(width: NordicSpace.s4),
           Expanded(
             child: Column(

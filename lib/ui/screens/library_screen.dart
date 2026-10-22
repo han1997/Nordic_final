@@ -16,6 +16,7 @@ import '../play_tapped.dart';
 import '../routes.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
+import '../widgets/album_grid.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
 import '../widgets/rows.dart';
@@ -265,12 +266,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
               Expanded(child: _body(state, view, currentSongId, playing, playable)),
             ],
           ),
-          // 底部留白:内容要能滚到坞的上方,而不是被压在玻璃下面。
-          const Positioned(
+          // 底部留白:内容要能滚到常驻区的上方,而不是被压在玻璃下面。
+          // 走 listInset 的两档口径(手机 150 / 宽屏 88),别在这里写死一个数。
+          Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: SizedBox(height: BottomStack.bottomInset),
+            child: SizedBox(height: BottomStack.listInset(context)),
           ),
         ],
       ),
@@ -427,7 +429,7 @@ class _AlbumsTab extends StatelessWidget {
       (s) => (s.albumSort, s.sortingAlbums, s.repository),
     );
 
-    // 整栏走 sliver:网格必须**真的懒**(见 [_AlbumGridSliver])。
+    // 整栏走 sliver:网格必须**真的懒**(见 [AlbumGridSliver])。
     // 下拉刷新挂在整屏外面(见本文件上方的 `RefreshIndicator`),
     // 而不够长的一栏**本来不可滚**,不发滚动通知 —— 那句「或下拉刷新」的空态
     // 正好出现在这种时候,所以四栏都要 [AlwaysScrollableScrollPhysics]。
@@ -445,7 +447,7 @@ class _AlbumsTab extends StatelessWidget {
             ),
           ),
         ),
-        _AlbumGridSliver(albums: library.albums, repo: repo),
+        AlbumGridSliver(albums: library.albums, repo: repo),
         SliverToBoxAdapter(
           child: SizedBox(height: BottomStack.listInset(context)),
         ),
@@ -454,95 +456,8 @@ class _AlbumsTab extends StatelessWidget {
   }
 }
 
-/// 专辑网格 —— `.grid-covers`,两列大封面。
-///
-/// **它是个 sliver**,不是嵌在 ListView 里的 `GridView(shrinkWrap: true)`:
-/// 后者为了量自己的高度会把**每一张专辑**都建出来 —— 库里 400 多张就是 400 多个
-/// 卡片、400 多次封面解码,全压在进音乐库的那一帧上。sliver 只建视口附近那几格。
-class _AlbumGridSliver extends StatelessWidget {
-  const _AlbumGridSliver({required this.albums, required this.repo});
-
-  final List<Album> albums;
-  final MusicSource? repo;
-
-  @override
-  Widget build(BuildContext context) {
-    return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(
-        NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s3),
-      sliver: SliverGrid(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: NordicSpace.s4,
-          mainAxisSpacing: NordicSpace.s5,
-          childAspectRatio: 0.78,
-        ),
-        delegate: SliverChildBuilderDelegate(
-          (context, index) => AlbumTile(
-            album: albums[index],
-            repo: repo,
-          ),
-          childCount: albums.length,
-        ),
-      ),
-    );
-  }
-}
-
-/// 单张专辑 —— 封面 + 名称 + 艺人年份。音乐库与搜索页共用。
-class AlbumTile extends StatelessWidget {
-  const AlbumTile({super.key, required this.album, required this.repo});
-
-  final Album album;
-
-  /// 封面地址由它拼。可为空 —— 还没配服务器时界面照样能画(走渐变兜底)。
-  final MusicSource? repo;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nordic;
-    return GestureDetector(
-      onTap: () => AppRoutes.openAlbum(context, album.id),
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Hero(
-              // 共享元素过渡:封面从网格飞到详情页(原型用 View Transition,
-              // 这里用 Hero —— 同一件事的平台原生做法)。
-              tag: 'cover-${album.id}',
-              child: Cover(
-                coverArtId: album.coverArtId,
-                seed: album.id,
-                uri: albumCoverUri(repo, album.coverArtId),
-                width: double.infinity,
-                radius: 22,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            album.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            album.year == null ? album.artist : '${album.artist} · ${album.year}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: t.fg3),
-          ),
-        ],
-      ),
-    );
-  }
-}
+// 专辑网格与单张专辑卡在 `../widgets/album_grid.dart`(第二十六轮搬过去:
+// 搜索页共用同一份,且宽屏列数是按断点算的 —— 两处各写一份必漂)。
 
 /// 艺人分栏:常听横滑 + 全部艺人列表。
 class _ArtistsTab extends StatelessWidget {

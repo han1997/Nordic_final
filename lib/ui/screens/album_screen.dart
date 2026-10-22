@@ -12,6 +12,7 @@ import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../play_tapped.dart';
 import '../routes.dart';
+import '../adaptive/window.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
@@ -361,64 +362,98 @@ class _AlbumHead extends StatelessWidget {
       if (album.genre != null) album.genre!,
     ].join(' · ');
 
+    // 宽屏(>= 840)横排:封面 200 居左,文字左对齐跟在右侧 —— 168 的居中列
+    // 在 1280 下左右各空 500px(与原型 `.album-hero` 的宽屏档同一条)。
+    // 窄屏保持居中列,间距逐像素不变。
+    final wide = context.isExpanded;
+    final align = wide ? TextAlign.start : TextAlign.center;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         NordicSpace.s6, NordicSpace.s6, NordicSpace.s6, NordicSpace.s5),
-      child: Column(
-        children: [
-          Hero(
+      child: Builder(
+        builder: (context) {
+          final cover = Hero(
             tag: heroTag ?? 'cover-${album.id}',
             child: Cover(
               coverArtId: album.coverArtId,
               seed: album.id,
               uri: repoCoverUri,
-              size: 168,
+              size: wide ? 200 : 168,
               radius: 26,
             ),
-          ),
-          const SizedBox(height: NordicSpace.s4),
-          Text(
-            album.name,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  height: 1.12,
+          );
+          final texts = Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment:
+                wide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+            children: [
+              Text(
+                album.name,
+                textAlign: align,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.12,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              // 艺人名可点才挂手势;库里没这位艺人时保持纯文字 ——
+              // 点了跳到别人页比不能点更糟。
+              if (artistId != null && artistId.isNotEmpty)
+                GestureDetector(
+                  onTap: () => AppRoutes.openArtist(context, artistId),
+                  child: Text(
+                    album.artist,
+                    textAlign: align,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyLarge
+                        ?.copyWith(color: t.fg2),
+                  ),
+                )
+              else
+                Text(
+                  album.artist,
+                  textAlign: align,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(color: t.fg2),
                 ),
-          ),
-          const SizedBox(height: 6),
-          // 艺人名可点才挂手势;库里没这位艺人时保持纯文字 ——
-          // 点了跳到别人页比不能点更糟。
-          if (artistId != null && artistId.isNotEmpty)
-            GestureDetector(
-              onTap: () => AppRoutes.openArtist(context, artistId),
-              child: Text(
-                album.artist,
-                textAlign: TextAlign.center,
+              const SizedBox(height: 5),
+              Text(
+                meta,
+                textAlign: align,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style:
-                    Theme.of(context).textTheme.bodyLarge?.copyWith(color: t.fg2),
+                    Theme.of(context).textTheme.bodySmall?.copyWith(color: t.fg3),
               ),
-            )
-          else
-            Text(
-              album.artist,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: t.fg2),
-            ),
-          const SizedBox(height: 5),
-          Text(
-            meta,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: t.fg3),
-          ),
-        ],
+            ],
+          );
+          if (wide) {
+            return Row(
+              children: [
+                cover,
+                const SizedBox(width: NordicSpace.s5),
+                Expanded(child: texts),
+              ],
+            );
+          }
+          return Column(
+            children: [
+              cover,
+              const SizedBox(height: NordicSpace.s4),
+              texts,
+            ],
+          );
+        },
       ),
     );
   }

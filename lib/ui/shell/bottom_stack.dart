@@ -8,9 +8,11 @@ import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
+import '../adaptive/window.dart';
 import '../routes.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
+import 'nav_tabs.dart';
 
 /// 底部常驻区:播放坞 + 标签栏 —— `.bottomstack`。
 ///
@@ -41,11 +43,16 @@ class BottomStack extends StatelessWidget {
   final bool showDock;
 
   /// 列表需要留出的底部空间。坞 62 + 间距 8 + 标签栏 66 + 四周留白。
+  /// **这是手机形态的数**;宽屏(>= 840)的常驻区是播放横条,见 [listInset]。
   static const bottomInset = 150.0;
 
-  /// 带胶囊的页面里,列表底部该留多少(已含系统指示条)。
+  /// 带常驻区的页面里,列表底部该留多少(已含系统指示条)。
+  /// **两档共用这一处口径,别在页面里自己拼数字**:
+  ///   宽屏(>= 840) = 播放横条(88)+ 指示条;
+  ///   否则          = 胶囊托盘(150)+ 指示条。
   static double listInset(BuildContext context) =>
-      bottomInset + MediaQuery.paddingOf(context).bottom;
+      (context.isExpanded ? NordicWindow.barInset : bottomInset) +
+      MediaQuery.paddingOf(context).bottom;
 
   @override
   Widget build(BuildContext context) {
@@ -234,9 +241,6 @@ class _TabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.nordic;
-    final accent = context.accent.accent;
-
     return SizedBox(
       height: 62,
       child: Padding(
@@ -244,40 +248,16 @@ class _TabBar extends StatelessWidget {
         child: Row(
           children: [
             for (final tab in AppTab.values)
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => onSelected(tab),
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      height: 54,
-                      decoration: BoxDecoration(
-                        color: tab == active
-                            ? selectFill(accent)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(NordicRadius.full),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            tab.icon,
-                            size: 21,
-                            color: tab == active ? context.accentSafe : t.fg3,
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            tab.label,
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              color: tab == active ? t.fg : t.fg3,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+              Expanded(
+                // 选中胶囊的视觉整体抽进 [NavTabButton](宽屏左竖栏共用一份,
+                // 见 shell/nav_tabs.dart);这里不带按下反馈,保持托盘的历史
+                // 手感 —— 行为与样式一个字都没改。
+                child: NavTabButton(
+                  tab: tab,
+                  selected: tab == active,
+                  onSelected: onSelected,
                 ),
+              ),
           ],
         ),
       ),

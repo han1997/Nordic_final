@@ -11,9 +11,11 @@ import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
+import '../adaptive/window.dart';
 import '../connect_flow.dart';
 import '../routes.dart';
 import '../shell/bottom_stack.dart';
+import '../shell/chrome.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/states.dart';
@@ -268,6 +270,9 @@ class _ServersScreenState extends State<ServersScreen> {
     final state = context.watch<AppState>();
     // 表单什么时候露:还没配过服务器(它就是正文),或者用户点了「服务器设置」。
     final showForm = !state.hasServer || _editing;
+    // 这一屏什么时候浮常驻区:管理页浮(原型如此),录入表单不浮。
+    // 宽屏的左竖栏让位与它同一个判据 —— 两处分头判断早晚会漂开。
+    final hasNav = state.hasServer && !showForm;
 
     return Scaffold(
       backgroundColor: context.nordic.bg,
@@ -276,37 +281,43 @@ class _ServersScreenState extends State<ServersScreen> {
         // 收键盘那一层就得自己包 —— 表单里有地址 / 账号 / 密码三个输入框。
         child: Stack(
           children: [
-            Column(
-              children: [
-                NordicAppBar(
-                  title: showForm && state.hasServer
-                      ? (_creatingNew ? '添加服务器' : '服务器设置')
-                      : (state.hasServer ? '服务器与线路' : '连接服务器'),
-                  subtitle: showForm
-                      ? (_creatingNew
-                          ? (state.hasServer
-                              // 说清代价:这一版一次只接一台,连上的是新的那台。
-                              ? '接一台新的。本版一次只连一台，连上会替换当前这台'
-                              : '填上你自己的音乐服务器')
-                          : '改地址、账号或密码，保存后重连')
-                      : '一个账号，多个地址',
-                  big: false,
-                  leading: IconButtonRound(
-                    icon: Icons.arrow_back,
-                    // 箭头就是「退出这一屏」,不兼职「退回管理页」——
-                    // 表单里的取消有自己那颗按钮(按箭头会让人以为改了就算数)。
-                    onPressed: () => Navigator.of(context).maybePop(),
+            // 宽屏下内容整体右移给左侧竖栏让位 —— 与下面常驻区同一个判据
+            // (表单态 / 窄屏原样)。
+            NavGutter(
+              enabled: hasNav,
+              child: Column(
+                children: [
+                  NordicAppBar(
+                    title: showForm && state.hasServer
+                        ? (_creatingNew ? '添加服务器' : '服务器设置')
+                        : (state.hasServer ? '服务器与线路' : '连接服务器'),
+                    subtitle: showForm
+                        ? (_creatingNew
+                            ? (state.hasServer
+                                // 说清代价:这一版一次只接一台,连上的是新的那台。
+                                ? '接一台新的。本版一次只连一台，连上会替换当前这台'
+                                : '填上你自己的音乐服务器')
+                            : '改地址、账号或密码，保存后重连')
+                        : '一个账号，多个地址',
+                    big: false,
+                    leading: IconButtonRound(
+                      icon: Icons.arrow_back,
+                      // 箭头就是「退出这一屏」,不兼职「退回管理页」——
+                      // 表单里的取消有自己那颗按钮(按箭头会让人以为改了就算数)。
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: showForm ? _formBody(state) : _manageBody(state),
-                ),
-              ],
+                  Expanded(
+                    child: showForm ? _formBody(state) : _manageBody(state),
+                  ),
+                ],
+              ),
             ),
             // 线路列表这一屏原型也浮着胶囊;**还没配服务器时的录入表单不给**
             // ——那是「添加服务器」那张表单,原型上同样没有。
-            if (state.hasServer && !showForm)
-              BottomStack(
+            // 宽屏(>= 840)换左竖栏 + 播放横条,形态切换在 NordicChrome 里。
+            if (hasNav)
+              NordicChrome(
                 activeTab: null,
                 onTabSelected: (tab) => openTab(context, tab),
               ),

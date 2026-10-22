@@ -3,6 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
+import '../adaptive/window.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 
@@ -36,60 +37,63 @@ class AboutScreen extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.only(bottom: NordicSpace.s6),
-              children: [
-                const _Hero(),
-                NordicCard(
-                  children: [
-                    NordicIconRow(
-                      icon: Icons.book_outlined,
-                      title: '开源许可',
-                      trailing: Icon(
-                        Icons.chevron_right,
-                        size: 18,
-                        color: context.nordic.fg3,
-                      ),
-                      subtitle: 'Flutter 与各第三方包各自的许可证',
-                      onTap: () => showLicensePage(
-                        context: context,
-                        applicationName: 'Nordic',
-                        applicationLegalese: '多平台 NAS 音乐播放器',
-                        applicationIcon: const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: _AppMark(size: 64),
+            // 宽屏下正文收成一栏(720)—— 与设置页同一条口径。
+            child: NarrowContent(
+              child: ListView(
+                padding: EdgeInsets.only(bottom: NordicSpace.s6),
+                children: [
+                  const _Hero(),
+                  NordicCard(
+                    children: [
+                      NordicIconRow(
+                        icon: Icons.book_outlined,
+                        title: '开源许可',
+                        trailing: Icon(
+                          Icons.chevron_right,
+                          size: 18,
+                          color: context.nordic.fg3,
+                        ),
+                        subtitle: 'Flutter 与各第三方包各自的许可证',
+                        onTap: () => showLicensePage(
+                          context: context,
+                          applicationName: 'Nordic',
+                          applicationLegalese: '多平台 NAS 音乐播放器',
+                          applicationIcon: const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: _AppMark(size: 64),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SectionHeader(title: '隐私'),
-                NordicCard(
-                  children: const [
-                    // 这两条**不是开关**:凭据怎么存、播放记录发到哪儿,都是这个应用
-                    // 已经定死的行为,给一个可以关掉的开关才是骗人。
-                    NordicIconRow(
-                      icon: Icons.shield_outlined,
-                      title: '凭据仅存本机',
-                      subtitle: '密码交给系统密钥库加密保存，不上传任何数据',
-                    ),
-                    // 措辞按**实际行为**写(见 playback/scrobble.dart):开播报一次
-                    // 「正在播放」、听够一半报一次「听过」。原先那句「只用于服务器端的
-                    // 播放统计」在真的接了 scrobble 之前是一句空话 —— 现在它说的是真的。
-                    NordicIconRow(
-                      icon: Icons.history,
-                      title: '播放记录',
-                      subtitle: '开播报一次「正在播放」，听够一半报一次「听过」——'
-                          '只发给服务器，本机不另存',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: NordicSpace.s2),
-                const ListNote(
-                  'Nordic 连着的是**你自己的**服务器：歌在你的机器上，'
-                  '播放统计也在你的机器上。远程仓库见 github.com/han1997/Nordic_final。',
-                ),
-              ],
+                    ],
+                  ),
+                  const SectionHeader(title: '隐私'),
+                  NordicCard(
+                    children: const [
+                      // 这两条**不是开关**:凭据怎么存、播放记录发到哪儿,都是这个应用
+                      // 已经定死的行为,给一个可以关掉的开关才是骗人。
+                      NordicIconRow(
+                        icon: Icons.shield_outlined,
+                        title: '凭据仅存本机',
+                        subtitle: '密码交给系统密钥库加密保存，不上传任何数据',
+                      ),
+                      // 措辞按**实际行为**写(见 playback/scrobble.dart):开播报一次
+                      // 「正在播放」、听够一半报一次「听过」。原先那句「只用于服务器端的
+                      // 播放统计」在真的接了 scrobble 之前是一句空话 —— 现在它说的是真的。
+                      NordicIconRow(
+                        icon: Icons.history,
+                        title: '播放记录',
+                        subtitle: '开播报一次「正在播放」，听够一半报一次「听过」——'
+                            '只发给服务器，本机不另存',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: NordicSpace.s2),
+                  const ListNote(
+                    'Nordic 连着的是**你自己的**服务器：歌在你的机器上，'
+                    '播放统计也在你的机器上。远程仓库见 github.com/han1997/Nordic_final。',
+                  ),
+                ],
+              ),
             ),
           ),
         ],

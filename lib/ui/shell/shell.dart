@@ -10,6 +10,7 @@ import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/ambient.dart';
 import '../../theme/tokens.dart';
+import '../adaptive/window.dart';
 import '../routes.dart';
 import '../screens/home_screen.dart';
 import '../screens/library_screen.dart';
@@ -17,6 +18,7 @@ import '../screens/queue_restore_sheet.dart';
 import '../screens/settings_screen.dart';
 import '../widgets/components.dart';
 import 'bottom_stack.dart';
+import 'chrome.dart';
 
 /// 应用主壳:三个常驻 tab(首页 / 音乐库 / 设置)。
 ///
@@ -166,35 +168,41 @@ class _NordicShellState extends State<NordicShell>
             // 高亮同一套缓动,新一屏淡进来而不是硬切。
             FadeTransition(
               opacity: _fadeCurve,
-              // 淡入时给下面这棵子树一张**缓存层**。`IndexedStack` 里挂着各
-              // tab 保活的整棵子树(含首页那层 62px 的 `ImageFiltered` 氛围),
-              // 少了这层边界,透明度每变一次就把整屏重画一遍 —— 与
-              // `routes.dart` 里「页面过渡只做位移、不做淡入」是同一个道理。
-              // 透明度、时长、缓动一个字没改,只是让它合成一张现成的层。
-              child: RepaintBoundary(
-                child: IndexedStack(
-                  index: _tab.index,
-                  children: [
-                    for (final tab in AppTab.values)
-                      if (_built.contains(tab))
-                        // **只有屏幕上那一屏的 `Hero` 才参与共享元素过渡。**
-                        //
-                        // 框架按 tag 在**整个来源路由**里找起点,不看元素在不在
-                        // 屏幕上(`heroes.dart` 的 `_allHeroesFor` 只认 `HeroMode`)。
-                        // 而 IndexedStack 把逛过的 tab **整棵保活**:只要切过一次
-                        // 音乐库的「专辑」分段,那张网格就一直挂着 —— 于是
-                        // 「在首页点一张专辑 / 点播放坞」时起点会被**看不见的那张
-                        // 网格**偷走,封面从屏幕外飞进来(每帧重画一次,
-                        // 正好落在滑入动画上)。`HeroMode` 就是框架给这件事的做法:
-                        // 关掉的子树整个跳过,英雄名字空间于是**每个 tab 一份**。
-                        HeroMode(enabled: tab == _tab, child: _screenOf(tab))
-                      else
-                        const SizedBox.shrink(),
-                  ],
+              // 第二十六轮:宽屏下内容整体右移 104,给左侧竖栏让位 ——
+              // 让位只在壳上给一次,页面里那 12 处 listInset 不必各改一遍。
+              child: NavGutter(
+                // 淡入时给下面这棵子树一张**缓存层**。`IndexedStack` 里挂着各
+                // tab 保活的整棵子树(含首页那层 62px 的 `ImageFiltered` 氛围),
+                // 少了这层边界,透明度每变一次就把整屏重画一遍 —— 与
+                // `routes.dart` 里「页面过渡只做位移、不做淡入」是同一个道理。
+                // 透明度、时长、缓动一个字没改,只是让它合成一张现成的层。
+                child: RepaintBoundary(
+                  child: IndexedStack(
+                    index: _tab.index,
+                    children: [
+                      for (final tab in AppTab.values)
+                        if (_built.contains(tab))
+                          // **只有屏幕上那一屏的 `Hero` 才参与共享元素过渡。**
+                          //
+                          // 框架按 tag 在**整个来源路由**里找起点,不看元素在不在
+                          // 屏幕上(`heroes.dart` 的 `_allHeroesFor` 只认 `HeroMode`)。
+                          // 而 IndexedStack 把逛过的 tab **整棵保活**:只要切过一次
+                          // 音乐库的「专辑」分段,那张网格就一直挂着 —— 于是
+                          // 「在首页点一张专辑 / 点播放坞」时起点会被**看不见的那张
+                          // 网格**偷走,封面从屏幕外飞进来(每帧重画一次,
+                          // 正好落在滑入动画上)。`HeroMode` 就是框架给这件事的做法:
+                          // 关掉的子树整个跳过,英雄名字空间于是**每个 tab 一份**。
+                          HeroMode(enabled: tab == _tab, child: _screenOf(tab))
+                        else
+                          const SizedBox.shrink(),
+                    ],
+                  ),
                 ),
               ),
             ),
-            BottomStack(activeTab: _tab, onTabSelected: _select),
+            // 常驻区:窄屏是底部胶囊托盘,宽屏(>= 840)换左竖栏 + 播放横条。
+            // 形态切换只此一处(见 chrome.dart)。
+            NordicChrome(activeTab: _tab, onTabSelected: _select),
           ],
         ),
       ),
@@ -251,16 +259,22 @@ class ImmersiveScaffold extends StatelessWidget {
                 child: SafeArea(
                   bottom: false,
                   // 沉浸页自己管底部留白 —— 歌词页的控制排要贴着指示条。
-                  child: Column(
-                    children: [
-                      Expanded(child: child),
-                      ?bottomBar,
-                    ],
+                  //
+                  // NavGutter 只在**浮常驻区**的屏上让位(showNav):
+                  // 播放 / 歌词(showNav: false)保持满宽居中,与原型一致。
+                  child: NavGutter(
+                    enabled: showNav,
+                    child: Column(
+                      children: [
+                        Expanded(child: child),
+                        ?bottomBar,
+                      ],
+                    ),
                   ),
                 ),
               ),
               if (showNav)
-                BottomStack(
+                NordicChrome(
                   // 这几屏不属于任何 tab —— 原型上也是谁都不高亮。
                   activeTab: null,
                   onTabSelected: (tab) => openTab(context, tab),

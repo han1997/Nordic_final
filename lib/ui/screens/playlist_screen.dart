@@ -12,6 +12,7 @@ import '../../theme/context_ext.dart';
 import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
 import '../play_tapped.dart';
+import '../adaptive/window.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
@@ -163,7 +164,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   coverArtId: playlist.coverArtId,
                   seed: playlist.id,
                   uri: albumCoverUri(repo, playlist.coverArtId),
-                  size: 140,
+                  // 宽屏(>= 840)头图放大一档 —— 140 在 1280 宽的横排里会显小。
+                  size: context.isExpanded ? 180 : 140,
                   radius: 24,
                 ),
                 const SizedBox(width: NordicSpace.s4),

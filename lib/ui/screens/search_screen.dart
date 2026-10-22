@@ -13,11 +13,11 @@ import '../play_tapped.dart';
 import '../routes.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
+import '../widgets/album_grid.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
 import '../widgets/rows.dart';
 import '../widgets/states.dart';
-import 'library_screen.dart';
 
 /// 搜索的分类筛选。
 enum SearchScope {
@@ -292,23 +292,9 @@ class _SearchScreenState extends State<SearchScreen> {
               count: '${_hits.albums.length} 张',
             ),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(
-              NordicSpace.s5, NordicSpace.s2, NordicSpace.s5, NordicSpace.s3),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: NordicSpace.s4,
-                mainAxisSpacing: NordicSpace.s5,
-                childAspectRatio: 0.78,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) =>
-                    AlbumTile(album: _hits.albums[index], repo: repo),
-                childCount: _hits.albums.length,
-              ),
-            ),
-          ),
+          // 与音乐库同一份网格(AlbumGridSliver):手机恒 2 列、宽屏按断点
+          // 放开列数 —— 列数口径只此一处。
+          AlbumGridSliver(albums: _hits.albums, repo: repo),
         ],
         if (show(SearchScope.artists) && _hits.artists.isNotEmpty) ...[
           SliverToBoxAdapter(
