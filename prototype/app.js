@@ -2333,14 +2333,14 @@ function boardFrames() {
 /* ---- 网格列数(宽屏) ----
    与应用 NordicWindow.gridColumns **同一条公式**:ceil(可用宽 / 296),
    296 = 单格上限 280 + 间距 16;最少 2 列;>= 840 才放开(手机 / 平板竖屏恒 2 列)。
-   可用宽 = 设备宽 − 竖栏让位 104(>= 840 才有)− 网格自身左右 padding(52)。
+   可用宽 = 设备宽 − 竖栏让位 104(>= 840 才有)− 网格自身左右 padding(40 = s5 × 2)。
 
    为什么不用 CSS auto-fill:它按「放下几格」**向下取整**,应用按可用宽**向上取整**,
    到位宽边界两边会差一列(1024 / 1280 附近)。列数这件事只留一条公式:
    设计板每一格、舞台那一台,都由这里写进 --grid-cols(.grid-covers 的 CSS 取它)。 */
 const gridColsOf = (phoneW) => {
   if (phoneW < 840) return 2;
-  return Math.max(2, Math.ceil((phoneW - 104 - 52) / 296));
+  return Math.max(2, Math.ceil((phoneW - 104 - 40) / 296));
 };
 function syncGrids(root) {
   (root || document).querySelectorAll('.grid-covers').forEach((g) => {
