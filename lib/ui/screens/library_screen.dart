@@ -12,6 +12,7 @@ import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
+import '../play_tapped.dart';
 import '../routes.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
@@ -403,7 +404,9 @@ void shuffleLibrary(BuildContext context, PlaybackController playable) {
     );
     return;
   }
-  playable.playAll([...songs]..shuffle(), index: 0);
+  // 打乱之后整队装载。「从哪一首开始」由队列自己决定,所以那句话说「一首」
+  // 而不是某个歌名 —— 随机那一首还没定呢。
+  unawaited(playTapped(context, [...songs]..shuffle(), index: 0));
 }
 
 /// 专辑分栏:「全部专辑」封面网格 + 排序。
@@ -724,7 +727,12 @@ class _SongsTab extends StatelessWidget {
             song: song,
             coverUri: (id) => albumCoverUri(repo, id, size: 128),
             playing: isCurrent && playing,
-            onTap: () => playable.playAll(library.songs, index: index - 1),
+            onTap: () => playTapped(
+              context,
+              library.songs,
+              index: index - 1,
+              label: song.title,
+            ),
           );
           if (!isCurrent) return row;
           return _LocatePulse(

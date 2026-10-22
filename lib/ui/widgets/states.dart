@@ -373,3 +373,71 @@ String formatClock(DateTime at) {
   return '${local.month} 月 ${local.day} 日 '
       '${two(local.hour)}:${two(local.minute)}';
 }
+
+/// 「这一首没能播起来」—— 播放页专用。
+///
+/// 与 [EmptyState] 是两件事,别合并:那一块说的是「这儿现在没有东西」(中性,
+/// 用户还没开始),这一块说的是「刚才那一下没成」(带语气色,而且要指一条去路)。
+/// 混成一句会让用户以为是自己没点到。
+///
+/// 原型见 `prototype/app.js` 的 `playerFail()` 与设计板「播放页 · 播放失败」。
+class PlaybackFailureState extends StatelessWidget {
+  const PlaybackFailureState({super.key, required this.message});
+
+  /// 失败原因。来自 `PlaybackController.playAll` 交回的那一句
+  /// (`MusicSourceException` 的原文,或平台错误的原文)。
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    return Padding(
+      padding: const EdgeInsets.all(NordicSpace.s5),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(NordicSpace.s5),
+            decoration: BoxDecoration(
+              color: t.fill1,
+              borderRadius: BorderRadius.circular(NordicRadius.lg),
+              border: Border.all(color: t.line),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.block, size: 28, color: t.bad),
+                const SizedBox(height: NordicSpace.s3),
+                Text(
+                  '这一首没能播起来',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: NordicSpace.s3),
+                // 宽度收一收 —— 一句话拉满屏宽反而读不快(原型 `.msg` 是 250)。
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 250),
+                  child: Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: t.fg2, height: 1.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: NordicSpace.s5),
+          // 一条去路。只写「播不了」等于把活交给用户去找 —— 他下一步该挑一首别的。
+          NordicChip(
+            label: '回音乐库挑一首别的',
+            onTap: () => Navigator.of(context).maybePop(),
+          ),
+        ],
+      ),
+    );
+  }
+}

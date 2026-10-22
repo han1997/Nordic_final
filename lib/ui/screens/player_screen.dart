@@ -16,6 +16,7 @@ import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/playback_controls.dart';
 import '../widgets/cover.dart';
+import '../widgets/states.dart';
 import 'quality_sheet.dart';
 import 'song_menu_sheet.dart';
 
@@ -34,18 +35,33 @@ class PlayerScreen extends StatelessWidget {
     final playable = context.watch<PlaybackController>();
     final song = playable.state.song;
 
-    // 还没播过任何东西时给一个诚实的空态,而不是一屏灰按钮。
+    // 「没有在播的歌」有**两支**,原先只有一支:
+    //
+    //   - 还没开始听(中性的空态);
+    //   - **刚点了一首、它没播起来** —— 这一支原先根本没有,于是用户点完一首
+    //     播不出来的歌,走到播放页看到的仍是「还没有在播的歌」,而那句话在这里
+    //     是**假的**:他刚刚点了。
+    //
+    // 判据是 `state.error` 非空(播放失败时由 `playAll` 写进去,见那边)。
+    // 它与「这一刻没在放」不冲突:`song == null` 说的是没有曲目,**有 error**
+    // 说的是上一次装载没成。原型见 `screenPlayer(true)` 与设计板上
+    // 「播放页 · 播放失败」那一格。
     if (song == null) {
+      final failure = playable.state.error;
       return ImmersiveScaffold(
         accent: NordicAccent.neutral(context.nordic.brightness),
         child: Column(
           children: [
-            _nowPlayingBar(context),
-            const Expanded(
-              child: EmptyState(
-                title: '还没有在播的歌',
-                detail: '从音乐库里点一首开始。',
-              ),
+            // 失败时没有在播的歌,顶栏右侧那颗「⋯」背后没有东西可指 ——
+            // 与原型同一处置(留一个等宽的空位,标题才仍然居中)。
+            _nowPlayingBar(context, showMenu: failure == null),
+            Expanded(
+              child: failure == null
+                  ? const EmptyState(
+                      title: '还没有在播的歌',
+                      detail: '从音乐库里点一首开始。',
+                    )
+                  : PlaybackFailureState(message: failure),
             ),
           ],
         ),
@@ -125,7 +141,11 @@ class PlayerScreen extends StatelessWidget {
 ///
 /// 那颗标签不是标题:11px、字距 0.1em、三级前景色 —— 它只说「这是哪一屏」,
 /// 真正的主角在下面的封面。
-Widget _nowPlayingBar(BuildContext context, {List<Widget> actions = const []}) =>
+Widget _nowPlayingBar(
+  BuildContext context, {
+  List<Widget> actions = const [],
+  bool showMenu = true,
+}) =>
     NordicAppBar(
       title: '正在播放',
       big: false,
@@ -146,7 +166,9 @@ Widget _nowPlayingBar(BuildContext context, {List<Widget> actions = const []}) =
         icon: Icons.chevron_left,
         onPressed: () => Navigator.of(context).maybePop(),
       ),
-      actions: actions,
+      // 失败态没有在播的歌,那颗「⋯」背后没有东西可指 —— 留一个等宽的空位,
+      // 中间那颗标签才仍然居中(与原型 `playerBar(false)` 同一处置)。
+      actions: showMenu ? actions : const [SizedBox(width: 40, height: 40)],
     );
 
 /// 封面 —— 播放页唯一的主角。

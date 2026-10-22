@@ -35,6 +35,7 @@ const ICONS = {
   route:   '<circle cx="6" cy="6.5" r="2.3"/><circle cx="18" cy="17.5" r="2.3"/><path d="M8.3 6.5h5.2a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6.7"/>',
   chevron: '<path d="M9.5 6l6 6-6 6"/>',
   x:       '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+  off:     '<circle cx="12" cy="12" r="8.5"/><path d="M6.3 6.3l11.4 11.4"/>',
   refresh: '<path d="M19.6 11.4a7.8 7.8 0 1 0-2.1 5.7"/><path d="M19.8 5.6v5.8h-5.8"/>',
   sort:    '<path d="M4 7h9M4 12h6M4 17h4"/><path d="M17 6.5v11M17 17.5l3-3M17 17.5l-3-3"/>',
   download:'<path d="M12 4v9.6"/><path d="M8.2 10.6L12 14.4l3.8-3.8"/><path d="M5 19.2h14"/>',
@@ -1104,7 +1105,7 @@ function mediaControls() {
     </div>`;
 }
 
-function screenPlayer() {
+function screenPlayer(failed = false) {
   const s = currentSong();
   const a = albumOf(s);
   const origin = playbackOriginOf(s);
@@ -1112,14 +1113,44 @@ function screenPlayer() {
   const elapsed = Math.min(STATE.elapsed, s.dur);
 
   return `${ambient(a)}
-    <div class="appbar nav">
+    ${playerBar(!failed)}
+    ${failed ? playerFail() : playerBody(s, a, origin, pct, elapsed)}`;
+}
+
+/* 播放页顶栏 —— 正常与「播放失败」两支共用。差别只有右边那颗「⋯」:
+   失败时没有在播的歌,那颗菜单背后没有东西可指(应用那边同一件事,留了一个等宽的空位)。 */
+function playerBar(showMenu = true) {
+  return `<div class="appbar nav">
       <button class="icon-btn" data-back>${ic('back', 22)}</button>
       <span class="spacer"></span>
       <span style="font-size:11px;color:var(--fg-3);letter-spacing:0.1em;font-weight:660">正在播放</span>
       <span class="spacer"></span>
-      <button class="icon-btn quiet" data-menu-for="song">${ic('more', 20)}</button>
-    </div>
+      ${showMenu ? `<button class="icon-btn quiet" data-menu-for="song">${ic('more', 20)}</button>` : '<span style="width:38px"></span>'}
+    </div>`;
+}
 
+/* 「这一首没能播起来」那一块。
+   播放页原先只有一支:没有在播的歌就是一句中性的空态。而「刚点了一首、它失败了」
+   与「还没开始听」是两件事 —— 前者要说清是哪一步没成,还要指一条去路。
+
+   它只在**事后走到播放页**时出现。当下那一屏(用户是在音乐库点的)另有一条:
+   `.toast` 弹一句「这一首播不了」。两处说的是同一件事,缺一个都会让
+   「点了没反应」或者「这里说没有在播的歌」变成假话。 */
+function playerFail() {
+  return `<div class="player-fail">
+    <div class="fail">
+      <span class="ico">${ic('off', 28)}</span>
+      <div class="t">这一首没能播起来</div>
+      <div class="msg">服务器没有给出这一首的音频 —— 换一首试试,或者到服务器设置里看一眼线路。</div>
+    </div>
+    <button class="pill-btn" data-go="library">回音乐库挑一首别的</button>
+  </div>`;
+}
+
+/* 播放页的正文 —— 封面、信息、进度、控制排。抽出来是因为上面那一支要整块换掉它,
+   而不抽的话得把这一整段模板复制一份(复制的那份迟早会两边漂开)。 */
+function playerBody(s, a, origin, pct, elapsed) {
+  return `
     <!-- 这一整块都是入口:点封面、点封面四周的留白都翻到歌词。原先只有封面本身
          可点,周围那一大圈空白按下去什么也不发生 —— 而这一屏除了控件就没有别的
          去处了。封面背后不再有黑胶盘面:那一圈盘面是为了「转起来表示在放」,
@@ -2194,12 +2225,18 @@ const BOARD = [
   ['首页 · 未连接',  '空态 + 两个入口',      () => shell(screenHome(true))],
   ['音乐库 · 专辑',   '封面网格 + 排序',      () => shell(screenLibrary('albums'))],
   ['音乐库 · 艺人',   '方块头像 + 常听',      () => shell(screenLibrary('artists'))],
+  /* 点一首播不出来时**当下**那一句 —— 走 .toast。设计板上这一格是必须的:
+     它是交互(1.6 秒后自己消失),只在 .cjs 截图里存在的话设计板上没人核对得到。 */
+  ['音乐库 · 播放失败', '点了一首播不出来的歌', () => shell(screenLibrary('songs') + toastMarkup('这一首播不了 —— 换一首试试'))],
   ['音乐库 · 歌曲',   '全部歌曲',             () => shell(screenLibrary('songs'))],
   ['音乐库 · 歌单',   '我的歌单',             () => shell(screenLibrary('playlists'))],
   /* 专辑 / 艺人 / 播放这几屏的强调色要跟着内容走，和交互流里走的是同一份取值 ——
      漏传的话这一格会退回默认紫，和旁边几格的「随封面取色」对不上。 */
   ['专辑详情',        '氛围背景 + 曲目',      () => shell(screenAlbum('a1'), { home: true, accent: ALBUM_BY_ID('a1').accent, c1: ALBUM_BY_ID('a1').c1 })],
   ['艺人详情',        '热门 + 专辑',          () => shell(screenArtist('ar1'), { home: true, accent: ARTIST_BY_ID('ar1').accent, c1: ARTIST_BY_ID('ar1').c1 })],
+  /* 播放页的另一支:**刚失败过**。与「首页 · 未连接」同一套摆法 —— 挨着铺,
+     因为它不是另一屏,是这一屏的一个状态。 */
+  ['播放页 · 播放失败', '点了一首播不出来的歌', () => shell(screenPlayer(true), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['播放页',          '封面主导 + 封面取色',  () => shell(screenPlayer(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['转码质量',        '四档位，含说明',       () => shell(screenPlayer() + sheetQuality(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['播放队列',        '队列管理',             () => shell(screenPlayer() + sheetQueue(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
@@ -2274,8 +2311,11 @@ let toastTimer = 0;
 /* 「回到正在播放」那一下高亮的计时器同上:stage 级、跨重绘存续。
    连点几下只该有一次熄灭 —— 每次都开一个新的,前一个会提前把后一个摘掉。 */
 let locateTimer = 0;
-function toastMarkup() {
-  return STATE.toast ? `<div class="toast">${STATE.toast}</div>` : '';
+/* `override` 只给设计板用:气泡本来从 STATE.toast 来,而设计板要把它**钉住**
+   —— 它是一次性的交互,不钉住的话设计板上没有这一格可核对。 */
+function toastMarkup(override = '') {
+  const text = override || STATE.toast;
+  return text ? `<div class="toast">${text}</div>` : '';
 }
 
 function renderStage(root) {

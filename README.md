@@ -120,7 +120,7 @@ tool/build.sh run        # 在设备上跑
 侧载用的 release 包由这个脚本**按 ABI 分三份**、各落成标准名字:
 
 ```
-build/dist/Nordic-1.0.46+47-arm64-v8a-release.apk
+build/dist/Nordic-1.0.47+48-arm64-v8a-release.apk
              └ 应用  └ pubspec 的版本  └ CPU 架构
 ```
 

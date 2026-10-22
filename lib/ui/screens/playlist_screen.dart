@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +11,7 @@ import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
+import '../play_tapped.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
@@ -210,7 +213,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     height: 48,
                     onPressed: _songs.isEmpty
                         ? null
-                        : () => playable.playAll(_songs, index: 0),
+                        : () => playTapped(context, _songs, index: 0),
                   ),
                 ),
                 const SizedBox(width: NordicSpace.s3),
@@ -222,8 +225,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   onPressed: _songs.isEmpty
                       ? null
                       : () {
-                          final shuffled = [..._songs]..shuffle();
-                          playable.playAll(shuffled, index: 0);
+                          unawaited(
+                            playTapped(context, [..._songs]..shuffle(), index: 0),
+                          );
                         },
                 ),
                 const SizedBox(width: NordicSpace.s3),
@@ -257,7 +261,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               song: _songs[i],
               coverUri: (id) => albumCoverUri(repo, id, size: 128),
               playing: _songs[i].id == currentId && playing,
-              onTap: () => playable.playAll(_songs, index: i),
+              onTap: () => playTapped(
+                context,
+                _songs,
+                index: i,
+                label: _songs[i].title,
+              ),
               trailing: playlist.readonly
                   ? null
                   : Row(

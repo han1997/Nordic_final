@@ -9,6 +9,7 @@ import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
+import '../play_tapped.dart';
 import '../routes.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
@@ -240,7 +241,6 @@ class _SearchScreenState extends State<SearchScreen> {
 
     // 只订阅真正读到的两件(命中行高亮);动作(播放全部)走 read ——
     // 整份 watch 会让 play/pause、切歌、时长上报都重建整片结果。
-    final playable = context.read<PlaybackController>();
     final (currentId, playing) = context
         .select<PlaybackController, (String?, bool)>(
       (p) => (p.state.song?.id, p.state.playing),
@@ -268,7 +268,12 @@ class _SearchScreenState extends State<SearchScreen> {
               song: _hits.songs[i],
               coverUri: (id) => albumCoverUri(repo, id, size: 128),
               playing: _hits.songs[i].id == currentId && playing,
-              onTap: () => playable.playAll(_hits.songs, index: i),
+              onTap: () => playTapped(
+                context,
+                _hits.songs,
+                index: i,
+                label: _hits.songs[i].title,
+              ),
             ),
           ),
         ],

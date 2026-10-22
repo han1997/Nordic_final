@@ -391,26 +391,39 @@ class PlaybackController extends ChangeNotifier {
   }
 
   // ---------------- 命令 ----------------
-
   /// 用整个列表替换队列并从 [index] 开播。
-  Future<void> playAll(List<Song> songs, {int index = 0, bool autoPlay = true}) async {
+  ///
+  /// **返回失败时那一句话**(null = 成功)。这一点是刻意的:播放失败原先只写进
+  /// [state.error],而那个字段**没有任何界面读它** —— 用户点一首播不出来的歌,
+  /// 屏幕上什么都不会发生。现在由调用点把这句话说出来(见 `ui/play_tapped.dart`),
+  /// 走到播放页时那一屏还有一块专门的失败态(见 `player_screen.dart`)。
+  ///
+  /// 空列表也回一句话:调用点不该自己去判「是不是空」—— 那些判断散在十八处,
+  /// 迟早有一处漏掉,表现就是「点了没反应」。
+  Future<String?> playAll(
+    List<Song> songs, {
+    int index = 0,
+    bool autoPlay = true,
+  }) async {
+    if (songs.isEmpty) return '队列里没有可播的曲目';
     try {
       // [autoPlay] 为假时只装载、不出声 —— 「接着上次听」要的正是这个
       // (摆好队列与落点,让用户自己按播放)。
       await _handler.setQueue(songs, index: index, autoPlay: autoPlay);
       _emit(_state.copyWith(error: null, clearError: true));
+      return null;
     } catch (e) {
       // 音源自己造的失败带着一句能直接给用户看的话(见 [MusicSourceException]);
       // 别的(平台来的、运行时的)照旧印原文。
-      _emit(_state.copyWith(
-        error: e is MusicSourceException ? e.message : '$e',
-        playing: false,
-      ));
+      final message = e is MusicSourceException ? e.message : '$e';
+      _emit(_state.copyWith(error: message, playing: false));
+      return message;
     }
   }
-
   /// 播一首单曲 —— 队列就是它自己。
-  Future<void> playSong(Song song) => playAll([song]);
+  ///
+  /// 同样把失败那句话交回去(见 [playAll])。
+  Future<String?> playSong(Song song) => playAll([song]);
 
   Future<void> toggle() async {
     if (_state.playing) return pause();

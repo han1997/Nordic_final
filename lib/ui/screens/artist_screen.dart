@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +10,7 @@ import '../../state/app_state.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
+import '../play_tapped.dart';
 import '../routes.dart';
 import 'song_menu_sheet.dart';
 import '../shell/bottom_stack.dart';
@@ -119,7 +122,6 @@ class _ArtistScreenState extends State<ArtistScreen> {
     }
 
     // 同 [LibraryScreen]:只订阅高亮要的两件,动作走 read。
-    final playable = context.read<PlaybackController>();
     final (currentId, playing) = context
         .select<PlaybackController, (String?, bool)>(
       (p) => (p.state.song?.id, p.state.playing),
@@ -145,12 +147,13 @@ class _ArtistScreenState extends State<ArtistScreen> {
             playable: playableSongs && _topSongs.isNotEmpty,
             onPlay: _topSongs.isEmpty
                 ? null
-                : () => playable.playAll(_topSongs, index: 0),
+                : () => playTapped(context, _topSongs, index: 0),
             onShuffle: _topSongs.isEmpty
                 ? null
                 : () {
-                    final shuffled = [..._topSongs]..shuffle();
-                    playable.playAll(shuffled, index: 0);
+                    unawaited(
+                      playTapped(context, [..._topSongs]..shuffle(), index: 0),
+                    );
                   },
             onToggleStar: _toggleStar,
           ),
@@ -172,7 +175,12 @@ class _ArtistScreenState extends State<ArtistScreen> {
               song: _topSongs[i],
               // 「热门」按播放量排,序数没有意义,所以不排曲序。
               playing: _topSongs[i].id == currentId && playing,
-              onTap: () => playable.playAll(_topSongs, index: i),
+              onTap: () => playTapped(
+                context,
+                _topSongs,
+                index: i,
+                label: _topSongs[i].title,
+              ),
               trailing: IconButtonRound(
                 icon: Icons.more_horiz,
                 size: 32,

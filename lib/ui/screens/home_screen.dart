@@ -10,6 +10,7 @@ import '../../theme/accent.dart';
 import '../../theme/ambient.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
+import '../play_tapped.dart';
 import '../routes.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
@@ -592,7 +593,12 @@ class _SongShelf extends StatelessWidget {
                 return Pressable(
                   // 点哪首就从哪首开始,队列就是这一条货架 —— 与货架的
                   // 直觉一致(横滑看到的就是接下来会播的)。
-                  onTap: () => playable.playAll(songs, index: index),
+                  onTap: () => playTapped(
+                    context,
+                    songs,
+                    index: index,
+                    label: song.title,
+                  ),
                   scale: 0.97,
                   child: SizedBox(
                     width: _tileWidth,

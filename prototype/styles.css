@@ -1649,6 +1649,27 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 }
 .empty .big { font-size: var(--fs-lg); font-weight: 650; color: var(--fg-2); }
 .empty .small { font-size: var(--fs-sm); }
+/* 播放失败 —— 播放页在「没有在播的歌,而且刚失败过」时铺这一块。
+   与 .empty 是两件事:那一块说的是「这儿现在没有东西」(中性),这一块说的是
+   「刚才那一下没成」—— 所以它带图标、带语气色,底下还指一条去路。
+   混成一句会让用户以为是自己没点到。 */
+.player-fail {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--s5);
+  padding: var(--s5);
+  text-align: center;
+}
+.player-fail .fail {
+  display: flex; flex-direction: column; align-items: center; gap: var(--s3);
+  padding: var(--s5);
+  border-radius: var(--r-lg);
+  background: var(--fill-1);
+  border: 1px solid var(--line);
+}
+.player-fail .ico { color: var(--bad); }
+.player-fail .t { font-size: var(--fs-lg); font-weight: 650; color: var(--fg); }
+.player-fail .msg { max-width: 250px; font-size: var(--fs-sm); color: var(--fg-2); line-height: 1.6; }
 
 .spin {
   width: 17px; height: 17px; flex: 0 0 auto;

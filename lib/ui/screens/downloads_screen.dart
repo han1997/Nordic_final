@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +10,7 @@ import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
+import '../play_tapped.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
@@ -343,8 +346,15 @@ class _OfflineTracks extends StatelessWidget {
             titleColor: isCurrent ? context.accentSafe : null,
             subtitle: song.artist,
             onTap: () {
+              // 先推出这张纸再播:失败那句话要落在**列表那一屏**上,而这一层的
+              // SnackBar 会跟着纸一起收掉。
               Navigator.of(context).pop();
-              playable.playAll(record.tracks, index: i);
+              unawaited(playTapped(
+                context,
+                record.tracks,
+                index: i,
+                label: song.title,
+              ));
             },
           );
         },

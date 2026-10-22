@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +10,7 @@ import '../../state/app_state.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
+import '../play_tapped.dart';
 import '../routes.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
@@ -133,7 +136,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
     }
 
     // 同 [LibraryScreen]:只订阅高亮要的两件,动作走 read。
-    final playable = context.read<PlaybackController>();
+    final _ = context.read<PlaybackController>();
     // 封面地址由仓库拼 —— 还没配好服务器时给 null,封面走渐变兜底。
     final repo = context.read<AppState>().repository;
     final (currentId, playing) = context
@@ -158,7 +161,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
           child: _PlayButton(
             onPlay: _songs.isEmpty
                 ? null
-                : () => playable.playAll(_songs, index: 0),
+                : () => playTapped(context, _songs, index: 0),
           ),
         ),
         if (_songs.isEmpty)
@@ -176,7 +179,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
               song: _songs[i],
               trackNumber: _songs[i].track ?? i + 1,
               playing: _songs[i].id == currentId && playing,
-              onTap: () => playable.playAll(_songs, index: i),
+              onTap: () => playTapped(
+                context,
+                _songs,
+                index: i,
+                label: _songs[i].title,
+              ),
             ),
           ),
         if (missing > 0)
@@ -294,8 +302,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
   /// 「随机播放」= 打乱后整队装载并开播,而不是只跳一首。
   void _shufflePlay() {
     if (_songs.isEmpty) return;
-    final playable = context.read<PlaybackController>();
-    playable.playAll([..._songs]..shuffle(), index: 0);
+    unawaited(playTapped(context, [..._songs]..shuffle(), index: 0));
   }
 
   Future<void> _addAllToQueue() async {
