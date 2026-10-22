@@ -6,9 +6,33 @@ import 'models.dart';
 /// 界面上不出现 DTO,也不在此处出现 HTTP —— 这里是唯一做映射的地方。
 /// 所有字段都按「缺了也能用」写:Subsonic 实现之间字段有无不一,
 /// 某个实现少给一个 `bitRate` 不该让整个列表崩掉。
+///
+/// **`id` 是唯一的例外,而它也得兜住。** 其余字段缺了各有各的兜底文案,
+/// 只有 `id` 没有任何默认值可用(它是缓存键、是路由参数、是 `Stream` 的槽位)。
+/// 于是「这一条没有 id」只能判成**这一条读不出来**:`mapList` 把它筛掉,
+/// 列表里少那一行。这件事必须在这里兜住而不是让它抛,因为
+/// `json['id'] as String` 抛的是 `TypeError` —— 那是 `Error` 不是 `Exception`,
+/// 而上面那一圈的 `on MusicSourceException` **接不住**,界面于是永久停在
+/// 「正在读取…」上(真机上就是转圈不转完)。
+///
+/// 用 [hasIdentity] 显式判一次,而不是在 `album` 里写 `_id(json)` 返回 null:
+/// 那样每一个调用点都得记得判空,漏一处就回到老样子。
 abstract final class SubsonicMapper {
+  /// 这一条**读得出来**吗 —— 有 `id` 且不是空串。
+  ///
+  /// `mapList` 拿它筛数组元素(见 `json_list.dart` 的 `mapList`):
+  /// 服务器偶尔会给出没有 id 的条目,而那一条不该把整次响应拖垮。
+  static bool hasIdentity(Map<String, dynamic> json) {
+    final id = json['id'];
+    return id is String && id.isNotEmpty;
+  }
+
+  /// 取 `id`。**调用点必须先过 [hasIdentity]**;这一句只负责把
+  /// `Object?` 收成一个 `String`,不给默认值(没有 id 的条目就不该走到这里)。
+  static String _id(Map<String, dynamic> json) => json['id'] as String;
+
   static Album album(Map<String, dynamic> json) => Album(
-        id: json['id'] as String,
+        id: _id(json),
         name: _string(json['name']) ?? _string(json['album']) ?? '未知专辑',
         artist: _string(json['artist']) ?? _string(json['displayArtist']) ?? '未知艺人',
         // 有些实现只在 artists[] 里给 id,顶层的 artistId 可能缺。
@@ -22,7 +46,7 @@ abstract final class SubsonicMapper {
       );
 
   static Artist artist(Map<String, dynamic> json) => Artist(
-        id: json['id'] as String,
+        id: _id(json),
         name: _string(json['name']) ?? '未知艺人',
         albumCount: _int(json['albumCount']) ?? 0,
         coverArtId: _string(json['coverArt']),
@@ -33,7 +57,7 @@ abstract final class SubsonicMapper {
       );
 
   static Song song(Map<String, dynamic> json) => Song(
-        id: json['id'] as String,
+        id: _id(json),
         title: _string(json['title']) ?? _string(json['name']) ?? '未知曲目',
         artist: _string(json['artist']) ?? _string(json['displayArtist']) ?? '未知艺人',
         album: _string(json['album']) ?? '未知专辑',
@@ -53,7 +77,7 @@ abstract final class SubsonicMapper {
       );
 
   static Playlist playlist(Map<String, dynamic> json) => Playlist(
-        id: json['id'] as String,
+        id: _id(json),
         name: _string(json['name']) ?? '未命名歌单',
         songCount: _int(json['songCount']) ?? 0,
         duration: _duration(json['duration']),
@@ -64,18 +88,37 @@ abstract final class SubsonicMapper {
         changed: _date(json['changed']),
       );
 
+  /// **实体**数组 → 域模型。缺 `id` 的那一条**整条丢掉**,而不是让映射抛。
+  ///
+  /// 这就是「坏元素只少那一行」那句话真正的落点(`mapList` 只管「是不是对象」,
+  /// 见那边的说明)。为什么必须在这里兜住:`id` 是缓存键、路由参数、Stream 的
+  /// 槽位,没有默认值可用;而 `json['id'] as String` 抛的是 `TypeError` ——
+  /// 那是 `Error` 不是 `Exception`,上面各屏的 `on MusicSourceException`
+  /// **接不住**,于是整屏停在「正在读取…」上,再也不回来。
+  ///
+  /// 只在**实体**这一层筛:歌词的 `line[]`、`genres[]` 那些本来就没有 id,
+  /// 一刀切会把它们整批筛掉(而那个错不响:歌词页只是空着)。
+  static List<T> _entities<T>(
+    List<Map<String, dynamic>> json,
+    T Function(Map<String, dynamic>) read,
+  ) =>
+      [
+        for (final item in json)
+          if (hasIdentity(item)) read(item),
+      ];
+
   /// `getAlbumList2` 等的批量映射。
   static List<Album> albums(List<Map<String, dynamic>> json) =>
-      json.map(album).toList();
+      _entities(json, album);
 
   static List<Artist> artists(List<Map<String, dynamic>> json) =>
-      json.map(artist).toList();
+      _entities(json, artist);
 
   static List<Song> songs(List<Map<String, dynamic>> json) =>
-      json.map(song).toList();
+      _entities(json, song);
 
   static List<Playlist> playlists(List<Map<String, dynamic>> json) =>
-      json.map(playlist).toList();
+      _entities(json, playlist);
 
   /// 搜索结果的三个桶。
   static SearchHits search(Map<String, dynamic> result) => SearchHits(

@@ -78,6 +78,14 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         _loading = false;
         _error = e.message;
       });
+    } catch (e) {
+      // 同 [AlbumScreen._load]:兜住 `MusicSourceException` 之外的一切,
+      // 否则 `_loading` 停在 true 就是一屏转不完的圈。
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '$e';
+      });
     }
   }
 

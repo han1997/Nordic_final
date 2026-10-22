@@ -76,6 +76,14 @@ class _ArtistScreenState extends State<ArtistScreen> {
         _loading = false;
         _error = e.message;
       });
+    } catch (e) {
+      // 同 [AlbumScreen._load]:只接 `MusicSourceException` 的话,映射层的
+      // `TypeError`(它是 `Error`)会让这一屏永久停在转圈上。
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '$e';
+      });
     }
   }
 

@@ -480,9 +480,21 @@ class PlaybackController extends ChangeNotifier {
   }
 
   /// 切转码档位。会以新档位重新加载当前曲目,位置尽量保住。
-  Future<void> setQuality(QualityOption option) async {
-    await _handler.applyQuality(option);
-    _emit(_state.copyWith(error: null, clearError: true));
+  ///
+  /// **返回失败时那一句话**(null = 成功),与 [playAll] 同一套:换档要整队重装,
+  /// 而重装会拼播放源 —— 那一步会失败(没有仓库 / 服务器不给这一首)。
+  /// 原先这里是裸 `await`:异常从面板的 `onTap` 冒出去,用户看到的是「点了一档、
+  /// 没有任何反应,档位也还是旧的」。
+  Future<String?> setQuality(QualityOption option) async {
+    try {
+      await _handler.applyQuality(option);
+      _emit(_state.copyWith(error: null, clearError: true));
+      return null;
+    } catch (e) {
+      final message = e is MusicSourceException ? e.message : '$e';
+      _emit(_state.copyWith(error: message, playing: false));
+      return message;
+    }
   }
 
   /// 线路换了 —— 正在放的这一首用新线路重新加载,位置尽量保住。

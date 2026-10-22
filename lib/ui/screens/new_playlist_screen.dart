@@ -210,6 +210,13 @@ class _NewPlaylistScreenState extends State<NewPlaylistScreen> {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)),
       );
+    } catch (e) {
+      // 兜住其余失败:否则「创建中」那三个字永远挂着,而歌单其实没建出来。
+      if (!mounted) return;
+      setState(() => _creating = false);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('没能创建：$e'), duration: const Duration(seconds: 3)),
+      );
     }
   }
 }

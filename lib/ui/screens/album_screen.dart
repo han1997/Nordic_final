@@ -85,6 +85,19 @@ class _AlbumScreenState extends State<AlbumScreen> {
         _loading = false;
         _error = e.message;
       });
+    } catch (e) {
+      // **这一道兜底不能省。** 只接 `MusicSourceException` 的话,任何别的失败
+      // (映射层抛的 `TypeError`、解析里一个想不到的形状、插件抛的 `Error`)
+      // 都会让 `_loading` 永远停在 true —— 界面就一直转圈,而屏幕上没有任何
+      // 东西说明发生过什么。那不是「加载得慢」,是「再也回不来」。
+      //
+      // 与 `AppState.loadLibrary` 那条 `catch (e) => _failLoad('$e')` 同一口径:
+      // 宁可把一句技术报错摆出来,也不要一屏转不完的圈。
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '$e';
+      });
     }
   }
 

@@ -140,6 +140,14 @@ class _SearchScreenState extends State<SearchScreen> {
         _searching = false;
         _error = e.message;
       });
+    } catch (e) {
+      // 与那三条详情页同一条兜底:`_searching` 停在 true 就是「正在搜索」
+      // 一直转下去,而那一次请求早就结束了。
+      if (!mounted || _pendingQuery != query) return;
+      setState(() {
+        _searching = false;
+        _error = '$e';
+      });
     }
   }
 

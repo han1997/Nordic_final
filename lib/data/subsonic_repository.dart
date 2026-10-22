@@ -153,7 +153,11 @@ class SubsonicRepository implements MusicSource {
     // 为了排序把它抬进 [Song] 的公共接口不值得。
     // 缺 playCount 的服务器上所有值都是 0,排序稳定,保持服务器原序。
     // 注意复制一份再排:mapList 返回的是不可变列表,原地 sort 会抛。
-    final songJson = mapList(json['song']).toList()
+    // 先筛掉没有 id 的条目 —— 排序那一步只是挑前五首,但映射那一头要的是
+    // 「这一条读得出来」(见 `SubsonicMapper.hasIdentity`)。
+    final songJson = mapList(json['song'])
+        .where(SubsonicMapper.hasIdentity)
+        .toList()
       ..sort((a, b) => _playCount(b).compareTo(_playCount(a)));
 
     final detail = (

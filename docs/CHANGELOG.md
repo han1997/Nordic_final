@@ -2012,3 +2012,56 @@ release 包(1.0.47+48,三个 ABI 逐个校验签名 / 包名 / 版本):
 - **播放中途断流**(播着播着线路断了)没有单独做态:它走的是 `_track` 的
   `onError`,会把 `state.error` 写进去,于是**下次**进播放页会看到失败态 ——
   但当下那一屏不会自己跳。要不要为此加一块浮层,单独一轮再说(原型里也没有)。
+
+## 第二十四轮(2026-10-21/22):数据读不出来时,别把整屏卡死
+
+病灶在映射层:把 `id` 直接 cast 成 `String`。服务器偶尔给出一条没有 `id`
+的条目,那时抛的是 `TypeError` —— 它实现的是 `Error`,**不是** `Exception`,
+于是各屏的 `on MusicSourceException catch` 一条都接不住:异常穿出去,`_loading`
+永远停在 `true`,界面一直转圈,而屏幕上没有一个字说明发生过什么。
+
+同一个形状还有几处:换档位、建歌单、搜索、详情页 —— 都是「接得住的只有
+`MusicSourceException`,接不住的就静默卡死」。
+
+### 一、映射层:坏元素只少那一行
+
+- `SubsonicMapper.hasIdentity` 与 `_id` 一起进来:实体(专辑 / 歌曲 / 艺人 /
+  歌单)缺 `id`、`id` 为空串、`id` 不是字符串 —— **整条丢掉**,其余照常。
+  `id` 是缓存键、路由参数、Stream 的槽位,没有默认值可用。
+- **只在实体这一层筛**,不塞进通用的 `mapList`。这条是踩出来的:第一版放进
+  `mapList`,歌词的 `line[]`、`genres[]` 被整批筛掉,而那个错不响(歌词页只是
+  空着),是 `app_state_test` 的「歌词的磁盘缓存」三条先红的。
+- `getRandomSongs` 那条排序前也先筛一遍 —— 它要的是「读得出来」,不是「排得动」。
+
+### 二、界面:兜底那一支必须存在
+
+五处补 `catch (e)`(`AlbumScreen` / `ArtistScreen` / `PlaylistScreen` /
+`SearchScreen` / `NewPlaylistScreen`):宁可把一句技术报错摆出来,也不要一屏
+转不完的圈。与 `AppState.loadLibrary` 那条兜底同一口径。
+
+`SearchScreen` 那一处还带 `_pendingQuery != query` 的判断 —— 旧的请求晚回来,
+不该把新一次搜索的 `_searching` 抹掉。
+
+### 三、换档位也要说话
+
+`PlaybackController.setQuality` 的返回值从 `Future<void>` 改成 `Future<String?> ` 之外,与上一轮 `playAll` 同一套。原先 `quality_sheet` 上是裸 `await`:换档要整队重装,
+那一步会失败(没有仓库 / 服务器不给这一首),异常从 `onTap` 冒出去,用户看到的是
+「点了一档、没有任何反应,档位也还是旧的」。现在弹一句「没能切到「X」 —— 原因」。
+
+### 四、用例(`test/data/mapper_resilience_test.dart`,7 条)
+
+- 专辑 / 歌曲 / 艺人 / 歌单 缺 `id` → 那一条不出现,别的还在;
+- 一条都读不出来 → 空表,不是抛、也不是 null;
+- 搜索的三个桶各自筛 —— 一个坏元素不该带走另外两桶;
+- **非实体数组一条都不许丢**:歌词 `line[]` 全留着;`mapList` 只筛「不是对象」;
+- `hasIdentity` 的判据:非空 String 才算,空串、数字、缺字段都不算。
+
+### 验证
+
+`flutter analyze` 干净;`flutter test` **488 passed / 18 skipped / 0 failed**
+(上一轮 481 + 这一轮 7)。18 跳过是本机连不到 Navidrome,与这一轮无关。
+
+### 这一轮没验到的(只有人或真机能看)
+
+1. **真的让服务器吐一条没有 id 的数据** —— 用例是喂字典,真机得靠坏数据撞上;
+2. **换档位失败那一下** —— 得在没有仓库(刚启动、还没连上)时点档位才能看到。

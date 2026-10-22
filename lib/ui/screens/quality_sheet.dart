@@ -62,12 +62,12 @@ class _QualitySheet extends StatelessWidget {
                   tag: option.tag,
                   description: option.description,
                   selected: option.id == current.id,
-                  onTap: () async {
-                    Navigator.of(context).pop();
-                    // 同时写进设置(下次启动沿用)并让播放器立刻换档。
-                    await appState.setQuality(option);
-                    await playable.setQuality(option);
-                  },
+                  onTap: () => _pick(
+                    context,
+                    appState,
+                    playable,
+                    option,
+                  ),
                 ),
               const SizedBox(height: NordicSpace.s2),
             ],
@@ -76,4 +76,26 @@ class _QualitySheet extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// 选一档。**失败要说话** —— 换档会整队重装,那一步会失败(没有仓库 /
+/// 服务器不给这一首),而原先这里是裸 await:异常从那颗选项的 `onTap`
+/// 冒出去,用户看到的是「点了一档、没有任何反应,档位也还是旧的」。
+Future<void> _pick(
+  BuildContext context,
+  AppState appState,
+  PlaybackController playable,
+  QualityOption option,
+) async {
+  Navigator.of(context).pop();
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  // 同时写进设置(下次启动沿用)并让播放器立刻换档。
+  await appState.setQuality(option);
+  final failure = await playable.setQuality(option);
+  if (failure == null) return;
+  messenger?.showSnackBar(SnackBar(
+    content: Text('没能切到「${option.name}」 —— $failure'),
+    duration: const Duration(seconds: 3),
+  ));
 }
