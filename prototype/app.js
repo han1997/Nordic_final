@@ -500,7 +500,7 @@ const TABS = [
 
 function tabbar(active) {
   return `<nav class="tabbar">${TABS.map(([id, icon, label]) =>
-    `<button data-tab="${id}" aria-selected="${active === id}">${ic(icon, 21)}<span>${label}</span></button>`
+    `<button data-tab="${id}" aria-selected="${active === id}">${ic(icon, 23)}<span>${label}</span></button>`
   ).join('')}</nav>`;
 }
 
@@ -514,7 +514,7 @@ function tabbar(active) {
    代价是委托处多认一个属性(见 click 处理里 `d.tab || d.railTab` 那行)。 */
 function navRail(active) {
   return `<nav class="railnav">${TABS.map(([id, icon, label]) =>
-    `<button data-rail-tab="${id}" aria-selected="${active === id}" title="${label}">${ic(icon, 21)}<span>${label}</span></button>`
+    `<button data-rail-tab="${id}" aria-selected="${active === id}" title="${label}">${ic(icon, 23)}<span>${label}</span></button>`
   ).join('')}</nav>`;
 }
 

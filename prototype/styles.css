@@ -1032,17 +1032,27 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tabbar {
-  height: 62px;
+  /* 58 而不是 62:内容一变高,整行就该收一收,否则上下多出来的那几像素
+     读着就是「块头大」。 */
+  height: 58px;
   display: flex; align-items: center;
-  padding: 0 6px;
+  /* 16 的边距 + button 上 16 的 margin,与三颗之间的 32 缝是同一套数:
+     靠托盘那两条留白和胶囊之间那道缝一样宽,三段于是看起来是均分的。 */
+  padding: 0 16px;
 }
 .tabbar button {
   flex: 1 1 0;
-  height: 54px;
+  /* 胶囊按内容收窄,不再横跨整整三分之一屏 —— 原先那颗 118.7 × 54 是
+     一块「板子」,不是胶囊。点按范围跟着窄一点(仍有 85 × 50,余量够)。 */
+  height: 50px;
+  margin: 0 16px;
   border-radius: var(--r-full);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 3px;
-  font-size: 10.5px; font-weight: 640;
+  /* 图标与文字之间松一格,再把文字行高收到 1:内容整体长高到 38.5,
+     在 50 的胶囊里上下各剩 5.75,四周不再挤。 */
+  gap: 4px;
+  font-size: 11.5px; font-weight: 640;
+  line-height: 1;
   letter-spacing: 0.005em;
   color: var(--fg-3);
   transition: color 0.2s var(--ease), background 0.2s var(--ease);
@@ -2233,16 +2243,19 @@ html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
 /* ---- 左竖栏 —— 宽屏的常驻导航 ----
    默认 display:none(不占布局);>= 840 的容器查询把它翻出来。
    铺不铺由 app.js 的 shell(opts.rail) 点名 —— 播放 / 歌词 / 表单页连节点都没有。
-   材质与托盘同一层玻璃、同一套悬浮习语(四周 10px、r-xl)。 */
+   材质与托盘同一层玻璃、同一套悬浮习语(左 / 上 10px、r-xl、贴合内容)。 */
 .railnav {
   display: none;
   position: absolute;
-  left: 10px; top: 10px; bottom: 10px;
+  /* 只给 left / top,不给 bottom:面板按三颗按钮的高度自己收口。
+     原先 top:10 + bottom:10 是一根通到屏幕底的柱子,而柱子里只有三件
+     东西 —— 底下七成是一整片空玻璃,那正是这一处读着「笨」的来源。 */
+  left: 10px; top: 10px;
   width: 84px;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 6px;
+  gap: 4px;
+  padding: 8px;
   border-radius: var(--r-xl);
   background: var(--glass);
   -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--glass-sat));
@@ -2254,12 +2267,14 @@ html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
   z-index: 12;
 }
 .railnav button {
-  width: 72px; height: 60px;
+  /* 68 = 84 - 8 x 2:胶囊把内衬用满,不再多留那圈看不出来的余量。 */
+  width: 68px; height: 52px;
   flex: 0 0 auto;
   border-radius: var(--r-full);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 3px;
-  font-size: 10.5px; font-weight: 640;
+  gap: 4px;
+  font-size: 11.5px; font-weight: 640;
+  line-height: 1;
   letter-spacing: 0.005em;
   color: var(--fg-3);
   transition: color 0.2s var(--ease), background 0.2s var(--ease);

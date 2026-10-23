@@ -9,7 +9,7 @@ import 'bottom_stack.dart';
 ///
 /// 两处读出的是同一件事:这个位置现在是活的。选中态(selectFill 胶囊、
 /// 强调色图标)与字级逐条相同,差异只有排布 —— 托盘里横着均分(宽度由
-/// 外面的 [Expanded] 给),竖栏里固定 72×60 竖着摞。
+/// 外面的 [Expanded] 给,外面再套一层左右 16 的内缩),竖栏里固定 68×52 竖着摞。
 ///
 /// 按下反馈两处分走:[pressedFeedback] 为真时走 [Pressable](竖栏是新增的,
 /// 按 docs/performance.md「可点元素一律走 Pressable」办);为假时保持托盘的
@@ -20,7 +20,7 @@ class NavTabButton extends StatelessWidget {
     required this.tab,
     required this.selected,
     required this.onSelected,
-    this.height = 54,
+    this.height = 50,
     this.width,
     this.pressedFeedback = false,
   });
@@ -50,14 +50,17 @@ class NavTabButton extends StatelessWidget {
         children: [
           Icon(
             tab.icon,
-            size: 21,
+            size: 23,
             color: selected ? context.accentSafe : t.fg3,
           ),
-          const SizedBox(height: 3),
+          // 图标与文字之间松一格;文字行高收到 1 —— 内容整体长高到 38.5,
+          // 在 50 的胶囊里上下各剩 5.75,四周不再挤(见原型 `.tabbar` 同名注释)。
+          const SizedBox(height: 4),
           Text(
             tab.label,
             style: TextStyle(
-              fontSize: 10.5,
+              fontSize: 11.5,
+              height: 1,
               fontWeight: FontWeight.w600,
               color: selected ? t.fg : t.fg3,
             ),

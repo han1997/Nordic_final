@@ -42,8 +42,9 @@ class BottomStack extends StatelessWidget {
   /// 沉浸页(播放 / 歌词)不显示坞 —— 那一屏整屏都是播放控制。
   final bool showDock;
 
-  /// 列表需要留出的底部空间。坞 62 + 间距 8 + 标签栏 66 + 四周留白。
-  /// **这是手机形态的数**;宽屏(>= 840)的常驻区是播放横条,见 [listInset]。
+  /// 列表需要留出的底部空间。坞 60 + 进度线 2 + 标签栏 58 + 下边距 10,
+  /// 再留一截余量。**这是手机形态的数**;宽屏(>= 840)的常驻区是播放横条,
+  /// 见 [listInset]。
   static const bottomInset = 150.0;
 
   /// 带常驻区的页面里,列表底部该留多少(已含系统指示条)。
@@ -242,20 +243,31 @@ class _TabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 62,
+      // 58 而不是 62:内容一变高,整行就该收一收,否则上下多出来的那几像素
+      // 读着就是「块头大」(见原型 `.tabbar`)。
+      height: 58,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        // 16 的边距 + 每颗上 16 的内缩,与三颗之间的 32 缝是同一套数:靠托盘
+        // 那两条留白和胶囊之间那道缝一样宽,三段于是看起来是均分的。
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
             for (final tab in AppTab.values)
               Expanded(
-                // 选中胶囊的视觉整体抽进 [NavTabButton](宽屏左竖栏共用一份,
-                // 见 shell/nav_tabs.dart);这里不带按下反馈,保持托盘的历史
-                // 手感 —— 行为与样式一个字都没改。
-                child: NavTabButton(
-                  tab: tab,
-                  selected: tab == active,
-                  onSelected: onSelected,
+                // 胶囊按内容收窄,不再横跨整整三分之一屏 —— 原先那颗
+                // 118.7 x 54 是一块「板子」,不是胶囊。点按范围跟着窄一点
+                // (仍有 85 x 50,余量够),与原型 `.tabbar button` 的
+                // `margin: 0 16px` 逐条对齐。
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  // 选中胶囊的视觉整体抽进 [NavTabButton](宽屏左竖栏共用一份,
+                  // 见 shell/nav_tabs.dart);这里不带按下反馈,保持托盘的历史
+                  // 手感 —— 行为与样式一个字都没改。
+                  child: NavTabButton(
+                    tab: tab,
+                    selected: tab == active,
+                    onSelected: onSelected,
+                  ),
                 ),
               ),
           ],
