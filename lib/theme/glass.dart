@@ -34,16 +34,28 @@ class NordicGlass extends StatelessWidget {
     final t = context.nordic;
     final spec = switch (panel) {
       // 面板玻璃:卡片 / 弹层 / 分段控件 —— 底下的内容透得最少,文字最稳。
-      NordicGlassPanel.panel => (t.glass3, t.blur, NordicRadius.lg, true),
-      // 薄玻璃:输入框 / 筛选胶囊 —— 能透出较多背景,但不承载长文本。
-      NordicGlassPanel.thin => (t.glass4, t.blurSm, NordicRadius.full, false),
-      // 导航玻璃:播放坞 / 标签栏 —— 常驻且要压住滚过去的列表。
-      NordicGlassPanel.nav => (t.glass, t.blur, NordicRadius.full, true),
+      // 深度影照原型 `.glass-panel` 的 `0 18px 40px -24px var(--depth)`。
+      NordicGlassPanel.panel => (
+          t.glass3,
+          t.blur,
+          NordicRadius.lg,
+          (const Offset(0, 18), 40.0, -24.0),
+        ),
+      // 薄玻璃:输入框 / 筛选胶囊 —— 能透出较多背景,但不承载长文本(无影)。
+      NordicGlassPanel.thin => (t.glass4, t.blurSm, NordicRadius.full, null),
+      // 导航玻璃:播放坞 / 标签栏 / 左竖栏 —— 常驻且要压住滚过去的列表。
+      // 深度影照原型 `.tray` / `.railnav` 的 `0 20px 40px -20px var(--depth)`。
+      NordicGlassPanel.nav => (
+          t.glass,
+          t.blur,
+          NordicRadius.full,
+          (const Offset(0, 20), 40.0, -20.0),
+        ),
     };
     final fill = spec.$1;
     final blur = spec.$2;
     final radius = borderRadius ?? BorderRadius.circular(spec.$3);
-    final wantsShadow = spec.$4;
+    final shadow = spec.$4;
 
     return DecoratedBox(
       // 外部那道深度影放在**裁剪外面** —— 放里面的话,圆角一裁就没了
@@ -51,11 +63,15 @@ class NordicGlass extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: radius,
         boxShadow: [
-          if (wantsShadow)
+          if (shadow != null)
             BoxShadow(
               color: t.depth,
-              blurRadius: 40,
-              offset: const Offset(0, 20),
+              blurRadius: shadow.$2,
+              offset: shadow.$1,
+              // **这个负数不能少**:CSS 里的 `-24px` / `-20px` 是 spread,
+              // 把影的矩形缩了一圈 —— 少了它,影会在卡片或玻璃四周散成
+              // 一大圈灰,边缘也就糊了。
+              spreadRadius: shadow.$3,
             ),
         ],
       ),

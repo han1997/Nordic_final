@@ -751,27 +751,64 @@ class NordicSwitch extends StatelessWidget {
   }
 }
 
-/// 进度细线 —— `.prog-line`。坞底与「继续收听」卡各一条。
+/// 进度细线 —— `.prog-line` / `.tray-line`。坞底、「继续收听」卡与托盘里那条
+/// 分隔线共用一份,差别只有两处:**底槽色**与**亮条末端那圈光**(原型里这是
+/// 两个类:`--fill-3` 无光的 `.prog-line`,与 `--fill-2` 带光的 `.tray-line`)。
 class ProgressLine extends StatelessWidget {
-  const ProgressLine({super.key, required this.progress, this.height = 3});
+  const ProgressLine({
+    super.key,
+    required this.progress,
+    this.height = 3,
+    this.track,
+    this.glow = false,
+  });
 
   /// 0–1。
   final double progress;
+
   final double height;
+
+  /// 底槽。不传就是 `--fill-3`(`.prog-line`);托盘那条传 `--fill-2`。
+  final Color? track;
+
+  /// 亮条那圈光 —— 原型里**只有 `.tray-line i`** 有
+  /// (`box-shadow: 0 0 8px` 的强调色 80%)。
+  final bool glow;
 
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
+    final accent = context.accent.accent;
     return ClipRRect(
       borderRadius: BorderRadius.circular(NordicRadius.full),
+      // **铺满容器**:原型的 `.prog-line` 是块级的 —— 横向填满容器,里面那条
+      // 亮带多长只由 `i` 的宽度决定。少了这个 width 的话,Column 给的是松约束,
+      // Stack 会缩到「亮带本身」那么宽:底槽整段消失,而线永远看着是满的
+      // (托盘里那条 2px 的分隔线就一直这么画着)。
       child: SizedBox(
+        width: double.infinity,
         height: height,
         child: Stack(
           children: [
-            Positioned.fill(child: ColoredBox(color: t.fill3)),
+            Positioned.fill(child: ColoredBox(color: track ?? t.fill3)),
             FractionallySizedBox(
               widthFactor: progress.clamp(0.0, 1.0),
-              child: ColoredBox(color: context.accent.accent),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: accent,
+                  // 这圈光是**往外**投的:上下被这条 2px 的线裁掉(原型的
+                  // `overflow: hidden` 是同一个效果)—— 露出来的是亮条右端
+                  // 往剩下那截底槽里渗的一层。
+                  boxShadow: glow
+                      ? [
+                          BoxShadow(
+                            color: accent.withValues(alpha: 0.8),
+                            blurRadius: 8,
+                          ),
+                        ]
+                      : null,
+                ),
+              ),
             ),
           ],
         ),

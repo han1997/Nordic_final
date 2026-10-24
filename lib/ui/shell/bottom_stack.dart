@@ -59,7 +59,7 @@ class BottomStack extends StatelessWidget {
 
   /// 带常驻区的页面里,列表底部该留多少(已含系统指示条)。
   /// **两档共用这一处口径,别在页面里自己拼数字**:
-  ///   宽屏(>= 840) = 播放横条(88)+ 指示条;
+  ///   宽屏(>= 840) = 播放横条(94)+ 指示条;
   ///   否则          = 胶囊托盘(150)+ 指示条。
   static double listInset(BuildContext context) =>
       (context.isExpanded ? NordicWindow.barInset : bottomInset) +
@@ -149,10 +149,14 @@ class _PlayerDock extends StatelessWidget {
       onTap: () => AppRoutes.openPlayer(context),
       pressedDecoration: BoxDecoration(color: t.fill1),
       child: SizedBox(
+        // `.dock { height: 60px; padding: 0 8px }` —— 与原型同一个数。
         height: 60,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Row(
+            // **每一格之间 12** —— 原型 `.dock { gap: var(--s3) }`。原先这里
+            // 只有封面后面那一格:歌名贴着播放键、两颗按钮也挤在一起。
+            spacing: NordicSpace.s3,
             children: [
               Cover(
                 coverArtId: song.coverArtId,
@@ -162,7 +166,6 @@ class _PlayerDock extends StatelessWidget {
                 radius: 13,
                 showShadow: false,
               ),
-              const SizedBox(width: NordicSpace.s3),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -209,15 +212,19 @@ class _PlayerDock extends StatelessWidget {
 
 }
 
-/// 托盘中间那条细线 —— **同时就是进度**。
+/// 托盘中间那条细线 —— `.tray-line`,**同时就是进度**。
 ///
 /// 原先进度线贴在坞底:既要绕开圆角,又压在内容上。现在它就是播放坞与标签栏
 /// 之间的那条分隔线,从左往右长 —— 整块托盘于是自己说明「正在放」。
+///
+/// **它不是 `.prog-line`**:原型给这一条的是 `--fill-2` 底槽(比 `.prog-line`
+/// 的 `--fill-3` 淡一档)与亮条末端那圈 8px 的光 —— 别的进度条两样都没有。
 class _TrayProgress extends StatelessWidget {
   const _TrayProgress();
 
   @override
   Widget build(BuildContext context) {
+    final t = context.nordic;
     // **分开订**:时长只有换歌才变,位置每秒跳好几次。原先整份
     // `PlaybackController` 都订着,于是每一次位置变化都要连时长一起重读。
     final duration = context.select<PlaybackController, Duration>(
@@ -230,12 +237,15 @@ class _TrayProgress extends StatelessWidget {
     // 跟着每跳一次重画一遍)。`_CoverGlow` 已经是同一个做法(见 player_screen)。
     return RepaintBoundary(
       child: Padding(
+        // 与托盘玻璃左右各留 16 —— 原型 `.tray-line { margin: 0 var(--s4) }`。
         padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s4),
         child: ValueListenableBuilder<Duration>(
           valueListenable: position,
           builder: (context, position, _) => ProgressLine(
             progress: playbackProgress(position, duration) / 100,
             height: 2,
+            track: t.fill2,
+            glow: true,
           ),
         ),
       ),

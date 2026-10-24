@@ -64,6 +64,8 @@ class WidePlaybackBar extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s3),
                 child: Row(
+                  // 宽屏这一档与手机同一条缝:12(原型 `.dock { gap: var(--s3) }`)。
+                  spacing: NordicSpace.s3,
                   children: [
                     Cover(
                       coverArtId: song.coverArtId,
@@ -73,7 +75,6 @@ class WidePlaybackBar extends StatelessWidget {
                       radius: 14,
                       showShadow: false,
                     ),
-                    const SizedBox(width: NordicSpace.s3),
                     Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -101,25 +102,32 @@ class WidePlaybackBar extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(width: NordicSpace.s4),
                     // 行内进度 —— 与托盘里那条分隔线同一份数据、同一套算法,
                     // 单独隔一层重绘边界(它每秒重画好几次)。
+                    //
+                    // 两侧各 24 = 坞的 gap 12 **加上** `.prog-inline` 自己的
+                    // `margin: 0 var(--s3)` —— 原型那两件是叠着的,不是一层。
                     Expanded(
-                      child: RepaintBoundary(
-                        child: ValueListenableBuilder<Duration>(
-                          valueListenable: position,
-                          builder: (context, position, _) => ProgressLine(
-                            progress:
-                                playbackProgress(position, duration) / 100,
-                            height: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: NordicSpace.s3,
+                        ),
+                        child: RepaintBoundary(
+                          child: ValueListenableBuilder<Duration>(
+                            valueListenable: position,
+                            builder: (context, position, _) => ProgressLine(
+                              progress:
+                                  playbackProgress(position, duration) / 100,
+                              height: 2,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: NordicSpace.s4),
                     IconButtonRound(
                       icon: Icons.skip_previous,
-                      iconSize: 23,
+                      // 原型坞里三颗键:上一首 25、播放 / 暂停 25、下一首 23。
+                      iconSize: 25,
                       onPressed: playback.previous,
                     ),
                     IconButtonRound(

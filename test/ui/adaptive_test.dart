@@ -13,7 +13,7 @@ import 'package:nordic/ui/shell/bottom_stack.dart';
 ///   2. **断点与原型同源** —— `prototype/styles.css` 的容器查询与
 ///      `prototype/app.js` 的 `gridColsOf` 里那几个数,与 [NordicWindow] 的
 ///      常量必须一致:原型是唯一设计真相来源,两边漂开等于实现悄悄改了设计;
-///   3. 缩进口径两档(窄屏 150 / 宽屏 88)—— 12 处调用点全靠它。
+///   3. 缩进口径两档(窄屏 150 / 宽屏 94)—— 12 处调用点全靠它。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -62,7 +62,7 @@ void main() {
     expect(NordicWindow.gridColumns(100), 2);
   });
 
-  testWidgets('listInset 两档：窄屏 150 / 宽屏 88（都不含安全区）', (tester) async {
+  testWidgets('listInset 两档：窄屏 150 / 宽屏 94（都不含安全区）', (tester) async {
     addTearDown(tester.view.reset);
     double? captured;
     Future<void> at(Size size) async {
@@ -78,7 +78,7 @@ void main() {
 
     await at(const Size(1280, 800));
     expect(captured, NordicWindow.barInset);
-    expect(captured, 88.0);
+    expect(captured, 94.0);
 
     await at(const Size(390, 844));
     expect(captured, BottomStack.bottomInset);

@@ -32,10 +32,12 @@ abstract final class NordicWindow {
   static const railMargin = 10.0;
   static const gutter = railMargin + railWidth + railMargin;
 
-  /// 底部播放横条:高 72(见 shell/wide_bar.dart),列表底部留白 88
-  /// = 72 + 10 边距 + 6 空气(见 [BottomStack.listInset] 的分级口径)。
+  /// 底部播放横条:高 72(见 shell/wide_bar.dart),列表底部留白 **94**
+  /// = 72 + 10 边距 + 12 空气 —— 两个数都与原型同源(宽屏档的
+  /// `.dock { height: 72px }` 与 `.screen:has(.bottomstack) .scroll` 的
+  /// `padding-bottom: 94px`),`test/ui/proto_sync_test.dart` 读原型文件核对。
   static const barHeight = 72.0;
-  static const barInset = 88.0;
+  static const barInset = 94.0;
 
   /// 网格:单格上限 280、间距 16(即 [NordicSpace.s4])—— 可用宽 / 296 向上取整。
   /// **与原型 app.js 的 `gridColsOf` 同一条公式**(那边写成 104 + 40 的减法版,
