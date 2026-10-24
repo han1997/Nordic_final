@@ -276,12 +276,28 @@ class DownloadManager extends ChangeNotifier {
   /// 「服务器回 200 但内容是错误 JSON」那条判断值得单独验。
   Dio? _dio;
 
-  /// 卡在等网络时的复查间隔。
+  /// 卡在等网络时的**起始**复查间隔(见 [_retryDelay] 与 [_scheduleRetry])。
   final Duration checkInterval;
+
+  /// 最多翻到起始节拍的几倍。
+  static const _retryCeilingFactor = 8;
 
   final List<DownloadJob> _jobs = [];
   String? _runningId;
   Timer? _retryTimer;
+
+  /// 下一次复查还等多久 —— 每空转一次翻一倍,封顶 [checkInterval] ×
+  /// [_retryCeilingFactor](4 秒的基础节拍 → 8 / 16 / 32 秒)。
+  ///
+  /// **为什么要退避**:「等 Wi-Fi」可能等上几个小时(白天在流量下挂着、
+  /// 晚上回家才连上),而每 4 秒问一次平台「现在是什么网」是白费的 ——
+  /// 后台挂一夜就是几千次唤醒,正是「待机也在耗电」那种账。退避到 32 秒
+  /// 之后同样的等待只花八分之一的唤醒,而代价只是「连上 Wi-Fi 之后最多
+  /// 半分钟才开始下」—— 用户点过的队列不会因此丢掉,只是晚半拍。
+  ///
+  /// 四条**回到起点**的路(用户明确动了什么,就不该再退避):队列空了、
+  /// 开关被拨动、新任务入队、点重试。
+  late Duration _retryDelay = checkInterval;
 
   List<DownloadJob> get jobs => UnmodifiableListView(_jobs);
 
@@ -315,6 +331,8 @@ class DownloadManager extends ChangeNotifier {
     );
     _jobs.add(job);
     notifyListeners();
+    // 新任务入队是**用户动作**:节拍回到起点,并且立刻复查一次(见 [_retryDelay])。
+    _resetRetryBackoff();
     unawaited(_pump());
     return job;
   }
@@ -344,16 +362,42 @@ class DownloadManager extends ChangeNotifier {
       ..doneSongs = 0
       ..receivedBytes = 0;
     notifyListeners();
+    // 点重试是**用户动作**:节拍回到起点(见 [_retryDelay])。
+    _resetRetryBackoff();
     await _pump();
   }
 
   /// 用户在设置里动了「仅 Wi-Fi 下载」—— 门控条件变了,重新算一次。
-  Future<void> onWifiOnlyChanged() => _pump();
+  /// 这是**用户动作**,复查节拍一并回到起点(见 [_retryDelay])。
+  Future<void> onWifiOnlyChanged() {
+    _resetRetryBackoff();
+    return _pump();
+  }
+
+  /// 把退避拉回起点,并撤掉已经排着的那一次复查 —— 只重置数字不撤定时器的话,
+  /// 下一次仍按旧的、退避过的节拍响(而这里通常马上就要自己问一次)。
+  void _resetRetryBackoff() {
+    _retryDelay = checkInterval;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+  }
 
   @override
   void dispose() {
     _retryTimer?.cancel();
     super.dispose();
+  }
+
+  /// 排下一次复查。已经在等着就什么都不做 —— 从别处重复调进来不该把
+  /// 已经退避上去的节拍又拉回起点。
+  void _scheduleRetry() {
+    if (_retryTimer != null) return;
+    _retryTimer = Timer(_retryDelay, () {
+      _retryTimer = null;
+      final ceiling = checkInterval * _retryCeilingFactor;
+      _retryDelay = _retryDelay * 2 > ceiling ? ceiling : _retryDelay * 2;
+      unawaited(_pump());
+    });
   }
 
   // ---------------- 调度 ----------------
@@ -365,8 +409,8 @@ class DownloadManager extends ChangeNotifier {
     final next = _jobs.where((j) => j.state == DownloadState.queued).firstOrNull ??
         _jobs.where((j) => j.state.isWaiting).firstOrNull;
     if (next == null) {
-      _retryTimer?.cancel();
-      _retryTimer = null;
+      // 活儿干完了:下一次再卡住时从起始节拍重新数(见 [_retryDelay])。
+      _resetRetryBackoff();
       return;
     }
 
@@ -383,10 +427,13 @@ class DownloadManager extends ChangeNotifier {
         next.state = blocked;
         notifyListeners();
       }
-      _retryTimer ??= Timer.periodic(checkInterval, (_) => unawaited(_pump()));
+      _scheduleRetry();
       return;
     }
 
+    // 真的动起来了:下一次再卡住时从头数(退避只属于「一直在等」那段)。
+    // 顺手撤掉等网络时排下的复查 —— 下到一半它再响,会把节拍又翻一倍。
+    _resetRetryBackoff();
     await _run(next);
   }
 

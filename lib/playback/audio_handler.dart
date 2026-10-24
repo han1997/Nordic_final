@@ -128,6 +128,39 @@ LoopMode loopModeFor(AudioServiceRepeatMode repeatMode) => switch (repeatMode) {
       AudioServiceRepeatMode.group => LoopMode.off,
     };
 
+/// 取数节拍 —— **省电的那一处**:拉到高水位、歇到低水位,而不是一直小口小口地拉。
+///
+/// 不传这份配置时,交给 ExoPlayer 的是 `min = max = 50 秒`:缓冲一掉到 50 秒
+/// 以下就立刻接着拉,于是整首歌里那条连接**一直在响**(192 kbps 下就是每几秒
+/// 一次读)—— 无线电一秒钟都闲不下来,而手机上的电有一大块正花在它身上:
+/// 它需要一段**安静的间隙**才落得到低功耗态(蜂窝的 RRC 大约 10 秒无流量才回空闲)。
+///
+/// 这里改成:填到 [AndroidLoadControl.maxBufferDuration](75 秒)就停,掉到
+/// [AndroidLoadControl.minBufferDuration](45 秒)才再拉 —— 拉满一次约 30 秒的
+/// 音频,然后安静差不多同样长的时间。**低水位仍与原先的 50 秒同一档**,所以
+/// 「网络卡一下还顶不顶得住」没有变差;变的是那条连接有了呼吸的间隙。
+///
+/// 代价(如实记在 `docs/CHANGELOG.md` 第三十三轮):切歌时那段拉进来、还没听的
+/// 是白花的 —— 最坏从 50 秒变成 75 秒的音频(192 kbps 下约 +0.6 MB)。
+///
+/// [AndroidLoadControl.prioritizeTimeOverSizeThresholds] **必须显式写真**:
+/// just_audio 的 Dart 默认是 `false`(尺寸优先),而今天「不传配置」走的其实是
+/// ExoPlayer 自己的默认 `true`(时间优先)。省电要的正是「按时间填满」,
+/// 显式写死才不会悄悄换一套判据。
+///
+/// 这一份只发给 Android;iOS / 桌面忽略它(AVPlayer 自己管缓冲)。
+const nordicAudioLoadControl = AudioLoadConfiguration(
+  androidLoadControl: AndroidLoadControl(
+    minBufferDuration: Duration(seconds: 45),
+    maxBufferDuration: Duration(seconds: 75),
+    // 起播要等的那 2.5 秒、断流后要等的 5 秒 —— **保持默认**:这两条一动
+    // 就是「感觉变慢了」,与省电无关。
+    bufferForPlaybackDuration: Duration(milliseconds: 2500),
+    bufferForPlaybackAfterRebufferDuration: Duration(seconds: 5),
+    prioritizeTimeOverSizeThresholds: true,
+  ),
+);
+
 /// 启动后台播放服务并返回它的处理器。
 ///
 /// 必须用 [AudioService.init] 而不是直接 new —— 它在平台侧注册
@@ -197,7 +230,10 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
 
     // 播放器可以从外面递进来 —— 位置监察那条护栏(见 [didPlatformRewind])是冷流上
     // **唯一在切歌的那一支**,不接一个可摆布的播放器就测不到它,只能测那个纯函数。
-    _player = player ?? AudioPlayer();
+    // 外面递进来的那份不动:取数节拍(见 [nordicAudioLoadControl])是给真播放器
+    // 的,替身与它无关。
+    _player = player ??
+        AudioPlayer(audioLoadConfiguration: nordicAudioLoadControl);
 
     // 队列播完(走到最后一首的结尾)就停下,并把系统 UI 的状态
     // 从「播放中」改掉 —— 否则通知栏会一直挂着播放按钮。

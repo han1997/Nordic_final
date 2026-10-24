@@ -20,6 +20,36 @@ void main() {
   // 造处理器会碰 AudioSession 的平台通道,先起绑定。
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('取数节拍（省电）', () {
+    test('拉到高水位、歇到低水位 —— min 与 max 必须拉开', () {
+      final android = nordicAudioLoadControl.androidLoadControl!;
+
+      expect(android.minBufferDuration, const Duration(seconds: 45));
+      expect(android.maxBufferDuration, const Duration(seconds: 75));
+      // **这条是省电的关键**:两条相等(just_audio 与 ExoPlayer 的默认都是
+      // 50 / 50)时,缓冲一掉到水位以下就立刻接着拉 —— 整首歌里那条连接
+      // 一直在响,无线电没有一刻安静得下来。拉开才有「拉一段、歇一段」。
+      expect(
+        android.maxBufferDuration,
+        greaterThan(android.minBufferDuration),
+        reason: '没有迟滞就又回到「一直小口小口地拉」',
+      );
+      // 低水位与「不传配置」那条(50 秒)同一档:抗卡顿的余量没变小。
+      expect(android.minBufferDuration,
+          greaterThanOrEqualTo(const Duration(seconds: 40)));
+
+      // 起播与断流的等待保持默认 —— 这两条一动就是「感觉变慢了」。
+      expect(android.bufferForPlaybackDuration,
+          const Duration(milliseconds: 2500));
+      expect(android.bufferForPlaybackAfterRebufferDuration,
+          const Duration(seconds: 5));
+      // 与「不传配置」时 ExoPlayer 自己的默认一致(时间优先),
+      // 否则「按时间填满」会被尺寸判据顶掉(见 nordicAudioLoadControl 的说明)。
+      expect(android.prioritizeTimeOverSizeThresholds, isTrue);
+      expect(android.backBufferDuration, Duration.zero);
+    });
+  });
+
   group('转码档位', () {
     test('原音档不传任何转码参数', () {
       // 关键:传了 format 就等于转码,哪怕码率写得很高也是重编码过的一道。

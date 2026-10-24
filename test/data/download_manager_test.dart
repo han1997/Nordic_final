@@ -495,6 +495,62 @@ void main() {
 
       expect(job.state, DownloadState.done);
     });
+    test('等网络时的复查会退避 —— 后台挂一夜不是几千次唤醒', () async {
+      var probes = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(NetworkProbe.channelName),
+        (call) async {
+          if (call.method == 'status') probes++;
+          return 'metered';
+        },
+      );
+      final manager = managerWith(fn: transfer(<Uri>[]), wifiOnly: true);
+
+      final job = await manager.enqueue(DownloadRequest.song(song('s1')));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(job.state, DownloadState.waitingWifi);
+
+      final before = probes;
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final asked = probes - before;
+      // 不退避的话:20ms 一发,这 300ms 里还有 15 次。
+      expect(asked, greaterThan(0), reason: '退避不是停摆，还得接着问');
+      expect(asked, lessThan(8),
+          reason: '20ms 的基础节拍翻倍退避，这 300ms 里只该问几次');
+    });
+
+    test('活儿动过之后，下一次再卡住从起始节拍重新数', () async {
+      // **自己这一份 handler 要管到底**:[givenNetwork] 会把 handler 换掉,
+      // 换掉之后这个计数器就不再涨了(第一版就是这么错的)。
+      var answer = 'metered';
+      var probes = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(NetworkProbe.channelName),
+        (call) async {
+          if (call.method == 'status') probes++;
+          return answer;
+        },
+      );
+      final manager = managerWith(fn: transfer(<Uri>[]), wifiOnly: true);
+
+      // 第一轮:卡住 → 拨到 Wi-Fi → 下完(队列清空 = 节拍回到起点)。
+      await manager.enqueue(DownloadRequest.song(song('s1')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      answer = 'unmetered';
+      await manager.onWifiOnlyChanged();
+      await settle(manager);
+
+      // 第二轮:再卡住 —— 一开始就该是基础节拍。
+      answer = 'metered';
+      probes = 0;
+      final job = await manager.enqueue(DownloadRequest.song(song('s2')));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(job.state, DownloadState.waitingWifi);
+      expect(probes, greaterThan(2),
+          reason: '退避归零了，100ms 里该问上几次（没归零的话只有 1 次）');
+    });
   });
 
   /// 假 Dio:回一个**流式**响应。dio 的 download 要的是 ResponseBody,

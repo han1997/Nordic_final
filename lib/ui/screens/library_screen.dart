@@ -267,7 +267,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ],
           ),
           // 底部留白:内容要能滚到常驻区的上方,而不是被压在玻璃下面。
-          // 走 listInset 的两档口径(手机 150 / 宽屏 88),别在这里写死一个数。
+          // 走 listInset 的两档口径(手机 150 / 宽屏 94),别在这里写死一个数。
           Positioned(
             left: 0,
             right: 0,
