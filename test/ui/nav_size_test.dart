@@ -20,7 +20,7 @@ import 'package:nordic/ui/shell/nav_tabs.dart';
 void main() {
   /// 底部标签栏两侧的留白,也是每颗药丸的左右内缩 —— **两者必须同宽**
   /// (见下面「边距与缝同宽」那一条)。
-  const inset = 18.0;
+  const inset = NordicSpace.s5;
 
   Widget wrap(Widget child, Size size) => MaterialApp(
         theme: NordicTheme.build(NordicTokens.dark),
@@ -43,18 +43,24 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('托盘整体左右各留 28；标签栏 58；药丸 63 x 50', (tester) async {
+    testWidgets('托盘与内容栏同一条边线（各留 20）；标签栏 58；药丸 63 x 50', (tester) async {
       await pump(tester, const Size(390, 844));
 
-      // **托盘本身的宽**是这一条的主角(2026-10-24 用户「胶囊整体太宽」)。
-      // 原先左右只留 10,在 390 的屏上占 95%,读起来是一条贴着边的横栏。
+      // **托盘的左右缘**是这一条的主角(2026-10-24「胶囊整体太宽」那一串)。
+      // 先后试过 10(几乎满宽,读作贴边的横栏)与 28(比内容栏还窄,跟屏幕上
+      // 任何东西都对不齐);定在 20 —— 内容栏自己的左边距。
       final tray = tester.getRect(find.byType(NordicGlass));
       expect(tray.left, BottomStack.trayMargin, reason: '托盘左边留白');
       expect(390 - tray.right, BottomStack.trayMargin, reason: '托盘右边留白');
       expect(
+        BottomStack.trayMargin,
+        NordicSpace.s5,
+        reason: '托盘与内容栏同一条边线 —— 这一处的位置全靠这条对齐立住',
+      );
+      expect(
         tray.width,
-        lessThan(390 * 0.9),
-        reason: '整颗玻璃得浮起来，而不是 95% 的一条横栏',
+        lessThan(390 - 2 * 16),
+        reason: '整颗玻璃得浮起来，而不是贴着屏幕边的一条横栏',
       );
 
       // 标签栏是**那一行**(Row);药丸只是它 58 里居中摆着的 50。

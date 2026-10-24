@@ -47,13 +47,15 @@ class BottomStack extends StatelessWidget {
   /// 见 [listInset]。
   static const bottomInset = 150.0;
 
-  /// 托盘**整体**的左右留白。10 的时候在 390 的屏上占 95% —— 读起来是一条
-  /// 贴着边的横栏;28 才让整颗玻璃浮起来(2026-10-24 用户「胶囊整体太宽」,
-  /// 指的正是这一条,而不是里面那颗选中的药丸)。
+  /// 托盘**整体**的左右留白 —— **与内容栏同一条线**([NordicSpace.s5])。
   ///
-  /// 变窄之后 `.tabbar` 的边距必须跟着收(22 → 18),否则三颗药丸会被压到
-  /// 点按下限边上 —— 两条数是一起动的,见 [_TabBar]。
-  static const trayMargin = 28.0;
+  /// 这颗托盘的位置前后试过三版:10(几乎满宽,读作贴边的横栏)、28(比内容栏
+  /// 还窄,于是它跟屏幕上任何东西都对不齐 —— 那才是「不舒服」的来源)、
+  /// 20(就是内容栏自己的左边距)。20 之下托盘与上面每一条卡片同一条左缘线,
+  /// 一眼看得出是「这一列的最下面那一块」。
+  ///
+  /// 变窄之后 `.tabbar` 的边距必须跟着动,两条数是一起动的,见 [_TabBar]。
+  static const trayMargin = NordicSpace.s5;
 
   /// 带常驻区的页面里,列表底部该留多少(已含系统指示条)。
   /// **两档共用这一处口径,别在页面里自己拼数字**:
@@ -255,23 +257,23 @@ class _TabBar extends StatelessWidget {
       // 读着就是「块头大」(见原型 `.tabbar`)。
       height: 58,
       child: Padding(
-        // 18 的边距 + 每颗上 18 的内缩,与三颗之间的 36 缝是同一套数:靠托盘
-        // 那两条留白和药丸之间那道缝一样宽,三段于是看起来是均分的。
+        // 20 的边距 + 每颗上 20 的内缩,与三颗之间的 40 缝是同一套数 ——
+        // 而且 **20 就是内容栏的左边距**。整块托盘上上下下只有这一个数:
+        // 内容栏缩进 20、托盘左右留白 20、标签栏内衬 20、药丸内缩 20。
         //
-        // **托盘收窄之后这里必须跟着收**(22 → 18):托盘 334 减掉左右各 22
-        // 只剩 290,三等分再各减 44 就只剩 53 —— 药丸会被压到点按下限边上。
-        // 两条数是一起动的,别只改一边(见 [BottomStack.trayMargin])。
-        padding: const EdgeInsets.symmetric(horizontal: 18),
+        // **托盘与这里是一起动的**:托盘窄了而这里不动,三颗药丸就会被压到
+        // 点按下限边上(见 [BottomStack.trayMargin])。
+        padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
         child: Row(
           children: [
             for (final tab in AppTab.values)
               Expanded(
                 // 药丸按内容收窄,不再横跨三分之一屏 —— 原先那颗 118.7 x 54
-                // 是一块「板子」。62.7 才是真药丸的比例(62.7 / 50 = 1.25),
+                // 是一块「板子」。63.3 才是真药丸的比例(63.3 / 50 = 1.27),
                 // 「音乐库」两边各留 14。点按范围跟着窄,离 48 的下限仍有余量,
-                // 与原型 `.tabbar button` 的 `margin: 0 18px` 逐条对齐。
+                // 与原型 `.tabbar button` 的 `margin: 0 20px` 逐条对齐。
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
                   // 选中胶囊的视觉整体抽进 [NavTabButton](宽屏左竖栏共用一份,
                   // 见 shell/nav_tabs.dart);这里不带按下反馈,保持托盘的历史
                   // 手感 —— 行为与样式一个字都没改。
