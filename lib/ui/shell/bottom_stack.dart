@@ -47,6 +47,14 @@ class BottomStack extends StatelessWidget {
   /// 见 [listInset]。
   static const bottomInset = 150.0;
 
+  /// 托盘**整体**的左右留白。10 的时候在 390 的屏上占 95% —— 读起来是一条
+  /// 贴着边的横栏;28 才让整颗玻璃浮起来(2026-10-24 用户「胶囊整体太宽」,
+  /// 指的正是这一条,而不是里面那颗选中的药丸)。
+  ///
+  /// 变窄之后 `.tabbar` 的边距必须跟着收(22 → 18),否则三颗药丸会被压到
+  /// 点按下限边上 —— 两条数是一起动的,见 [_TabBar]。
+  static const trayMargin = 28.0;
+
   /// 带常驻区的页面里,列表底部该留多少(已含系统指示条)。
   /// **两档共用这一处口径,别在页面里自己拼数字**:
   ///   宽屏(>= 840) = 播放横条(88)+ 指示条;
@@ -72,8 +80,8 @@ class BottomStack extends StatelessWidget {
       bottom: 0,
       child: Padding(
         padding: EdgeInsets.only(
-          left: 10,
-          right: 10,
+          left: trayMargin,
+          right: trayMargin,
           bottom: MediaQuery.paddingOf(context).bottom + 10,
         ),
         child: RepaintBoundary(
@@ -247,20 +255,23 @@ class _TabBar extends StatelessWidget {
       // 读着就是「块头大」(见原型 `.tabbar`)。
       height: 58,
       child: Padding(
-        // 22 的边距 + 每颗上 22 的内缩,与三颗之间的 44 缝是同一套数:靠托盘
-        // 那两条留白和胶囊之间那道缝一样宽,三段于是看起来是均分的。
-        padding: const EdgeInsets.symmetric(horizontal: 22),
+        // 18 的边距 + 每颗上 18 的内缩,与三颗之间的 36 缝是同一套数:靠托盘
+        // 那两条留白和药丸之间那道缝一样宽,三段于是看起来是均分的。
+        //
+        // **托盘收窄之后这里必须跟着收**(22 → 18):托盘 334 减掉左右各 22
+        // 只剩 290,三等分再各减 44 就只剩 53 —— 药丸会被压到点按下限边上。
+        // 两条数是一起动的,别只改一边(见 [BottomStack.trayMargin])。
+        padding: const EdgeInsets.symmetric(horizontal: 18),
         child: Row(
           children: [
             for (final tab in AppTab.values)
               Expanded(
-                // 胶囊按内容收窄,不再横跨三分之一屏 —— 原先那颗 118.7 x 54
-                // 是一块「板子」。再收到 63.3:这才是真胶囊的比例
-                // (63.3 / 50 = 1.27),「音乐库」两边各留 14。点按范围跟着
-                // 窄一点,离 48 的下限仍有余量,与原型 `.tabbar button` 的
-                // `margin: 0 22px` 逐条对齐。
+                // 药丸按内容收窄,不再横跨三分之一屏 —— 原先那颗 118.7 x 54
+                // 是一块「板子」。62.7 才是真药丸的比例(62.7 / 50 = 1.25),
+                // 「音乐库」两边各留 14。点按范围跟着窄,离 48 的下限仍有余量,
+                // 与原型 `.tabbar button` 的 `margin: 0 18px` 逐条对齐。
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 22),
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
                   // 选中胶囊的视觉整体抽进 [NavTabButton](宽屏左竖栏共用一份,
                   // 见 shell/nav_tabs.dart);这里不带按下反馈,保持托盘的历史
                   // 手感 —— 行为与样式一个字都没改。

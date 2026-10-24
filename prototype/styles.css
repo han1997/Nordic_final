@@ -971,7 +971,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   position: absolute;
   left: 0; right: 0; bottom: 0;
   display: flex; flex-direction: column;
-  padding: 0 10px 10px;
+  /* 左右各 28(2026-10-24 用户「胶囊整体太宽」):
+     10 的留白在 390 的屏上只是 95% —— 读起来是一条贴着边的横栏;
+     28 才让整颗玻璃浮起来。**这是托盘的宽,不是里面那颗药丸的宽**
+     (那两颗数在 .tabbar 里,另算)。 */
+  padding: 0 28px 10px;
   z-index: 12;
 }
 
@@ -1036,17 +1040,19 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
      读着就是「块头大」。 */
   height: 58px;
   display: flex; align-items: center;
-  /* 22 的边距 + button 上 22 的 margin,与三颗之间的 44 缝是同一套数:
-     靠托盘那两条留白和胶囊之间那道缝一样宽,三段于是看起来是均分的。 */
-  padding: 0 22px;
+  /* 18 的边距 + button 上 18 的 margin,与三颗之间的 36 缝是同一套数:
+     靠托盘那两条留白和胶囊之间那道缝一样宽,三段于是看起来是均分的。
+     **托盘收窄之后这里必须跟着收**:托盘 334 减去左右各 22 只剩 290,
+     三等分再各减 44 就只剩 53 —— 药丸会被压到点按下限边上。 */
+  padding: 0 18px;
 }
 .tabbar button {
   flex: 1 1 0;
-  /* 胶囊按内容收窄,不再横跨三分之一屏 —— 原先那颗 118.7 × 54 是一块
-     「板子」。再收到 63.3:这才是真胶囊的比例(63.3 / 50 = 1.27),
-     「音乐库」两边各留 14。点按范围跟着窄一点,离 48 的下限仍有余量。 */
+  /* 药丸按内容收窄,不再横跨三分之一屏 —— 原先那颗 118.7 × 54 是一块
+     「板子」。62.7 才是真药丸的比例(62.7 / 50 = 1.25),「音乐库」
+     两边各留 14。点按范围跟着窄,离 48 的下限仍有余量。 */
   height: 50px;
-  margin: 0 22px;
+  margin: 0 18px;
   border-radius: var(--r-full);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   /* 图标与文字之间松一格,再把文字行高收到 1:内容整体长高到 38.5,
@@ -2314,9 +2320,13 @@ html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
 
   .railnav { display: flex; }
 
-  /* 托盘只剩播放横条:左缘从 104 起(与上面 .screen 的让位对齐),
+  /* 托盘只剩播放横条:左缘从 104 起(与上面 .screen 的让位对齐 —— 标题就在
+     104),右 / 下各 10。手机那颗浮着的 28 留白到这里**收回 10**:宽屏这一档
+     它不是一颗浮着的胶囊,而是一条横栏,该与屏幕边距对齐。
+     `padding-left: 0` 是因为 left 已经给了 104 —— 再叠一层内衬就落到 114
+     去了(这一处一直差着这 10,应用侧是 104),正好一并校正。
      标签栏、分隔线收掉,坞加长到 72、进度并进坞里。 */
-  .screen:has(> .railnav) .bottomstack { left: 104px; }
+  .screen:has(> .railnav) .bottomstack { left: 104px; padding: 0 10px 10px 0; }
   .tabbar, .tray-line { display: none; }
   .dock { height: 72px; padding: 0 12px; }
   .dock .cover { width: 48px; height: 48px; border-radius: 14px; }

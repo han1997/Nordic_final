@@ -14,13 +14,13 @@ import 'package:nordic/ui/shell/nav_tabs.dart';
 /// **为什么单开一条**:这一组数字原先没有任何用例守着 —— 改前 / 改后都是
 /// 506 全绿,也就是说谁把它们顺手改回去,测试一声都不会出。这一轮把它们钉住。
 ///
-/// 钉的是**关系**,不是那几个绝对像素:胶囊比格子窄 44(左右各 22)、
+/// 钉的是**关系**,不是那几个绝对像素:托盘左右各留 28、药丸比格子窄 36、
 /// 边距与缝同宽、竖栏面板贴合内容且竖直居中。绝对数会随字号与设备宽漂移,
 /// 关系才是「好看」这几版真正定下来的东西。
 void main() {
-  /// 底部标签栏两侧的留白,也是每颗胶囊的左右内缩 —— **两者必须同宽**
+  /// 底部标签栏两侧的留白,也是每颗药丸的左右内缩 —— **两者必须同宽**
   /// (见下面「边距与缝同宽」那一条)。
-  const inset = 22.0;
+  const inset = 18.0;
 
   Widget wrap(Widget child, Size size) => MaterialApp(
         theme: NordicTheme.build(NordicTokens.dark),
@@ -43,10 +43,21 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('标签栏 58；胶囊 63 x 50，比自己的格子窄 44', (tester) async {
+    testWidgets('托盘整体左右各留 28；标签栏 58；药丸 63 x 50', (tester) async {
       await pump(tester, const Size(390, 844));
 
-      // 标签栏是**那一行**(Row);胶囊只是它 58 里居中摆着的 50。
+      // **托盘本身的宽**是这一条的主角(2026-10-24 用户「胶囊整体太宽」)。
+      // 原先左右只留 10,在 390 的屏上占 95%,读起来是一条贴着边的横栏。
+      final tray = tester.getRect(find.byType(NordicGlass));
+      expect(tray.left, BottomStack.trayMargin, reason: '托盘左边留白');
+      expect(390 - tray.right, BottomStack.trayMargin, reason: '托盘右边留白');
+      expect(
+        tray.width,
+        lessThan(390 * 0.9),
+        reason: '整颗玻璃得浮起来，而不是 95% 的一条横栏',
+      );
+
+      // 标签栏是**那一行**(Row);药丸只是它 58 里居中摆着的 50。
       final row = tester.getRect(
         find.ancestor(
           of: find.byType(NavTabButton).first,
@@ -59,21 +70,23 @@ void main() {
         for (var i = 0; i < AppTab.values.length; i++)
           tester.getRect(find.byType(NavTabButton).at(i)),
       ];
-      expect(pills[0].height, 50, reason: '胶囊高');
-
-      // 托盘玻璃的**内缘**是量留白与缝的基准(Row 自己已经在标签栏那层
-      // 内缩里了,拿它当基准会少算一份)。
-      final tray = tester.getRect(find.byType(NordicGlass));
+      expect(pills[0].height, 50, reason: '药丸高');
 
       // 左右各 inset 的边距 + 每颗左右各 inset 的内缩 = 8 x inset,
-      // 剩下的三等分就是胶囊宽。
-      expect(pills[0].width, (tray.width - inset * 8) / 3);
+      // 剩下的三等分就是药丸宽。(三等分除不尽,所以按容差比。)
+      expect(pills[0].width, closeTo((tray.width - inset * 8) / 3, 0.01));
       expect(
         pills[0].width,
         lessThan(pills[0].height * 1.5),
-        reason: '真胶囊的比例 —— 原先那颗是横跨三分之一屏的一块「板子」',
+        reason: '真药丸的比例 —— 原先那颗是横跨三分之一屏的一块「板子」',
       );
-      expect(pills[0].width, greaterThanOrEqualTo(48), reason: '点按下限');
+      // **托盘变窄最容易踩的一脚**:药丸跟着被压到点按下限附近。两条数
+      // (trayMargin 与这里的 inset)是一起动的,所以这一条守着它们别脱钩。
+      expect(
+        pills[0].width,
+        greaterThanOrEqualTo(60),
+        reason: '托盘收窄不能把药丸挤没 —— 点按区（target 48）之外还要留得住字',
+      );
 
       // 边距与缝同宽:靠托盘那两条留白与三颗之间那道缝是同一个数,
       // 三段于是看起来是均分的。(三等分除不尽,所以按容差比。)
