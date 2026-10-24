@@ -247,19 +247,20 @@ class _TabBar extends StatelessWidget {
       // 读着就是「块头大」(见原型 `.tabbar`)。
       height: 58,
       child: Padding(
-        // 16 的边距 + 每颗上 16 的内缩,与三颗之间的 32 缝是同一套数:靠托盘
+        // 22 的边距 + 每颗上 22 的内缩,与三颗之间的 44 缝是同一套数:靠托盘
         // 那两条留白和胶囊之间那道缝一样宽,三段于是看起来是均分的。
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 22),
         child: Row(
           children: [
             for (final tab in AppTab.values)
               Expanded(
-                // 胶囊按内容收窄,不再横跨整整三分之一屏 —— 原先那颗
-                // 118.7 x 54 是一块「板子」,不是胶囊。点按范围跟着窄一点
-                // (仍有 85 x 50,余量够),与原型 `.tabbar button` 的
-                // `margin: 0 16px` 逐条对齐。
+                // 胶囊按内容收窄,不再横跨三分之一屏 —— 原先那颗 118.7 x 54
+                // 是一块「板子」。再收到 63.3:这才是真胶囊的比例
+                // (63.3 / 50 = 1.27),「音乐库」两边各留 14。点按范围跟着
+                // 窄一点,离 48 的下限仍有余量,与原型 `.tabbar button` 的
+                // `margin: 0 22px` 逐条对齐。
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 22),
                   // 选中胶囊的视觉整体抽进 [NavTabButton](宽屏左竖栏共用一份,
                   // 见 shell/nav_tabs.dart);这里不带按下反馈,保持托盘的历史
                   // 手感 —— 行为与样式一个字都没改。

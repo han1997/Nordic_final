@@ -1036,16 +1036,17 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
      读着就是「块头大」。 */
   height: 58px;
   display: flex; align-items: center;
-  /* 16 的边距 + button 上 16 的 margin,与三颗之间的 32 缝是同一套数:
+  /* 22 的边距 + button 上 22 的 margin,与三颗之间的 44 缝是同一套数:
      靠托盘那两条留白和胶囊之间那道缝一样宽,三段于是看起来是均分的。 */
-  padding: 0 16px;
+  padding: 0 22px;
 }
 .tabbar button {
   flex: 1 1 0;
-  /* 胶囊按内容收窄,不再横跨整整三分之一屏 —— 原先那颗 118.7 × 54 是
-     一块「板子」,不是胶囊。点按范围跟着窄一点(仍有 85 × 50,余量够)。 */
+  /* 胶囊按内容收窄,不再横跨三分之一屏 —— 原先那颗 118.7 × 54 是一块
+     「板子」。再收到 63.3:这才是真胶囊的比例(63.3 / 50 = 1.27),
+     「音乐库」两边各留 14。点按范围跟着窄一点,离 48 的下限仍有余量。 */
   height: 50px;
-  margin: 0 16px;
+  margin: 0 22px;
   border-radius: var(--r-full);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   /* 图标与文字之间松一格,再把文字行高收到 1:内容整体长高到 38.5,
@@ -2243,14 +2244,19 @@ html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
 /* ---- 左竖栏 —— 宽屏的常驻导航 ----
    默认 display:none(不占布局);>= 840 的容器查询把它翻出来。
    铺不铺由 app.js 的 shell(opts.rail) 点名 —— 播放 / 歌词 / 表单页连节点都没有。
-   材质与托盘同一层玻璃、同一套悬浮习语(左 / 上 10px、r-xl、贴合内容)。 */
+   材质与托盘同一层玻璃、同一套悬浮习语(左缘 10px、竖直居中、r-xl、贴合内容)。 */
 .railnav {
   display: none;
   position: absolute;
-  /* 只给 left / top,不给 bottom:面板按三颗按钮的高度自己收口。
-     原先 top:10 + bottom:10 是一根通到屏幕底的柱子,而柱子里只有三件
-     东西 —— 底下七成是一整片空玻璃,那正是这一处读着「笨」的来源。 */
-  left: 10px; top: 10px;
+  /* 左缘、竖直居中。两条都各有来历:
+     - **不撑满**:原先 top:10 + bottom:10 是一根通到屏幕底的柱子,
+       柱子里只有三件东西,底下七成是一整片空玻璃 —— 「笨」出在这里;
+     - **也不贴左上角**(2026-10-24 用户指出「位置不太好」):贴角的话
+       面板底下那一列全空,而播放横条又从 104 起,左下角就是一块没用的
+       空档。居中之后上下留白对称,读作「一颗浮着的胶囊」,而且不依赖
+       播放横条在不在场。
+     面板高 180,比可用高度矮得多,不必担心居中会溢出。 */
+  left: 10px; top: 50%; transform: translateY(-50%);
   width: 84px;
   flex-direction: column;
   align-items: center;
