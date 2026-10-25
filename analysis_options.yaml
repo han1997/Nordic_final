@@ -26,3 +26,10 @@ linter:
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
+
+analyzer:
+  # third_party/ 是按固定版本放进仓库的上游源码(见 third_party/README.md),
+  # 不是我们的代码 —— 用我们的 lint 口径要求它,只会让 `flutter analyze` 常年
+  # 挂着几条改不动的提示(改了就跟上游分岔,升级时反而更难比对)。
+  exclude:
+    - third_party/**

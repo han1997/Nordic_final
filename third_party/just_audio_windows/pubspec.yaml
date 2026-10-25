@@ -1,0 +1,26 @@
+name: just_audio_windows
+description: Windows platform implementation of just_audio. Implemented using WinRT MediaPlayer
+version: 0.2.3+nordic.1
+homepage: https://github.com/bdlukaa/just_audio_windows/tree/master/just_audio_windows
+# **按固定版本放进仓库的副本**(见 third_party/README.md)。取的是上游
+# 501f2dd(2026-09-06),比 pub 上的 0.2.3 多六处修复,其中 #63/#65 就是
+# Windows 上「点了没反应 / 放着放着没声」的两个成因。源码未改一个字节。
+
+environment:
+  sdk: ">=2.16.1 <4.0.0"
+  flutter: ">=2.5.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^1.0.0
+
+flutter:
+  plugin:
+    platforms:
+      windows:
+        pluginClass: JustAudioWindowsPlugin

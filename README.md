@@ -43,6 +43,12 @@ lib/
 tool/build.sh 是构建入口 —— 它设好引擎产物镜像再调 flutter
 ```
 
+`third_party/` 里是**按固定版本放进仓库的两个依赖**(`just_audio` 与
+`just_audio_windows` 的副本,`pubspec.yaml` 用 `path:` 指着它们)。它们不是我们的
+代码:搬进来只为把上游还没发布的 Windows 缺陷修掉(边听边缓存在 Windows 上从来没
+成功过、点了没反应 / 放着放着没声)。理由、两处补丁的位置与**升级时要做的事**都在
+`third_party/README.md`,别只留着目录。
+
 界面已覆盖原型全部 21 屏:
 
 > 服务器与线路 → 首页(正在播放 / 最近添加 / 最近播放 / 最常播放)→

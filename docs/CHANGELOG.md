@@ -2671,3 +2671,84 @@ Windows release 重建后实拍核对:胶囊居中 190;转码档下播放页恢�
    会不会卡,得上手。
 3. **连上 Wi-Fi 后最多半分钟的延迟**合不合手感 —— 队列不会丢,但「怎么还没开始」
    这一点只有人知道。
+## 第三十四轮:两个 Windows 依赖的修复,按固定版本搬进仓库(2026-10-25)
+
+Windows 真机日志里攒下来的两笔旧账,这一轮**在依赖上**收掉:把两个还没发布修复的
+上游依赖搬进仓库、钉住版本,补丁直接打在副本里。版本 1.0.58+59。
+
+### 一、just_audio_windows:0.2.3 之后的六处修复
+
+pub 上最新仍是 `0.2.3`(2026-04-04),而 Windows 的几处实伤在这之后才修。这一轮
+取上游 `501f2dd`(2026-09-06)整份放进 `third_party/just_audio_windows`,改版本号
+为 `0.2.3+nordic.1`,**源码未改一个字节**。每一条修复对号入座到之前真机日志里的
+症状:
+
+1. **#63** WinRT 回调线程直接往平台通道写事件 —— Flutter 引擎逐条报
+   `... channel sent a message from native to Flutter on a non-platform thread`,
+   按引擎自己的说法会「丢消息或崩溃」。上游改成消息窗口派发到平台线程。
+2. **#65** 换源过程中 MediaPlaybackState 短暂回到 `None`,上游据此报 `idle`;
+   `just_audio` 把 `idle` 理解成「平台没了」,于是 `_setPlatformActive(false)`
+   把**还在装载的那一次**打断(`PlayerInterruptedException: Loading interrupted`)——
+   表现就是「点了没反应 / 放着放着没声了」。上一轮在流程侧做的复查退避治的是
+   另一面,这一轮把根子换了。
+3. **#66** 时长还没报出来就报 `completed`,进度条 / 循环会拿半截的事实当真。
+4. **#62** `load` 抛的 C++ 异常直接终结进程,现在变成一个 Dart 错误。
+5. **#61** 默认接管系统媒体键 / SMTC 弹层,系统侧的操作会绕过 Dart 改原生状态。
+6. **#64** 只在 debug 构建里逐条打方法名,`BufferingProgress` 只警告一次。
+
+### 二、just_audio:LockCachingAudioSource 的两处补丁
+
+搬 `just_audio 0.10.6` 整份进 `third_party/just_audio`(版本号
+`0.10.6+nordic.1`),补丁两处直接打在 `lib/just_audio.dart`,都以 `**Nordic 补丁**`
+起头:
+
+1. **下完先关写句柄、再改名,并重试三次**。上游的 `onDone` 从不关 sink(原注释:
+   TODO: Should close sink after done, but it throws an error)。POSIX 上「对打开着的
+   文件改名」合法,所以 Android / iOS / Linux 一直没事;Windows 上是
+   ERROR_SHARING_VIOLATION(errno 32),于是**每一首**放完都抛
+   `PathAccessException`,`.part` 永远变不成正式文件 —— 真机缓存目录里 97 个文件
+   45 个 `.part`、0 个完整文件:「听过的歌留一份」在 Windows 上从未生效,顺带远端
+   seek 也永远等不到完整那一份。`onError` 里同样先放句柄再删 `.part`(Windows 上
+   留着句柄连删除都失败)。
+2. **长度未知的响应自己给个结束信号**(上游 PR #1602,未发布)。`_proxyHandlerForSource`
+   里那句 `headers.clear()` 把 `chunkedTransferEncoding` 也清了,于是
+   `contentLength = -1` 的响应既无长度也无分帧,客户端只能等到连接关闭;Media
+   Foundation 等不到,就是「放到一半不动 / Item error」。冷转码流
+   (`Accept-Ranges: none` + chunked)走的正是这条路 —— 对这类响应设
+   `persistentConnection = false`,让连接关闭本身充当 body 结束。
+
+### 三、怎么放进来的
+
+- 两条依赖在 `pubspec.yaml` 里从 `^0.10.6` / `^0.2.3` 改成 `path: third_party/...`;
+  `flutter pub get` 之后 `pubspec.lock` 的这两格也换成 path 源。
+- 理由、补丁位置、**升级时要做的事**(覆盖新版本 → 重放两处补丁 → 跑回归)都记在
+  `third_party/README.md`,别只留着目录。
+- `analysis_options.yaml` 把 `third_party/**` 排除出分析 —— 那是上游源码,用我们的
+  lint 口径去要求它只会让 `flutter analyze` 常年挂几条改不动的提示。
+
+### 四、验证
+
+- 静态检查干净(`flutter analyze` 0 issue)。
+- 全量测试 **521 passed / 18 skipped / 0 failed**(上一轮 520 + 1 条新用例)。
+- 新增回归一条:`test/playback/lock_caching_rename_test.dart`。它不测「有没有抛
+  异常」,而是测**那一份完不完整、能不能直接用**:下完 `.part` 必须变成正式文件、
+  字节逐字相同、再要一次时读本机那份而不是重新下一遍。在 Windows 上把补丁临时
+  摘掉(`onDone` 里那笔 `sink.close()` 拿掉)跑过一遍:改名照旧抛 errno 32,用例
+  当场红 —— 确认这条会抓住升级时忘重放补丁的人。
+- 三个 release 包与 Windows zip 都已重建、签名与版本校验通过。
+
+### 五、产物
+
+| `build/dist/Nordic-1.0.58+59-arm64-v8a-release.apk` | 26.4 MB |
+| `build/dist/Nordic-1.0.58+59-armeabi-v7a-release.apk` | 22.4 MB |
+| `build/dist/Nordic-1.0.58+59-x86_64-release.apk` | 28.8 MB |
+| `build/dist/Nordic-1.0.58+59-windows-x64.zip` | 13.0 MB |
+
+### 这一轮没验到的(只有人或真机能看)
+
+1. **Windows 上「听过的歌留一份」第一次真的成立**:补丁在单测里把「改名成功」的
+   条件验到了(字节逐字相同、不再重新下载),但「真机缓存目录里开始出现完整文件、
+   隔天还有、淘汰按 mtime 走」这整条链路还要在 Windows 上听几首才数得出来。
+2. **#63 / #65 修完之后 Windows 的操控感**:「点了没反应 / 放着放着没声」在日志里
+   对得上号,但回到 Windows 桌面上**长时间连着播**、中途切歌换档,是不是真的不再
+   犯 —— 得上手。

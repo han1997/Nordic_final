@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.57+58
+version: 1.0.58+59
 
 environment:
   sdk: ^3.12.1
@@ -33,7 +33,13 @@ dependencies:
 
   # 模板自带的 cupertino_icons 已移除:全仓库没有一处 CupertinoIcons 引用,
   # 留着它只会把 CupertinoIcons.ttf 那约 257 KB 白白打进包里。
-  just_audio: ^0.10.6
+  # **按固定版本放进仓库的副本**(third_party/just_audio)，不是 pub 上的
+  # `^0.10.6`。0.10.6 的 `LockCachingAudioSource` 写完缓存不关句柄就改名，
+  # POSIX 上无所谓、Windows 上是 errno 32 —— 于是每一首放完都抛异常，
+  # `.part` 永远变不成正式文件（缓存从未生效、远端 seek 也永远等不到）。
+  # 两处补丁见 third_party/README.md 与 lib/just_audio.dart 里的 `Nordic 补丁`。
+  just_audio:
+    path: third_party/just_audio
   audio_service: ^0.18.19
   audio_session: ^0.2.4
   dio: ^5.11.1
@@ -56,7 +62,12 @@ dependencies:
   #
   # 不会影响 Android / iOS:它没有 Dart 代码,`platforms` 只有 windows,
   # 别的平台构建根本不会编它。
-  just_audio_windows: ^0.2.3
+  # **同上，也是仓库内的固定版本副本**（third_party/just_audio_windows）：
+  # pub 上最新仍是 0.2.3，缺上游 #61~#66 六处修复，其中 #63（WinRT 回调线程
+  # 直接写平台通道）与 #65（换源途中误报 idle，装载被打断）就是真机日志里
+  # 「点了没反应 / 放着放着没声」的成因。
+  just_audio_windows:
+    path: third_party/just_audio_windows
   provider: ^6.1.5+1
   crypto: ^3.0.7
   meta: ^1.18.0

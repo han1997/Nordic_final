@@ -56,6 +56,18 @@
   后面会拼出一个**前段重复**的文件 —— 它照样能播,只是从中间某一处开始错位。
   进度上报要用**累计口径**:续传时 dio 的 `received` 只是这一次收到的字节,不含
   半截里已有的那部分,不补偏移会让进度条先退再爬。
+- **两个依赖是按固定版本放进仓库的副本,不跟 `^` 约束**(`third_party/`,
+  `pubspec.yaml` 里是 `path:`)。搬进来只为一个原因:`just_audio` 的
+  `LockCachingAudioSource` 下完**不关写句柄就改名** —— 在 Android / iOS / Linux 上
+  「对打开着的文件改名」合法,所以上游那个 TODO 一直没被发现;Windows 上是
+  ERROR_SHARING_VIOLATION(errno 32),于是**每一首**放完都抛
+  `PathAccessException`,`.part` 永远变不成正式文件:「听过的歌留一份」在 Windows 上
+  从来没生效过,远端 seek 也因此永远等不到完整那一份。`just_audio_windows` 0.2.3
+  则缺上游 #63 / #65 等六处修复 —— #63(换源被误报成 `idle`、装载被打断)就是
+  「点了没反应 / 放着放着没声」。**别为了 pubspec 整齐改回 `^0.10.6` / `^0.2.3`**:
+  改回去之后一切照常,只是这两种毛病一起回来,而它们在屏幕上不响。升级的做法
+  (覆盖新版本 → 重放两处 `**Nordic 补丁**` → 跑
+  `test/playback/lock_caching_rename_test.dart`)写在 `third_party/README.md`。
 - **等网络的复查会退避**(`download_manager` 的 `checkInterval` 只是**起点**,
   实际节拍每空转一次翻一倍、封顶八倍):「等 Wi-Fi」可以等上几个小时(白天在流量
   下挂着、晚上回家才连上),而每 4 秒问一次平台「现在是什么网」就是「待机也在耗电」
