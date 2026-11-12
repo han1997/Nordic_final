@@ -425,6 +425,80 @@ void main() {
       ]);
       expect(retargets, 1);
     });
+
+    test('冷启动从上次走通的那条起步', () async {
+      final state = await buildState(
+        payloadDio([], libraryFixtures()),
+        root,
+        server: const ServerConfig(
+          id: 's1',
+          name: '客厅 Navidrome',
+          kind: ServerKind.navidrome,
+          username: 'u',
+          lastRouteId: 'wan',
+          routes: [
+            ServerRoute(id: 'lan', name: '局域网', url: 'http://nas.example.com'),
+            ServerRoute(id: 'wan', name: '外网', url: 'http://wan.example.com'),
+          ],
+        ),
+      );
+
+      // 列表首条是 lan;没有记住的起点时会白等一次超时。
+      expect(state.activeRoute?.id, 'wan');
+    });
+
+    test('真实请求里故障切换：界面、落盘、播放源一起跟过去', () async {
+      final hits = <String>[];
+      final dio = Dio(BaseOptions(validateStatus: (_) => true));
+      dio.interceptors.add(InterceptorsWrapper(
+        onRequest: (options, interceptor) {
+          final host = options.uri.host;
+          hits.add(host);
+          if (host == 'nas.example.com') {
+            interceptor.reject(DioException(
+              requestOptions: options,
+              type: DioExceptionType.connectionError,
+              message: '局域网连不上',
+            ));
+            return;
+          }
+          interceptor.resolve(Response<String>(
+            requestOptions: options,
+            statusCode: 200,
+            data: jsonEncode(_ok({'playlists': {'playlist': []}})),
+          ));
+        },
+      ));
+
+      final state = await buildState(
+        dio,
+        root,
+        server: const ServerConfig(
+          id: 's1',
+          name: '客厅 Navidrome',
+          kind: ServerKind.navidrome,
+          username: 'u',
+          routes: [
+            ServerRoute(id: 'lan', name: '局域网', url: 'http://nas.example.com'),
+            ServerRoute(id: 'wan', name: '外网', url: 'http://wan.example.com'),
+          ],
+        ),
+      );
+      var retargets = 0;
+      state.onRouteChanged = () async => retargets++;
+
+      await state.repository!.playlists();
+      // 落盘那一笔是 unawaited 的 —— 给它一个微任务。
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(hits, ['nas.example.com', 'wan.example.com']);
+      expect(state.activeRoute?.id, 'wan');
+      expect(state.pings['lan']?.isOk, isFalse, reason: '失败的那条当场显示不可用');
+      expect(retargets, 1, reason: '正在放的流也得换到新线路');
+      final saved = await ConfigStore.open();
+      expect(saved.loadServer()?.lastRouteId, 'wan',
+          reason: '下次冷启动直接从这条起步');
+    });
   });
 
   group('首页那几条货架', () {

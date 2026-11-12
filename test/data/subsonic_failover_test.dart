@@ -33,6 +33,10 @@ void main() {
           },
         ),
       );
+      final activated = <String>[];
+      final health = <String, String?>{};
+      client.onActiveRouteChanged = activated.add;
+      client.onRouteHealth = (id, error) => health[id] = error;
 
       final body = await client.call('ping');
 
@@ -40,6 +44,9 @@ void main() {
       expect(hits, ['http://lan.invalid', 'http://wan.example.com']);
       // 切换后生效线路要跟过去,下次请求直接走能用的那条。
       expect(client.activeRoute?.id, 'wan');
+      expect(activated, ['wan'], reason: '切换要通知状态层，否则界面与播放源都还指着旧的');
+      expect(health['lan'], isNotNull, reason: '失败的那条当场记成不可用');
+      expect(health['wan'], isNull, reason: '顶上来的那条是通的');
     });
 
     test('认证失败不换线 —— 换到哪条都是同样的密码错', () async {

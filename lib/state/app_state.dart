@@ -66,6 +66,12 @@ class AppState extends ChangeNotifier {
   MusicSource? _repository;
   MusicSource? get repository => _repository;
 
+  /// 当前生效线路的缓存 —— 用来判断「真的换了」才重载播放源。
+  ///
+  /// 不能每次现取现比:`SubsonicClient.activeRoute` 会跟着测速 / 故障切换变,
+  /// 而状态层需要一个「上一次告诉界面的是哪条」的锚点。
+  String? _activeRouteId;
+
   ServerConfig? _server;
   ServerConfig? get server => _server;
 
@@ -88,7 +94,24 @@ class AppState extends ChangeNotifier {
   /// 存储(前者 SharedPreferences,后者系统密钥库),各有各的失败可能,
   /// 分开之后「配置在但密码读不出来」这种情况有地方表达。
   void attachRepository(ServerConfig config, String password) {
-    _repository = sourceFor(
+    _repository = _openRepository(config, password);
+    notifyListeners();
+  }
+
+  /// 建音源,并把线路的回调接上。
+  ///
+  /// **回调必须在第一次请求之前接好**:`onActiveRouteChanged` 负责把「上次走
+  /// 哪条」落盘(见 [ServerConfig.lastRouteId]),`onRouteHealth` 负责让
+  /// 线路面板上的「不可用」在真实请求失败时就出现,而不是等下一次手动测速。
+  MusicSource _openRepository(ServerConfig config, String password) {
+    // 换音源(改配置 / 启动接管)时先摘掉旧那一份的回调:还在路上的请求
+    // 完成之后不该往**新服务器**的线路表里写健康结果。
+    final old = _repository;
+    if (old != null) {
+      old.connection.onActiveRouteChanged = null;
+      old.connection.onRouteHealth = null;
+    }
+    final repository = sourceFor(
       config: config,
       password: password,
       autoRoute: configStore.loadAutoRoute(),
@@ -96,7 +119,12 @@ class AppState extends ChangeNotifier {
       // 封面的本机优先:下过的封面断网也看得见(见 MusicSource.coverUri)。
       localCover: downloadManager.coverPathForArt,
     );
-    notifyListeners();
+    final connection = repository.connection;
+    connection.onActiveRouteChanged = (_) => _syncActiveRoute();
+    connection.onRouteHealth = _noteRouteHealth;
+    // 起点(上次走通的那条 / 列表首条)先记下来,免得第一请求就被当成「换了」。
+    _activeRouteId = connection.activeRoute?.id;
+    return repository;
   }
 
   /// 首次配置 / 修改配置:建仓库、测速、持久化。
@@ -132,14 +160,7 @@ class AppState extends ChangeNotifier {
     }
 
     _server = config;
-    _repository = sourceFor(
-      config: config,
-      password: password,
-      autoRoute: configStore.loadAutoRoute(),
-      dio: _dio,
-      // 封面的本机优先:下过的封面断网也看得见(见 MusicSource.coverUri)。
-      localCover: downloadManager.coverPathForArt,
-    );
+    _repository = _openRepository(config, password);
     notifyListeners();
 
     // 顺手测一次速并把择优结果定下来,这样第一次进音乐库就走最快那条。
@@ -156,6 +177,8 @@ class AppState extends ChangeNotifier {
     // (缓存槽位只按「曲目 id + 档位」算,两台服务器上 id 撞上就会播错歌)。
     await mediaCache.clear();
     await _resetServerScopedState();
+    _repository?.connection.onActiveRouteChanged = null;
+    _repository?.connection.onRouteHealth = null;
     _server = null;
     _repository = null;
     _library = LibrarySnapshot.empty;
@@ -188,6 +211,8 @@ class AppState extends ChangeNotifier {
       // 删不掉只是留着占地方(下一次写会盖掉它)。
     }
     _pings = const {};
+    _pingedAt = null;
+    _activeRouteId = null;
     _fromCache = false;
     _cachedAt = null;
     _refreshError = null;
@@ -206,7 +231,6 @@ class AppState extends ChangeNotifier {
     final current = _server;
     if (current == null) return;
 
-    final before = activeRoute;
     final updated = current.copyWith(routes: routes);
     await configStore.saveServer(updated);
     _server = updated;
@@ -217,7 +241,7 @@ class AppState extends ChangeNotifier {
       for (final entry in _pings.entries)
         if (ids.contains(entry.key)) entry.key: entry.value,
     };
-    _routeMaybeChanged(before);
+    _syncActiveRoute();
     notifyListeners();
   }
 
@@ -233,18 +257,18 @@ class AppState extends ChangeNotifier {
     final repo = _repository;
     if (repo == null) return const {};
 
-    final before = activeRoute;
     _pinging = true;
     notifyListeners();
     try {
       _pings = await repo.connection.pingAll();
+      _pingedAt = DateTime.now();
     } finally {
       // 「按下去要等一下才有结果」这个节奏得对上 —— 原型里同样如此
       // (`ping-all` 故意等 800ms 再回),否则个位数毫秒的往返谁也看不见。
       await Future<void>.delayed(const Duration(milliseconds: 600));
       _pinging = false;
       // 线路可用性变了,当前生效线路也可能变 —— 界面上的延迟数字要跟着更新。
-      _routeMaybeChanged(before);
+      _syncActiveRoute();
       notifyListeners();
     }
     return _pings;
@@ -363,15 +387,72 @@ class AppState extends ChangeNotifier {
   /// 没人填(测试 / 没有播放层)就是空操作。
   Future<void> Function()? onRouteChanged;
 
-  void _routeMaybeChanged(ServerRoute? before) {
-    final after = activeRoute;
-    if (before?.id == after?.id) return;
+  /// 生效线路真变了才做三件事:落盘起点、让正在放的那一首换线、通知界面。
+  ///
+  /// 原先三个入口(`updateRoutes` / `refreshRouteLatency` / `setAutoRoute`)
+  /// 各自拿一个 `before` 比一次,客户端在真实请求里故障切换时却没人管 ——
+  /// 界面还显示旧线路,正在放的流也还指着那条断掉的地址。现在统一走这里:
+  /// 客户端通过 [ServerConnection.onActiveRouteChanged] 也会回到同一个入口。
+  void _syncActiveRoute() {
+    final after = activeRoute?.id;
+    if (after == _activeRouteId) return;
+    _activeRouteId = after;
+    if (after != null) unawaited(_rememberActiveRoute(after));
     final retarget = onRouteChanged;
     if (retarget != null) unawaited(retarget());
+    notifyListeners();
+  }
+
+  /// 记住「这次走通的是哪条」—— 冷启动直接从那一条起步。
+  ///
+  /// 只落盘一个 id:测速数字与可用性是会过期的,存下来反而会让下一次启动
+  /// 相信一个几小时前的结论。id 不对 / 线路已删时,客户端的 `initialRouteId`
+  /// 会忽略它。
+  Future<void> _rememberActiveRoute(String routeId) async {
+    final current = _server;
+    if (current == null || current.lastRouteId == routeId) return;
+    if (!current.routes.any((r) => r.id == routeId)) return;
+    final updated = current.copyWith(lastRouteId: routeId);
+    _server = updated;
+    try {
+      await configStore.saveServer(updated);
+    } catch (_) {
+      // 落盘失败只影响下一次冷启动的起点,不该把当前这一趟弄红。
+    }
+  }
+
+  /// 真实请求回来了:这条线路刚才通 / 不通。
+  ///
+  /// 不动已有的延迟数字(那是测速量的,别拿一次大载荷的耗时去污染它),
+  /// 只在通断变化时更新。失败的那条当场挂「不可用」,不必等下一次手动测速。
+  void _noteRouteHealth(String routeId, String? error) {
+    final old = _pings[routeId];
+    if (error == null) {
+      if (old == null || old.isOk) return;
+      _pings = {
+        ..._pings,
+        routeId: RoutePing(routeId: routeId, latency: old.latency),
+      };
+    } else {
+      if (old != null && old.error == error) return;
+      _pings = {
+        ..._pings,
+        routeId: RoutePing(
+          routeId: routeId,
+          latency: old?.latency,
+          error: error,
+        ),
+      };
+    }
+    notifyListeners();
   }
 
   Map<String, RoutePing> _pings = const {};
   Map<String, RoutePing> get pings => _pings;
+
+  /// 上一次批量测速的时刻。界面用它说「N 分钟前测速」。
+  DateTime? _pingedAt;
+  DateTime? get pingedAt => _pingedAt;
 
   ServerRoute? get activeRoute => _repository?.connection.activeRoute;
 
@@ -449,7 +530,12 @@ class AppState extends ChangeNotifier {
     final repo = _repository;
     if (repo == null) return;
 
-    if (silent && _fromCache && _cachedAt != null && DateTime.now().difference(_cachedAt!) < _cacheFresh) return;
+    if (silent &&
+        _fromCache &&
+        _cachedAt != null &&
+        DateTime.now().difference(_cachedAt!) < _cacheFresh) {
+      return;
+    }
 
     if (!silent) {
       _phase = LoadPhase.loading;
@@ -1044,11 +1130,10 @@ class AppState extends ChangeNotifier {
     await configStore.saveAutoRoute(value);
     // 开关是给**当前**这条连接用的,要立刻生效 —— 只落盘的话得等到
     // 下次重启应用才作数,用户会以为开关没反应。
-    final before = activeRoute;
     _repository?.connection.autoRoute = value;
     // 关掉自动择优等于改点名:生效线路可能当场换成锁定 / 首条那条,
     // 正在放的那一首也要跟着换。
-    _routeMaybeChanged(before);
+    _syncActiveRoute();
     notifyListeners();
     // 刚打开自动择优时手上可能还没有测速结果,顺手量一次,
     // 否则它会一直停在列表首条直到下一次请求。

@@ -44,15 +44,54 @@ RouteTag tagFor(String url) {
 }
 
 /// 私有网段判定 —— 只为给线路起个像样的名字,不做任何安全判断。
+///
+/// IPv6 也算上(表单的提示写着认 IPv6):`::1`、`fc00::/7` 唯一本地地址、
+/// `fe80::/10` 链路本地地址,以及 `::ffff:a.b.c.d` 这种映射地址 ——
+/// 最后一种要拆回 IPv4 再判一遍。IPv6 的主机串可能带方括号或 `%en0`
+/// 这类 zone id,先剥掉。
+///
+/// 100.64.0.0/10 也归为「本地」:Tailscale / 运营商级 NAT 用的就是这一段,
+/// NAS 用户从外面连回来时它比公网域名更像「直连」。这条只影响线路名与默认
+/// 标记,不影响择优 —— 择优照旧看实测延迟。
 bool looksLocal(String host) {
-  if (host == 'localhost' || host.startsWith('127.')) return true;
-  final parts = host.split('.');
+  var value = host.trim().toLowerCase();
+  if (value.startsWith('[') && value.endsWith(']')) {
+    value = value.substring(1, value.length - 1);
+  }
+  // zone id(`fe80::1%en0`)不是地址的一部分。
+  final zone = value.indexOf('%');
+  if (zone >= 0) value = value.substring(0, zone);
+
+  if (value == 'localhost' || value == '::1') return true;
+
+  // IPv4 映射的 IPv6:`::ffff:192.168.10.4` —— 拆出后走 IPv4 那一套。
+  if (value.startsWith('::ffff:') && value.contains('.')) {
+    return looksLocal(value.substring('::ffff:'.length));
+  }
+
+  if (value.contains(':')) return _looksLocalV6(value);
+
+  final parts = value.split('.');
   if (parts.length != 4) return false;
   final first = int.tryParse(parts[0]);
   final second = int.tryParse(parts[1]);
   if (first == null || second == null) return false;
   if (first == 10) return true;
+  if (first == 100 && second >= 64 && second <= 127) return true;
+  if (first == 169 && second == 254) return true;
+  if (first == 127) return true;
   if (first == 192 && second == 168) return true;
   if (first == 172 && second >= 16 && second <= 31) return true;
   return false;
+}
+
+/// IPv6 的前两段(16 位)。压缩写法(`fd00::1`)第一段就在最前面;
+/// `::1` 已经在上面的特判里处理掉,这里只看首段。
+bool _looksLocalV6(String value) {
+  final first = value.split(':').first;
+  if (first.isEmpty) return false; // `::1` / `::` 之类
+  final hextet = int.tryParse(first, radix: 16);
+  if (hextet == null) return false;
+  // fc00::/7 唯一本地地址;fe80::/10 链路本地地址。
+  return (hextet & 0xfe00) == 0xfc00 || (hextet & 0xffc0) == 0xfe80;
 }

@@ -29,6 +29,7 @@ class SubsonicClient implements ServerConnection {
     required List<ServerRoute> routes,
     Dio? dio,
     this.autoRoute = true,
+    String? initialRouteId,
   })  : _routes = List.of(routes),
         _dio = dio ??
             Dio(BaseOptions(
@@ -36,11 +37,24 @@ class SubsonicClient implements ServerConnection {
               receiveTimeout: const Duration(seconds: 20),
               // 自己判状态码,避免 Dio 把 4xx 直接抛成无上下文的异常。
               validateStatus: (_) => true,
-            ));
+            )) {
+    // 上次走通的那条(落盘在 `ServerConfig.lastRouteId`)—— 只在它确实还在
+    // 线路表里时采用。删掉 / 改了 id 的旧配置不该把请求引到一条不存在的线上。
+    if (initialRouteId != null &&
+        _routes.any((r) => r.id == initialRouteId)) {
+      _activeRouteId = initialRouteId;
+    }
+  }
 
   final SubsonicAuth auth;
   final Dio _dio;
   final List<ServerRoute> _routes;
+
+  @override
+  void Function(String routeId)? onActiveRouteChanged;
+
+  @override
+  void Function(String routeId, String? error)? onRouteHealth;
 
   /// 是否按延迟自动择优。
   ///
@@ -118,7 +132,10 @@ class SubsonicClient implements ServerConnection {
       _pings[ping.routeId] = ping;
     }
     // 测速完让择优重新算一次 —— 手动锁定模式下不动,用户的点名优先。
-    if (autoRoute) _activeRouteId = _fastestAvailable?.id;
+    if (autoRoute) {
+      final fastest = _fastestAvailable;
+      if (fastest != null) _activate(fastest);
+    }
     return pings;
   }
 
@@ -150,27 +167,8 @@ class SubsonicClient implements ServerConnection {
   Future<Map<String, dynamic>> call(
     String path, [
     Map<String, String> params = const {},
-  ]) async {
-    final candidates = _candidateOrder();
-    if (candidates.isEmpty) {
-      throw const SubsonicException('还没有配置任何服务器线路');
-    }
-
-    SubsonicException? lastError;
-    for (final route in candidates) {
-      try {
-        final body = await _get(route, path, params);
-        // 成功即认定这条线路可用,记下来供下次优先。
-        _activeRouteId = route.id;
-        return body;
-      } on SubsonicException catch (e) {
-        // 认证 / 业务错误:换线路不会有不同结果,直接抛。
-        if (!e.isNetworkFailure) rethrow;
-        lastError = e;
-      }
-    }
-    throw lastError ?? const SubsonicException('所有线路都连不上');
-  }
+  ]) =>
+      _callWithFallback(path, params);
 
   /// 与 [call] 同一趟流程,区别只有一个:**参数名可以重复出现**。
   ///
@@ -180,6 +178,17 @@ class SubsonicClient implements ServerConnection {
   Future<Map<String, dynamic>> callMulti(
     String path,
     Map<String, List<String>> params,
+  ) =>
+      _callWithFallback(path, params);
+
+  /// 按候选顺序逐条试,网络失败换下一条。
+  ///
+  /// **健康结果从这里回给状态层**:一次真实请求失败 / 恢复,比等用户点
+  /// 「测速」更快地更新界面上的「不可用」。认证与业务错误不算线路不行
+  /// (服务器答得出来),所以只把网络失败报成 error。
+  Future<Map<String, dynamic>> _callWithFallback(
+    String path,
+    Map<String, dynamic> params,
   ) async {
     final candidates = _candidateOrder();
     if (candidates.isEmpty) {
@@ -190,14 +199,30 @@ class SubsonicClient implements ServerConnection {
     for (final route in candidates) {
       try {
         final body = await _get(route, path, params);
-        _activeRouteId = route.id;
+        // 成功即认定这条线路可用,记下来供下次优先。
+        _activate(route);
+        onRouteHealth?.call(route.id, null);
         return body;
       } on SubsonicException catch (e) {
+        // 认证 / 业务错误:换线路不会有不同结果,直接抛。
+        // 认证失败说明这条线路是**通**的(能回 40)
+        if (e.isAuthFailure) {
+          onRouteHealth?.call(route.id, null);
+          rethrow;
+        }
         if (!e.isNetworkFailure) rethrow;
+        onRouteHealth?.call(route.id, e.message);
         lastError = e;
       }
     }
     throw lastError ?? const SubsonicException('所有线路都连不上');
+  }
+
+  /// 记下当前线路;真变了才回调(状态层据此落盘与重载播放源)。
+  void _activate(ServerRoute route) {
+    if (_activeRouteId == route.id) return;
+    _activeRouteId = route.id;
+    onActiveRouteChanged?.call(route.id);
   }
 
   /// 候选线路顺序:当前生效的排第一,其余按延迟升序兜底。

@@ -632,6 +632,25 @@ function screenServers() {
         <button class="btn ghost" data-go="server-config" style="height:48px">${ic('plus', 18)} 添加线路</button>
       </div>
 
+      <div class="section"><h2>线路择优</h2></div>
+      <div class="card" style="margin:0 var(--s5);padding:var(--s5)">
+        <div class="row" data-toggle="autoRoute" role="switch" aria-checked="${STATE.autoRoute}" style="padding:0">
+          ${ic('route', 19, 'quiet')}
+          <span class="grow" style="font-weight:660;font-size:15px">自动择优</span>
+          <span class="switch${STATE.autoRoute ? ' on' : ''}"><i></i></span>
+        </div>
+        <div style="font-size:12px;color:var(--fg-3);margin-top:8px">
+          ${STATE.autoRoute ? '按延迟选择最快可用地址' : '每条线路要手动锁定'}
+        </div>
+        <div style="display:flex;align-items:flex-end;gap:var(--s3);margin-top:12px">
+          <span class="grow" style="font-size:13px;color:var(--fg-2);line-height:1.6">
+            当前走 ${bestRoute().name} · ${SERVER.routes.length} 条线路中
+            ${SERVER.routes.filter((r) => r.state === 'ok').length} 条可用
+          </span>
+          <span style="font-size:11px;color:var(--fg-3)">2 分钟前测速</span>
+        </div>
+      </div>
+
       <div class="section"><h2>其他服务器</h2></div>
       <div class="card" style="margin:0 var(--s5)">
         <div class="row" data-go="add-server" role="button">
@@ -692,12 +711,12 @@ function screenServerConfig() {
       <div class="card" style="margin:0 var(--s5);padding:var(--s5)">
         <div style="display:flex;align-items:center;gap:10px">
           ${ic('gauge', 19, 'quiet')}
-          <span style="font-weight:660;font-size:15px">自动择优已开启</span>
+          <span style="font-weight:660;font-size:15px">自动择优已${STATE.autoRoute ? '开启' : '关闭'}</span>
           <span class="spacer" style="flex:1"></span>
           <span style="font-size:11px;color:var(--fg-3)">2 分钟前测速</span>
         </div>
         <div style="font-size:13px;color:var(--fg-2);line-height:1.65;margin-top:12px">
-          ${SERVER.kind} · ${SERVER.routes.length} 条线路 · 自动择优。当前走 ${bestRoute().name}。
+          ${SERVER.kind} · ${SERVER.routes.length} 条线路 · ${STATE.autoRoute ? '自动择优' : '手动锁定'}。当前走 ${bestRoute().name}。
         </div>
         <div style="display:flex;align-items:center;gap:var(--s2);margin-top:var(--s4)">
           <button class="chip" data-act="ping-all" style="height:32px" aria-selected="${STATE.pinging}">${ic('refresh', 14)} ${STATE.pinging ? '测速中' : '立即测速'}</button>
@@ -1326,7 +1345,9 @@ function sheetRoutes() {
       <div class="sheet-body">
         <div class="card" style="margin:0 var(--s5)">${routeRows(SERVER.routes, true)}</div>
         <div class="sheet-note" style="padding-top:var(--s4)">
-          播放时优先走延迟最低的可用线路，当前线路中断会自动换到下一条并接着放。手动锁定后不再自动切换。
+          ${STATE.autoRoute
+            ? '播放时优先走延迟最低的可用线路，当前线路中断会自动换到下一条并接着放。手动锁定后不再自动切换。'
+            : '自动择优已关闭：只走手动锁定的那条（没锁定就走列表第一条）。要到设置里打开「线路自动择优」，才会按延迟切换。'}
         </div>
       </div>
     </div>

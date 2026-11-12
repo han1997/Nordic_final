@@ -80,5 +80,32 @@ void main() {
       expect(looksLocal('192.168.10'), isFalse);
       expect(looksLocal('192.168.10.4.5'), isFalse);
     });
+
+    test('IPv6 内网地址也标成「局域网直连」', () {
+      // 表单的提示写着认 IPv6;这些地址原先全被判成公网,
+      // 于是路由名是一串地址、标记是「公网」—— 择优本身不受影响,
+      // 但用户在设置页看到的分类是错的。
+      expect(looksLocal('::1'), isTrue);
+      expect(looksLocal('[fd00::1]'), isTrue);
+      expect(looksLocal('fd00::1'), isTrue);
+      expect(looksLocal('fe80::1%en0'), isTrue);
+      expect(looksLocal('::ffff:192.168.10.4'), isTrue);
+      expect(routeNameFor('http://[fd00::1]:4533'), '局域网直连');
+      expect(tagFor('http://[fd00::1]:4533'), RouteTag.lan);
+    });
+
+    test('公网 IPv6 不算内网', () {
+      expect(looksLocal('2001:db8::1'), isFalse);
+      expect(looksLocal('2a00:1450:4001::1'), isFalse);
+      expect(routeNameFor('http://[2001:db8::1]:4533'), '2001:db8::1');
+    });
+
+    test('Tailscale / 链路本地 IPv4 也归为本地', () {
+      // 100.64/10 是 Tailscale 与运营商级 NAT 的段;169.254/16 是链路本地。
+      expect(looksLocal('100.64.0.1'), isTrue);
+      expect(looksLocal('100.127.255.254'), isTrue);
+      expect(looksLocal('169.254.1.1'), isTrue);
+      expect(looksLocal('100.128.0.1'), isFalse);
+    });
   });
 }

@@ -163,6 +163,29 @@ void main() {
     test('没有线路时 activeRoute 为空而不是抛异常', () {
       expect(clientWith(const []).activeRoute, isNull);
     });
+
+    test('冷启动从上次走通的那条起步，而不是列表首条', () {
+      final client = SubsonicClient(
+        auth: SubsonicAuth(username: 'u', password: 'p'),
+        initialRouteId: 'b',
+        routes: const [
+          ServerRoute(id: 'a', name: 'A', url: 'http://a'),
+          ServerRoute(id: 'b', name: 'B', url: 'http://b'),
+        ],
+      );
+      expect(client.activeRoute?.id, 'b');
+    });
+
+    test('记住的线路已被删掉时不乱指，退回列表首条', () {
+      final client = SubsonicClient(
+        auth: SubsonicAuth(username: 'u', password: 'p'),
+        initialRouteId: 'gone',
+        routes: const [
+          ServerRoute(id: 'a', name: 'A', url: 'http://a'),
+        ],
+      );
+      expect(client.activeRoute?.id, 'a');
+    });
   });
 
   group('服务器配置', () {
@@ -191,6 +214,7 @@ void main() {
         name: '客厅',
         kind: ServerKind.fnos,
         username: 'u',
+        lastRouteId: 'wan',
         routes: [
           ServerRoute(
             id: 'lan',
@@ -214,6 +238,7 @@ void main() {
       expect(restored.routes.length, 2);
       expect(restored.routes[1].tag, RouteTag.wan);
       expect(restored.routes[1].selected, isTrue);
+      expect(restored.lastRouteId, 'wan');
     });
   });
 

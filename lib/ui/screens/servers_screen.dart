@@ -672,6 +672,82 @@ class _ServersScreenState extends State<ServersScreen> {
             onPressed: () => AppRoutes.openAddRoute(context),
           ),
         ),
+        const SectionHeader(title: '线路择优'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: NordicSpace.s5),
+          child: Container(
+            padding: const EdgeInsets.all(NordicSpace.s5),
+            decoration: BoxDecoration(
+              color: t.glass3,
+              borderRadius: BorderRadius.circular(NordicRadius.lg),
+              border: Border.all(color: t.line2),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.route_outlined, size: 19, color: t.fg3),
+                    const SizedBox(width: NordicSpace.s2),
+                    Expanded(
+                      child: Text(
+                        '自动择优',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyLarge
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    NordicSwitch(
+                      value: state.autoRoute,
+                      onChanged: state.setAutoRoute,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  state.autoRoute ? '按延迟选择最快可用地址' : '每条线路要手动锁定',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: t.fg3),
+                ),
+                const SizedBox(height: NordicSpace.s3),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '当前走 ${active?.name ?? '未确定'} · '
+                        '${server.routes.length} 条线路中 ${_availableCount(state)} 条可用',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: t.fg2, height: 1.5),
+                      ),
+                    ),
+                    const SizedBox(width: NordicSpace.s3),
+                    Text(
+                      _pingedLabel(state),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: t.fg4),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: NordicSpace.s3),
+                Text(
+                  '锁定一条线路后不再自动切换；再点一下锁定中的那条，回到自动择优。',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: t.fg3, height: 1.6),
+                ),
+              ],
+            ),
+          ),
+        ),
         // 账号 / 密码 / 地址的入口。原先这一屏只有线路能改 ——
         // 「服务器设置」这张表单写完就没再露过面(`_formBody` 只在没配过服务器时出现),
         // 于是改个地址得把服务器移除重加一遍。
@@ -730,6 +806,24 @@ class _ServersScreenState extends State<ServersScreen> {
     return '${ping.latency?.inMilliseconds ?? '--'}';
   }
 
+  /// 可用线路数。没测过的按「可用」算 —— 与线路面板同一口径:
+  /// 「还没测」不等于「不可用」,把未知算成坏会给用户一个假的结论。
+  int _availableCount(AppState state) => state.server!.routes
+      .where((r) => state.pings[r.id]?.isOk ?? true)
+      .length;
+
+  /// 「2 分钟前测速」—— 原型里那句。没有时刻时照实说「还没测速」。
+  String _pingedLabel(AppState state) {
+    if (state.pinging) return '测速中';
+    final at = state.pingedAt;
+    if (at == null) return state.pings.isEmpty ? '还没测速' : '已测速';
+    final diff = DateTime.now().difference(at);
+    if (diff.inSeconds < 60) return '刚刚测速';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} 分钟前测速';
+    if (diff.inHours < 24) return '${diff.inHours} 小时前测速';
+    return '${diff.inDays} 天前测速';
+  }
+
   /// 测速,并在结束时说一句结果 —— 否则数字没变就等于什么都没发生。
   Future<void> _pingAll(AppState state) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -758,9 +852,14 @@ class _ServersScreenState extends State<ServersScreen> {
   /// **再点锁定中的那条就是解锁**(回到自动择优)。
   /// 语义收在 [toggleRouteLock] 里(与线路面板共用一份)。
   Future<void> _selectRoute(AppState state, ServerRoute route) async {
+    final unlocking = route.selected;
     await state.updateRoutes(
       toggleRouteLock(state.server?.routes ?? const [], route),
     );
+    // 与线路面板同一条:锁定不测速;解锁回到自动择优时才量一次。
+    if (unlocking && state.autoRoute) {
+      await state.refreshRouteLatency();
+    }
   }
 
   Future<void> _confirmRemove(AppState state) async {

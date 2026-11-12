@@ -133,6 +133,22 @@ void main() {
     expect(find.text('移除该服务器'), findsOneWidget);
   });
 
+  testWidgets('管理页给出线路择优开关、可用数与上次测速', (tester) async {
+    await pumpServers(tester);
+
+    expect(find.text('线路择优'), findsOneWidget);
+    expect(find.text('自动择优'), findsOneWidget);
+    expect(find.text('按延迟选择最快可用地址'), findsOneWidget);
+    expect(find.text('还没测速'), findsOneWidget);
+    expect(find.textContaining('1 条线路中 1 条可用'), findsOneWidget);
+
+    // 开关是真的生效(不是只变样子):关掉之后设置页那句说明跟着换。
+    await tester.tap(find.byType(NordicSwitch));
+    await tester.pumpAndSettle();
+    expect(state.autoRoute, isFalse);
+    expect(find.text('每条线路要手动锁定'), findsOneWidget);
+  });
+
   testWidgets('点「服务器设置」进表单，字段是现有配置，按钮说的是「保存」', (tester) async {
     await pumpServers(tester);
     await tester.tap(find.text('服务器设置'));

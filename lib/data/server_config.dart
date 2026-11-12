@@ -18,6 +18,7 @@ class ServerConfig {
     required this.username,
     required this.routes,
     this.lastScannedAt,
+    this.lastRouteId,
   });
 
   final String id;
@@ -30,12 +31,24 @@ class ServerConfig {
 
   final DateTime? lastScannedAt;
 
+  /// 上一次真正走通的那条线路。
+  ///
+  /// **只在冷启动时当「起点」用**:测速结果不落盘(它几分钟就过期),
+  /// 所以重启后 `activeRoute` 会退到「列表首条」。内外网各一条的用户多半
+  /// 不在第一条那一侧 —— 第一个请求要先白等一次超时,才换到能用的那条。
+  /// 记住上次走通的那条,重启后直接从那一条起步;之后照旧由测速 / 故障切换
+  /// 更正。
+  ///
+  /// 不放进扫码同步的载荷:它说的是**这台设备**上次走哪条,换一台设备没有意义。
+  final String? lastRouteId;
+
   ServerConfig copyWith({
     String? name,
     ServerKind? kind,
     String? username,
     List<ServerRoute>? routes,
     DateTime? lastScannedAt,
+    String? lastRouteId,
   }) =>
       ServerConfig(
         id: id,
@@ -44,6 +57,7 @@ class ServerConfig {
         username: username ?? this.username,
         routes: routes ?? this.routes,
         lastScannedAt: lastScannedAt ?? this.lastScannedAt,
+        lastRouteId: lastRouteId ?? this.lastRouteId,
       );
 
   /// 落盘时不带密码 —— 密码单独走 [CredentialStore] 的加密存储。
@@ -54,6 +68,7 @@ class ServerConfig {
         'username': username,
         'routes': routes.map((r) => r.toJson()).toList(),
         'lastScannedAt': lastScannedAt?.toIso8601String(),
+        'lastRouteId': lastRouteId,
       };
 
   static ServerConfig fromJson(Map<String, dynamic> json) => ServerConfig(
@@ -70,6 +85,9 @@ class ServerConfig {
         ],
         lastScannedAt: json['lastScannedAt'] is String
             ? DateTime.tryParse(json['lastScannedAt'] as String)
+            : null,
+        lastRouteId: json['lastRouteId'] is String
+            ? json['lastRouteId'] as String
             : null,
       );
 }
@@ -245,6 +263,9 @@ SubsonicClient clientFor({
     auth: SubsonicAuth(username: config.username, password: password),
     autoRoute: autoRoute,
     dio: dio,
+    // 上次走通的那条 —— 冷启动的起点。它只在 `activeRoute` 的第三级里
+    // 起作用(用户锁定 > 上次走通 > 列表首条),不会盖掉用户的点名。
+    initialRouteId: config.lastRouteId,
     // 顺序照配置来 —— **不要在这里按 selected 重排**:锁定那条本来就由
     // `activeRoute` 优先取(见那儿的三级优先),而运行中 `setRoutes` 换进来
     // 的是配置的原order,两头不一致等于同一个列表有两个顺序。

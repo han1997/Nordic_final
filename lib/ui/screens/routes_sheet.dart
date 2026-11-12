@@ -80,8 +80,9 @@ class _RoutesSheetState extends State<_RoutesSheet> {
                     ),
                     const Spacer(),
                     Text(
+                      '${routes.length} 条线路中 '
                       '${routes.where((r) => (state.pings[r.id]?.isOk ?? true)).length}'
-                      ' / ${routes.length} 条可用',
+                      ' 条可用',
                       style: Theme.of(context)
                           .textTheme
                           .labelSmall
@@ -94,8 +95,11 @@ class _RoutesSheetState extends State<_RoutesSheet> {
                 padding: const EdgeInsets.fromLTRB(
                   NordicSpace.s5, NordicSpace.s4, NordicSpace.s5, 0),
                 child: Text(
-                  '播放时优先走延迟最低的可用线路，当前线路中断会自动换到下一条'
-                  '并接着放。手动锁定后不再自动切换 —— 想放手，再点一下锁定中的那条。',
+                  state.autoRoute
+                      ? '播放时优先走延迟最低的可用线路，当前线路中断会自动换到下一条'
+                          '并接着放。手动锁定后不再自动切换 —— 想放手，再点一下锁定中的那条。'
+                      : '自动择优已关闭：只走手动锁定的那条（没锁定就走列表第一条）。'
+                          '要到设置里打开「线路自动择优」，才会按延迟切换。',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
@@ -127,9 +131,14 @@ class _RoutesSheetState extends State<_RoutesSheet> {
   /// 单选与解锁的语义收在 [toggleRouteLock] 里(两处入口共用一份,
   /// 免得「两个入口行为不一样」)。
   Future<void> _select(AppState state, ServerRoute route) async {
+    final unlocking = route.selected;
     final routes = toggleRouteLock(state.server?.routes ?? const [], route);
     await state.updateRoutes(routes);
-    await state.refreshRouteLatency();
+    // 锁定不需要测速 —— 用户已经点名走这条了,再量一遍只是让他多等。
+    // 解锁是「回到自动择优」,那时才需要一份新的延迟结果来选。
+    if (unlocking && state.autoRoute) {
+      await state.refreshRouteLatency();
+    }
   }
 
 }

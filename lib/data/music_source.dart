@@ -47,6 +47,20 @@ abstract interface class ServerConnection {
 
   /// 单条线路测速。
   Future<RoutePing> pingRoute(ServerRoute route);
+
+  /// 生效线路变了 —— 择优、失败切换、锁定时都可能发生。
+  ///
+  /// 状态层拿它做两件事:**把「上次走通哪条」落盘**(冷启动的起点),
+  /// 以及让正在放的那一首跟着换线(见 `AppState.onRouteChanged`)。
+  /// 不给回调就是空操作。
+  void Function(String routeId)? onActiveRouteChanged;
+
+  /// 一次真实请求的线路健康结果:[error] 为空表示这条线路刚才通了。
+  ///
+  /// 与 [pings] 分工:[pings] 是**测速**的数字(用户点「测速」才有),
+  /// 这一条是**用出来的**通断(播放 / 浏览时顺手更新)—— 界面上的
+  /// 「不可用」不该等到下一次手动测速才出现。
+  void Function(String routeId, String? error)? onRouteHealth;
 }
 
 /// 一个音乐库 —— 「**有什么**」,以及怎么拿。

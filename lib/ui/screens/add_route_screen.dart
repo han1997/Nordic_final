@@ -149,12 +149,14 @@ class _AddRouteScreenState extends State<AddRouteScreen> {
     }
 
     setState(() => _saving = true);
-    final host = Uri.tryParse(url)?.host ?? url;
     await state.updateRoutes([
       ...server.routes,
       ServerRoute(
         id: 'route-${server.routes.length + 1}-${DateTime.now().millisecondsSinceEpoch}',
-        name: host,
+        // 与服务器表单同一条命名规则:内网地址叫「局域网直连」,其余用主机名。
+        // 原先这里直接拿 `Uri.host`,于是局域网线路在列表里显示成一串 IP,
+        // 和表单加出来的那条同名不同样。
+        name: routeNameFor(url),
         url: url,
         tag: _tag,
       ),
