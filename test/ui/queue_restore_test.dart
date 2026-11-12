@@ -12,13 +12,17 @@ import 'package:nordic/data/models.dart';
 import 'package:nordic/data/server_config.dart';
 import 'package:nordic/data/server_route.dart';
 import 'package:nordic/data/subsonic_client.dart';
+import 'package:nordic/playback/playback_controller.dart';
 import 'package:nordic/playback/quality.dart';
 import 'package:nordic/state/app_state.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/screens/queue_restore_sheet.dart';
+import 'package:nordic/ui/shell/shell.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'fake_playback.dart';
 
 /// 「接着上次听?」—— 什么时候问、问了之后怎么办。
 ///
@@ -174,6 +178,18 @@ void main() {
       expect(state.pendingQueueRestore, isNotNull);
       expect(state.pendingQueueRestore!.currentId, 's3');
     });
+
+    test('装载失败那一支不记指纹 —— 下一次回到前台还问得出来', () async {
+      // 用户按了「继续」但音源那边装载失败(线路断了 / 服务器不给这一首)。
+      // 记下指纹就等于把这一份队列**永远**销掉了:下一次回到前台也不会再问,
+      // 而队列从来没能接过来。
+      await state.checkPlayQueue();
+      await state.forgetPendingQueue(remember: false);
+
+      await state.checkPlayQueue();
+      expect(state.pendingQueueRestore, isNotNull,
+          reason: '没接过来的那一份还得留在待办里');
+    });
   });
 
   group('那张纸', () {
@@ -242,6 +258,79 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(answer.value, isFalse);
+      expect(find.text('接着上次听？'), findsNothing);
+    });
+  });
+
+  /// 冷启动那一问之外,**回到前台**也要再看一眼。
+  ///
+  /// 「换到另一台设备」最常走的姿势是把还开着的窗口切回来 —— 应用根本没重启,
+  /// 只在 `initState` 后一帧问一次的话,用户得杀掉重开才被问到。
+  ///
+  /// 这里刻意**先立壳、后接服务器**:同 `shell_test` 那份说明 —— 首帧真去拉库
+  /// 会在 FakeAsync 时钟下挂住并留一堆 pending timer,而这一组要验的只是
+  /// 「切回前台会不会问」。
+  group('回到前台', () {
+    Future<void> pumpShell(
+      WidgetTester tester, [
+      PlaybackController? playable,
+    ]) async {
+      final controller = playable ?? idleController();
+      addTearDown(() {
+        controller.dispose();
+        controller.handler.player.dispose();
+      });
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AppState>.value(value: state),
+            ChangeNotifierProvider<PlaybackController>.value(value: controller),
+            ChangeNotifierProvider<QualityController>.value(
+                value: QualityController()),
+          ],
+          child: MaterialApp(
+            theme: NordicTheme.build(NordicTokens.dark),
+            home: const NordicShell(),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    /// 让那一趟 `getPlayQueue` 与纸的上升动画都走完。
+    Future<void> settle(WidgetTester tester) async {
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+    }
+
+    testWidgets('切回前台再问一次 —— 不必杀掉应用重开', (tester) async {
+      await pumpShell(tester);
+      state.adoptServer(config);
+      state.attachRepository(config, 'p');
+      await tester.pump();
+
+      expect(find.text('接着上次听？'), findsNothing);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await settle(tester);
+
+      expect(find.text('接着上次听？'), findsOneWidget);
+    });
+
+    testWidgets('本机正在放的时候不问 —— 那不是接续，是两台一起出声', (tester) async {
+      await pumpShell(
+        tester,
+        playingController(const Song(
+            id: 's1', title: '一', artist: '甲', album: 'A', albumId: 'al-1')),
+      );
+      state.adoptServer(config);
+      state.attachRepository(config, 'p');
+      await tester.pump();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await settle(tester);
+
       expect(find.text('接着上次听？'), findsNothing);
     });
   });

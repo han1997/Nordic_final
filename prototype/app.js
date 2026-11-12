@@ -1468,9 +1468,15 @@ function sheetScan() {
   </div>`;
 }
 
-/* 「接着上次听」—— 启动时服务器上还有一份别人(另一台设备)留下的队列。
+/* 「接着上次听」—— 服务器上还有一份别人(另一台设备)留下的队列。
    **问一句再放**:换设备、隔几天再打开,莫名其妙开始出声很奇怪;
-   而「继续」也**不自动开声** —— 装载完停在暂停态,用户自己按播放。 */
+   而「继续」也**不自动开声** —— 装载完停在暂停态,用户自己按播放。
+
+   出现时机是两处(2026-10-25 起):**冷启动**那一帧,以及**应用回到前台**时。
+   后者是「换设备」最常走的姿势 —— 桌面那个窗口最小化了一夜、手机从后台切回来,
+   应用根本没重启。本机正在放的时候**不问**(那不是接续,是两台同时在出声)。
+
+   落点跟着装载一起给,不是装完再跳:冷转码流不可 seek,那一刀会落空。 */
 function sheetResume() {
   const r = STATE.queueRestore;
   if (!r) return '';
@@ -1481,7 +1487,7 @@ function sheetResume() {
       <div class="sheet-body">
         <div class="list-note" style="padding:0 var(--s5) var(--s4)">
           服务器上还留着一份播放队列,停在 <b>${r.artist}</b> 那首的 ${mmss(r.position)}。
-          这一份是**别的设备**留下的 —— 要不要接着放?
+          这一份是别的设备留下的 —— 要不要接着放?
         </div>
         <div class="menu-item" data-menu-go="act:resume-yes">${ic('play2', 20)}<span>继续</span></div>
         <div class="menu-item" data-menu-go="act:resume-no">${ic('x', 20)}<span>忽略</span></div>

@@ -489,7 +489,18 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
   ///
   /// 整批交给 just_audio 装载(而不是逐首 setUrl),它才能预加载下一首,
   /// 切歌没有空档。
-  Future<void> setQueue(List<Song> songs, {int index = 0, bool autoPlay = true}) async {
+  ///
+  /// [initialPosition] 是**装载那一刻就要停住的位置** —— 「换设备接着听」
+  /// 只有这一个正确的给法。装完再 `seek` 那一刀在冷转码流上会**静静落空**
+  /// (那个响应没有长度、也不认 Range,见 [_seekRemote]),于是接着听变成了
+  /// 从头听。写在这里的落点随 `LoadRequest` 一起下到平台:本机文件(下载过 /
+  /// 缓存完的那一份)精确落点,远端流也已尽力而为。
+  Future<void> setQueue(
+    List<Song> songs, {
+    int index = 0,
+    bool autoPlay = true,
+    Duration initialPosition = Duration.zero,
+  }) async {
     if (songs.isEmpty) return;
     _queue = List.of(songs);
 
@@ -508,7 +519,7 @@ class NordicAudioHandler extends BaseAudioHandler with SeekHandler {
           _sourceFor(songs[i], item: items[i]),
       ],
       initialIndex: start,
-      initialPosition: Duration.zero,
+      initialPosition: initialPosition,
     );
     // **autoPlay: false 是给「接着上次听」用的** —— 那一趟要把队列与落点摆好,
     // 但**不出声**:打开应用就开始放是很吓人的事(见 `queue_restore_sheet.dart`)。

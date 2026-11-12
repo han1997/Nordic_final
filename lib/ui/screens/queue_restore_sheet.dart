@@ -48,7 +48,7 @@ Future<bool> showQueueRestoreSheet(
               child: Text(
                 '服务器上还留着一份播放队列，停在'
                 '「${current?.title ?? '某一首'}」的 ${formatDuration(position)}。'
-                '这一份是**别的设备**留下的 —— 要不要接着放？',
+                '这一份是别的设备留下的 —— 要不要接着放？',
                 style: Theme.of(sheetContext)
                     .textTheme
                     .bodySmall

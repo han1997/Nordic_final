@@ -88,6 +88,14 @@ class _BackgroundPlayGuardState extends State<_BackgroundPlayGuard>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 离开前台就把落点补写一笔 —— 「换设备接着听」要的正是**这一台停在哪**,
+    // 而平时的心跳最多晚 30 秒,用户往往在这之前就拿起了另一台。
+    // 桌面最小化 / 切走给的是 `inactive` / `hidden`,不一定是 `paused`。
+    if (state != AppLifecycleState.resumed) {
+      context.read<PlaybackController>().flushQueueProgress();
+    }
+    // 暂停那一条**保持原样**(只在 `paused` 上),那是「播放时后台运行」开关
+    // 的全部含义 —— 不因为上面那笔补写而提前。
     if (state != AppLifecycleState.paused) return;
     final playback = context.read<PlaybackController>();
     pauseWhenBackgrounded(

@@ -740,12 +740,16 @@ class AppState extends ChangeNotifier {
   /// 这一份**不再提** —— 用户按了「忽略」,或者「继续」已经把队列装载好了。
   ///
   /// 两种情形都记下这个指纹:忽略的那次说明他刚说了不要,下次换个队列才会再问。
-  Future<void> forgetPendingQueue() async {
+  ///
+  /// [remember] 为假是**装载失败**那一支(见 `shell.dart` 的
+  /// `_maybeOfferQueueRestore`):这一份还没处理掉,记下指纹等于让它永远没人问
+  /// 第二次。清掉待办、不记指纹,下一次回到前台还会再问。
+  Future<void> forgetPendingQueue({bool remember = true}) async {
     final pending = _pendingQueueRestore;
     if (pending == null) return;
     _pendingQueueRestore = null;
     notifyListeners();
-    await configStore.savePlayQueueMark(pending.mark);
+    if (remember) await configStore.savePlayQueueMark(pending.mark);
   }
 
   /// 切换收藏。**乐观更新**:先改本地再发请求,失败时回滚。

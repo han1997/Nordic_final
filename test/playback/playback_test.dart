@@ -1043,6 +1043,141 @@ void main() {
     });
   });
 
+  group('换设备接着听', () {
+    // 「接着上次听」的落点**必须随装载一起交给平台**:装完再 seek 那一刀在
+    // 冷转码流上是不作数的(那个响应没有长度、也不认 Range,见
+    // `NordicAudioHandler._seekRemote`),用户看到的会是「接着听」从头开始。
+    // 另一条:装载会触发一次队列同步,而那一趟把**读到的** `position` 写回
+    // 服务器 —— 落点没先摆到通道上,服务器上那份「听到哪儿」就被自己抹成 0。
+
+    late Directory root;
+    late MediaCache cache;
+    late _FakePlayer player;
+    late NordicAudioHandler handler;
+    late PlaybackController playback;
+
+    const songs = [
+      Song(id: 's1', title: '一', artist: '甲', album: 'A', albumId: 'al-1', suffix: 'flac'),
+      Song(id: 's2', title: '二', artist: '乙', album: 'A', albumId: 'al-1', suffix: 'flac'),
+    ];
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('nordic-handoff');
+      cache = await MediaCache.open(
+        limitBytes: CacheLimit.gb1.bytes,
+        root: Directory('${root.path}${Platform.pathSeparator}audio'),
+      );
+      player = _FakePlayer();
+      handler = NordicAudioHandler(
+        () => null,
+        QualityController(QualityOption.medium),
+        cache: cache,
+        player: player,
+      );
+      playback = PlaybackController(handler);
+      for (final song in songs) {
+        final file = cache.fileFor(
+          song,
+          qualityId: QualityOption.medium.id,
+          format: QualityOption.medium.format,
+        )!;
+        await file.writeAsBytes(List<int>.filled(16, 1));
+      }
+      await cache.prune();
+    });
+
+    tearDown(() async {
+      playback.dispose();
+      await player.dispose();
+      cache.dispose();
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+
+    test('落点跟着装载一起下去 —— 不是装完再 seek', () async {
+      await handler.setQueue(
+        songs,
+        index: 1,
+        autoPlay: false,
+        initialPosition: const Duration(seconds: 92),
+      );
+
+      expect(player.initialPositions.single, const Duration(seconds: 92),
+          reason: '平台要的是初次装载的落点；装完再 seek 在冷流上会落空');
+    });
+
+    test('不带落点时仍是 0 —— 普通播放不该被改成「接着上次」', () async {
+      await handler.setQueue(songs, index: 0);
+
+      expect(player.initialPositions.single, Duration.zero);
+    });
+
+    test('playAll 先把落点摆到位置通道上，队列同步就不会写回 0', () async {
+      final failure = await playback.playAll(
+        songs,
+        index: 1,
+        autoPlay: false,
+        initialPosition: const Duration(seconds: 92),
+      );
+
+      expect(failure, isNull);
+      expect(player.initialPositions.single, const Duration(seconds: 92));
+      // 装载触发的那次队列同步读的就是这条通道 —— 它此刻必须是 92 秒。
+      expect(playback.position.value, const Duration(seconds: 92));
+    });
+
+    test('离开前台补写落点 —— 另一台拿到的不是最多晚 30 秒的那个数', () async {
+      // 后台运行开着时不会走到 pause 那一笔,心跳又最多晚 30 秒;用户往往
+      // 在这之前就拿起另一台。离开前台这一下要立刻写。
+      final writes = <Duration>[];
+      final withRepo = PlaybackController(
+        handler,
+        repository: () => _QueueSpy(writes),
+      );
+      addTearDown(withRepo.dispose);
+
+      await withRepo.playAll(songs, index: 1, autoPlay: false);
+      withRepo.position.value = const Duration(seconds: 92);
+
+      withRepo.flushQueueProgress();
+      await pumpEventQueue();
+
+      expect(writes.last, const Duration(seconds: 92),
+          reason: '这一笔写的是「这一台停在哪」');
+    });
+
+    test('暂停中拖了进度条，离开前台也要写 —— 那一拖本身不触发任何写', () async {
+      final writes = <Duration>[];
+      final withRepo = PlaybackController(
+        handler,
+        repository: () => _QueueSpy(writes),
+      );
+      addTearDown(withRepo.dispose);
+      await withRepo.playAll(songs, index: 0, autoPlay: false);
+      player.playing = false;
+
+      withRepo.position.value = const Duration(seconds: 41);
+      withRepo.flushQueueProgress();
+      await pumpEventQueue();
+
+      expect(writes.last, const Duration(seconds: 41),
+          reason: '暂停中改的落点同样是「这台停在哪」');
+    });
+
+    test('队列空时一笔都不写 —— 那会把服务器上那份队列清掉', () async {
+      final writes = <Duration>[];
+      final withRepo = PlaybackController(
+        handler,
+        repository: () => _QueueSpy(writes),
+      );
+      addTearDown(withRepo.dispose);
+
+      withRepo.flushQueueProgress();
+      await pumpEventQueue();
+
+      expect(writes, isEmpty);
+    });
+  });
+
   group('播放中途断流', () {
     // 这一组钉的是那一句回声的**源头**:播放层得把流上的错误当成一条事件交出去。
     // 界面那边怎么说话见 test/ui 的用例 —— 两处说的是同一件事。
@@ -1105,6 +1240,10 @@ class _FakePlayer extends AudioPlayer {
 
   /// 最近一次装载进去的播放源 —— 用来断言「装的是哪一份」。
   List<AudioSource> loaded = const [];
+
+  /// 每一趟 `setAudioSources` 收到的落点 —— 「换设备接着听」靠它把位置
+  /// 跟着装载一起交给平台(装完再 seek 在冷转音流上会落空)。
+  final initialPositions = <Duration?>[];
 
   /// 整队重装了几次 / 就地挪了几次。重排**只该**走后者 ——
   /// 走前者等于把每一首的播放源重拼一遍(整队一次盘查询),再把听众那一份作废。
@@ -1173,6 +1312,7 @@ class _FakePlayer extends AudioPlayer {
     ShuffleOrder? shuffleOrder,
   }) async {
     setAudioSourcesCalls++;
+    initialPositions.add(initialPosition);
     loaded = audioSources;
     return null;
   }
@@ -1235,6 +1375,29 @@ class _ScrobbleSpy implements MusicSource {
   }) async {
     sent.add((songId, submission));
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// 只记下 `savePlayQueue` 的落点 —— 「换设备接着听」那最后一笔。
+class _QueueSpy implements MusicSource {
+  _QueueSpy(this.writes);
+
+  final List<Duration> writes;
+
+  @override
+  Future<void> savePlayQueue({
+    required List<Song> songs,
+    String? currentId,
+    Duration position = Duration.zero,
+  }) async {
+    writes.add(position);
+  }
+
+  @override
+  Uri streamUri(String songId, {int? maxBitRate, String? format}) =>
+      Uri.parse('http://nas.example.com/rest/stream.view?id=$songId');
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

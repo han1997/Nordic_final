@@ -429,16 +429,33 @@ class PlaybackController extends ChangeNotifier {
   ///
   /// 空列表也回一句话:调用点不该自己去判「是不是空」—— 那些判断散在十八处,
   /// 迟早有一处漏掉,表现就是「点了没反应」。
+  ///
+  /// [initialPosition] 是**装载时就停住的位置** —— 只有「换设备接着听」用它
+  /// (见 `shell.dart` 的 `_maybeOfferQueueRestore`):装完再 seek 那一刀在
+  /// 冷转码流上会落空(见 `NordicAudioHandler._seekRemote`)。
   Future<String?> playAll(
     List<Song> songs, {
     int index = 0,
     bool autoPlay = true,
+    Duration initialPosition = Duration.zero,
   }) async {
     if (songs.isEmpty) return '队列里没有可播的曲目';
     try {
+      // 落点**先摆到这条通道上**,再装载。
+      //
+      // 装载会经 `queue` 流触发一次队列同步(防抖 1.5 秒),那一趟把
+      // **读到的** `position` 写回服务器 —— 若此时通道上还是上一首的旧值,
+      // 服务器上那份「听到哪儿」就被我们自己抹掉了,而它正是换设备接着听
+      // 里最要紧的那个数。平台随后报出真值会覆盖这一个预置值。
+      position.value = initialPosition;
       // [autoPlay] 为假时只装载、不出声 —— 「接着上次听」要的正是这个
       // (摆好队列与落点,让用户自己按播放)。
-      await _handler.setQueue(songs, index: index, autoPlay: autoPlay);
+      await _handler.setQueue(
+        songs,
+        index: index,
+        autoPlay: autoPlay,
+        initialPosition: initialPosition,
+      );
       _emit(_state.copyWith(error: null, clearError: true));
       return null;
     } catch (e) {
@@ -534,6 +551,17 @@ class PlaybackController extends ChangeNotifier {
     await _handler.retargetCurrentRoute();
     _emit(_state.copyWith(error: null, clearError: true));
   }
+
+  /// 把队列与当前落点**立刻**写回服务器 —— 换设备接着听的那最后一笔。
+  ///
+  /// 平时的节拍是:队列变 1.5 秒防抖、播放中每 30 秒补一次、暂停立刻写。
+  /// 离开前台这一下若不补:①「切到后台继续放」不进暂停,另一台看到的落点最多
+  /// 滞后 30 秒;②暂停之后拖着进度条改了落点,drag 本身不触发任何一次写 ——
+  /// 而这两个时刻恰恰就是用户拿起另一台的那一下。
+  ///
+  /// **不按「在不在放」门控**:暂停中改的落点同样得写出去。队列空时
+  /// [_syncQueue] 自己会收手(`savePlayQueue` 不带 id 等于清空服务器上的队列)。
+  void flushQueueProgress() => _syncQueue(immediate: true);
 
   /// 当前曲目之后还剩多久。队列面板的「还有约 …」。
   Duration get remaining {

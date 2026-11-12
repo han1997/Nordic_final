@@ -34,7 +34,7 @@ class NordicShell extends StatefulWidget {
 }
 
 class _NordicShellState extends State<NordicShell>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   /// 冷启动落在**首页**:「现在在听 / 最近在听」是打开播放器最想先看到的一屏。
   AppTab _tab = AppTab.home;
 
@@ -56,6 +56,10 @@ class _NordicShellState extends State<NordicShell>
 
   late final Animation<double> _fadeCurve =
       CurvedAnimation(parent: _fade, curve: NordicMotion.ease);
+
+  /// 「接着上次听」那一问是不是正在进行(纸开着 / 正在打 `getPlayQueue`)。
+  /// 见 [_maybeOfferQueueRestore]。
+  bool _offeringRestore = false;
 
   void _select(AppTab tab) {
     if (tab == _tab && _built.contains(tab)) return;
@@ -88,6 +92,9 @@ class _NordicShellState extends State<NordicShell>
   @override
   void initState() {
     super.initState();
+    // 「接着上次听」除了冷启动那一问,回到前台也要再看一眼 ——
+    // 见 [didChangeAppLifecycleState]。
+    WidgetsBinding.instance.addObserver(this);
     pendingTab.addListener(_applyPendingTab);
     // 首帧之后再拉数据 —— 在 initState 里直接发起会让第一次 build
     // 就撞上「正在加载」而白闪一下。
@@ -122,33 +129,85 @@ class _NordicShellState extends State<NordicShell>
   /// 「继续」= 装载那份队列 + 摆好落点,**但不出声**(`autoPlay: false`)——
   /// 打开应用自己放起来是很吓人的事,让用户自己按播放。
   ///
+  /// 落点跟着装载一起给(`initialPosition`),不是装完再 seek:冷转码流不可
+  /// seek(见 `NordicAudioHandler._seekRemote`),那一刀会静静落空,接着听就
+  /// 变成从头听。装载那一刻的落点还会被 [PlaybackController.playAll] 摆到
+  /// 位置通道上,于是紧接着那次队列同步**不会**把服务器上的落点写回 0。
+  ///
   /// 两种回答都调 [AppState.forgetPendingQueue]:那一步会把这一次的**指纹**
   /// 记下来 —— 「忽略」是他刚说了不要,「继续」是这一份已经装载过了。
   /// 下次换个队列(另一台设备又改了)才会再问。
+  ///
+  /// 装载失败是例外:不记指纹(见 [AppState.forgetPendingQueue] 的
+  /// `remember`),并且**当场说一句** —— 否则用户按了「继续」,队列没出现、
+  /// 也没有第二次机会。
   Future<void> _maybeOfferQueueRestore(AppState state) async {
-    await state.checkPlayQueue();
-    if (!mounted) return;
-    final pending = state.pendingQueueRestore;
-    if (pending == null) return;
+    // 前后台切换常常连着来两下;已经有一张纸开着的时候不必再问一遍,
+    // 也不必再打一趟 `getPlayQueue`。
+    if (_offeringRestore) return;
+    if (state.pendingQueueRestore != null) return;
+    // **本机正在放的时候不问**:那不是「换设备接着听」,而是两台同时在出声。
+    // 把「换到这台」摆到正在听的那一台眼前,打断的正是这一首。
+    if (context.read<PlaybackController>().state.playing) return;
 
-    final accepted = await showQueueRestoreSheet(context, pending);
-    if (!mounted) return;
+    _offeringRestore = true;
+    try {
+      await state.checkPlayQueue();
+      if (!mounted) return;
+      final pending = state.pendingQueueRestore;
+      if (pending == null) return;
 
-    if (accepted) {
-      final playable = context.read<PlaybackController>();
-      await playable.playAll(
-        pending.songs,
-        index: queueRestoreIndex(pending),
-        autoPlay: false,
-      );
-      // 落点单独 seek:装载那一趟给的是 0,而这里说的是「上次听到哪儿」。
-      await playable.seek(pending.position);
+      final accepted = await showQueueRestoreSheet(context, pending);
+      if (!mounted) return;
+
+      if (accepted) {
+        final playable = context.read<PlaybackController>();
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        final failure = await playable.playAll(
+          pending.songs,
+          index: queueRestoreIndex(pending),
+          autoPlay: false,
+          initialPosition: pending.position,
+        );
+        if (!mounted) return;
+        if (failure != null) {
+          messenger?.showSnackBar(
+            SnackBar(
+              content: Text('没能把队列接过来 —— $failure'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          // 不记指纹:回到前台还会再问一次。
+          await state.forgetPendingQueue(remember: false);
+          return;
+        }
+      }
+      await state.forgetPendingQueue();
+    } finally {
+      _offeringRestore = false;
     }
-    await state.forgetPendingQueue();
+  }
+
+  /// 回到前台,再看一眼服务器上的队列。
+  ///
+  /// 冷启动那一问只在 `initState` 的后一帧做一次 —— 而「换到另一台设备」最
+  /// 常见的姿势是**把一个还开着的窗口切回来**(桌面最小化了一夜、手机从后台
+  /// 切回来),应用根本没重启。少了这一条,用户要杀掉应用重开才会被问到。
+  ///
+  /// **只在 `resumed` 上做**:`inactive` / `paused` 不是「用户回到了这台设备」;
+  /// 而这条路上会打一趟 `getPlayQueue`,后台里定时去打才是费电的那一类事。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+    if (lifecycle != AppLifecycleState.resumed) return;
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    if (state.repository == null) return;
+    unawaited(_maybeOfferQueueRestore(state));
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     pendingTab.removeListener(_applyPendingTab);
     _fade.dispose();
     super.dispose();

@@ -242,6 +242,7 @@ class _FailingHandler extends NordicAudioHandler {
     List<Song> songs, {
     int index = 0,
     bool autoPlay = true,
+    Duration initialPosition = Duration.zero,
   }) async {
     throw const MusicSourceException('服务器没有给出这一首的音频');
   }

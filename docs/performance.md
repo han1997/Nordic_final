@@ -278,3 +278,23 @@
 - **播放横条与窄屏坞订阅的是同两件**(song/playing 二元组 + 仓库单件),进度走 position
   通道单独一条。横条是每个带常驻区的宽屏都在的常驻件,别顺手把 `PlaybackController`
   整份 watch 进去 —— 时长上报 / 循环翻转都会把整块玻璃重建(与坞那处的口径逐条相同)。
+- **「换设备接着听」的落点随装载一起给,别改回「装完再 seek」**(`setQueue` 的
+  `initialPosition` → `player.setAudioSources(initialPosition:)`)。冷转码流的响应是
+  `Accept-Ranges: none` + chunked、**没有长度**,平台对这类源静默不 seek(见
+  `_seekRemote` 那一整段)——「接着听」会变成从头听,而且不报错。同一个落点还得
+  **先摆到 `PlaybackController.position` 通道上再装载**:装载会触发一次队列同步,
+  那一趟写的是**读到的**位置,晚一步就把服务器上「听到哪儿」改成 0。
+- **离开前台要补写一笔落点**(`PlaybackController.flushQueueProgress`,由主壳在
+  所有非 `resumed` 状态上调)。平时的节拍(队列变 1.5 秒防抖 / 播放中 30 秒心跳 /
+  暂停立刻写)漏掉两个时刻:后台运行开着时切后台不暂停;暂停后拖进度条本身不触发
+  任何写。清单里那三条别删掉来「简化」—— 它们是同一件事的三个入口。
+  `flushQueueProgress` **不按在不在放门控**,但队列空时 `_syncQueue` 必须收手:
+  `savePlayQueue` 不带 `id` 等于**清空服务器上那份队列**。
+- **那一问有两个时机:冷启动与回到前台**(`shell.dart` 的
+  `_maybeOfferQueueRestore`)。把窗口切回来是最常见的「换设备」姿势,只在
+  `initState` 问一次等于要求用户杀进程重开。三道闸门别拆:本机正在放时不问
+  (那不是接续,是两台一起出声)、进行中不重入、只在 `resumed` 上打那一趟
+  `getPlayQueue`。
+- **接续失败不记指纹**:`forgetPendingQueue(remember: false)` 是给装载失败那一支的。
+  记下指纹等于把这一份队列永远销掉 —— 用户按了「继续」,队列没过来,而且再也不会
+  被问到。
