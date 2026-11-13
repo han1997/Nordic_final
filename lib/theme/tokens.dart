@@ -35,6 +35,9 @@ class NordicTokens extends ThemeExtension<NordicTokens> {
     required this.glassSaturation,
     required this.glassRim,
     required this.glassShadow,
+    required this.pillTop,
+    required this.pillBottom,
+    required this.pillRing,
     required this.scrim,
     required this.shade,
     required this.shade2,
@@ -102,6 +105,18 @@ class NordicTokens extends ThemeExtension<NordicTokens> {
   /// 玻璃内阴影,做出厚度。
   final Color glassShadow;
 
+  /// 选中胶囊(标签栏 / 左竖栏共用)的强调色占比:渐变上缘 / 下缘 / 发丝边。
+  ///
+  /// 原型 `styles.css` 的 `--pill-a` / `--pill-b` / `--pill-ring` 三条
+  /// (`color-mix(in srgb, var(--accent) N%, transparent)` 的 N)。
+  /// **一层平涂在深色玻璃上读不出来**,所以改成上浓下淡的渐变给体积,
+  /// **边缘靠一道强调色发丝边** —— 不用外发光:胶囊的底是半透明的,
+  /// 发光画在填充底下会透出来,把药丸内部点亮成一块板。
+  /// 浅色比深色收一档 —— 浅底上同样的占比会响一档。
+  final double pillTop;
+  final double pillBottom;
+  final double pillRing;
+
   final Color scrim;
 
   /// 氛围背景压暗起点 / 终点。
@@ -160,6 +175,9 @@ class NordicTokens extends ThemeExtension<NordicTokens> {
     glassSaturation: 1.8,
     glassRim: Color(0x1AFFFFFF), // rgba(255,255,255,0.10)
     glassShadow: Color(0x47000000), // rgba(0,0,0,0.28)
+    pillTop: 0.26,
+    pillBottom: 0.13,
+    pillRing: 0.30,
     scrim: Color(0xA8030306), // rgba(3,3,6,0.66)
     shade: Color(0x5707070C), // rgba(7,7,12,0.34)
     shade2: Color(0xED07070C), // @ 0.93
@@ -204,6 +222,9 @@ class NordicTokens extends ThemeExtension<NordicTokens> {
     glassSaturation: 1.5,
     glassRim: Color(0xD9FFFFFF), // rgba(255,255,255,0.85)
     glassShadow: Color(0x1A141628), // rgba(20,22,40,0.10)
+    pillTop: 0.20,
+    pillBottom: 0.10,
+    pillRing: 0.24,
     scrim: Color(0x4D1C1C26), // rgba(28,28,38,0.30)
     shade: Color(0x85F6F6F9), // rgba(246,246,249,0.52)
     shade2: Color(0xF2F6F6F9), // @ 0.95
@@ -297,6 +318,11 @@ abstract final class NordicMotion {
 
   /// 弹层上滑。
   static const sheetUp = Duration(milliseconds: 300);
+
+  /// 选中胶囊的底淡进淡出 —— 原型 `transition: ... background 0.2s var(--ease)`
+  /// (标签栏与左竖栏两处都是这一条)。**不能顺手并到 [screenFade]**:那是整屏
+  /// 换页的时长,药丸跟着 220 会显得拖沓。
+  static const pillFill = Duration(milliseconds: 200);
 
   /// 黑胶自转一圈:原型 16s linear。
   static const vinylSpin = Duration(seconds: 16);

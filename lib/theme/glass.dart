@@ -40,22 +40,32 @@ class NordicGlass extends StatelessWidget {
           t.blur,
           NordicRadius.lg,
           (const Offset(0, 18), 40.0, -24.0),
+          false,
         ),
       // 薄玻璃:输入框 / 筛选胶囊 —— 能透出较多背景,但不承载长文本(无影)。
-      NordicGlassPanel.thin => (t.glass4, t.blurSm, NordicRadius.full, null),
+      NordicGlassPanel.thin =>
+        (t.glass4, t.blurSm, NordicRadius.full, null, false),
       // 导航玻璃:播放坞 / 标签栏 / 左竖栏 —— 常驻且要压住滚过去的列表。
       // 深度影照原型 `.tray` / `.railnav` 的 `0 20px 40px -20px var(--depth)`。
+      // 另有 `topSheen`:上缘那道光在玻璃体内散开的一层薄雾(原型 `.tray` /
+      // `.railnav` 的 `background: linear-gradient(180deg, ... 0%, transparent 38%), var(--glass)`)——
+      // 少了它,这块玻璃只是一片半透明色块,上缘那条 1px 线浮在它上面像贴上去的。
       NordicGlassPanel.nav => (
           t.glass,
           t.blur,
           NordicRadius.full,
           (const Offset(0, 20), 40.0, -20.0),
+          true,
         ),
     };
     final fill = spec.$1;
     final blur = spec.$2;
     final radius = borderRadius ?? BorderRadius.circular(spec.$3);
     final shadow = spec.$4;
+
+    /// 上缘的薄雾。只给导航玻璃 —— 它面积最大、最常驻,需要那层厚度;
+    /// 面板 / 薄玻璃都承载文字,多一层会脏。
+    final sheen = spec.$5;
 
     return DecoratedBox(
       // 外部那道深度影放在**裁剪外面** —— 放里面的话,圆角一裁就没了
@@ -89,7 +99,24 @@ class NordicGlass extends StatelessWidget {
           filter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: fill,
+              // 薄雾与底色的叠法照原型:一道自上而下的线性渐变盖在底色上。
+              // **不能换成两层嵌套的不透明色块** —— 那会把模糊透出的背景
+              // 压成一块平涂,玻璃就只剩边框了。
+              gradient: sheen
+                  ? LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color.alphaBlend(
+                          t.glassRim.withValues(alpha: t.glassRim.a * 0.46),
+                          fill,
+                        ),
+                        fill,
+                      ],
+                      stops: const [0.0, 0.38],
+                    )
+                  : null,
+              color: sheen ? null : fill,
               borderRadius: radius,
               border: border ? Border.all(color: t.line2, width: 1) : null,
             ),
@@ -111,6 +138,21 @@ class NordicGlass extends StatelessWidget {
                       child: SizedBox(
                         height: 1,
                         child: ColoredBox(color: t.glassRim),
+                      ),
+                    ),
+                  ),
+                // 下缘那一道暗线 —— 原型 `.tray` / `.railnav` 的
+                // `inset 0 -1px 0 var(--glass-sh)`:底边有厚度,不是一张纸。
+                // 与上缘那道 1px 等高、同样贴边,两端跟着圆角自然收细。
+                if (border && sheen)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      child: SizedBox(
+                        height: 1,
+                        child: ColoredBox(color: t.glassShadow),
                       ),
                     ),
                   ),

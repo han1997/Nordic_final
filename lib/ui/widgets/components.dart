@@ -311,9 +311,39 @@ class DismissKeyboardOnTap extends StatelessWidget {
 
 /// 「选中 / 开着」的那层底色。
 ///
-/// 标签栏的选中胶囊与传输控制上的随机 / 循环共用这一档 —— 两处本就说的
-/// 是同一件事(这个位置现在是活的),分头写两个数字迟早会漂开。
+/// 传输控制上的随机 / 循环键用它(那边只是一颗圆钮、不需要体积感)。
+/// **标签栏 / 左竖栏的选中胶囊不再用它** —— 那两处是一块有面积的药丸,
+/// 平涂的 17% 在深色玻璃上读不出来,改走 [selectPillDecoration]
+/// (上浓下淡 + 发丝边,见 docs/CHANGELOG.md 第三十八轮)。
 Color selectFill(Color accent) => accent.withValues(alpha: 0.17);
+
+/// 选中胶囊那层「有体积」的底:上浓下淡的强调色渐变 + 一道强调色发丝边。
+///
+/// 原型 `.tabbar button[aria-selected]` / `.railnav button[aria-selected]` 的
+/// `background` 与 `border` 在这里是同一次装配,占比从 [NordicTokens] 取,
+/// 深浅两套各自收一档。
+///
+/// **边缘用发丝边,不用外发光**。BoxShadow 画在填充**底下**,而胶囊的底是
+/// 半透明的 —— 那圈光会从药丸内部透出来(实测顶缘从 26% 一路亮到 50% 以上),
+/// 读成一块发光的板子。原型里踩过同一个坑,应用侧别再「补」回去。
+BoxDecoration selectPillDecoration(NordicTokens t, Color accent) {
+  final radius = BorderRadius.circular(NordicRadius.full);
+  return BoxDecoration(
+    gradient: LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        accent.withValues(alpha: t.pillTop),
+        accent.withValues(alpha: t.pillBottom),
+      ],
+    ),
+    borderRadius: radius,
+    border: Border.all(
+      color: accent.withValues(alpha: t.pillRing),
+      width: 1,
+    ),
+  );
+}
 
 /// 圆形图标按钮 —— `.icon-btn`,可带一层淡填充(`halo`)。
 class IconButtonRound extends StatelessWidget {

@@ -3011,3 +3011,95 @@ alpha 重新叠到屏幕上。而切 tab 那 220ms 恰好是内容最忙的一�
 这一轮没有走 `tool/build.sh` 出包(改动全在 Dart 侧与用例,验证用 `flutter test`
 与 `flutter analyze` 完成)。要侧载请照 README「构建」自己跑,产物名会是
 `Nordic-1.0.61+62-*`。
+
+## 第三十八轮:悬浮胶囊 —— 玻璃有了厚度、选中那颗真的看得出来(2026-11-13)
+
+用户一句「悬浮胶囊美化」。这一轮只动**底部那颗托盘**(以及共用同一个组件的左竖栏),
+不动布局、不动尺寸、不动交互:托盘还是 350 宽 / 左右 20、标签栏还是 58、
+药丸还是 63 × 50、三颗还是 20 的缝。改的全是**材质**。版本 1.0.62+63。
+
+### 一、诊断:两处「看不出来」
+
+把深 / 浅两套主题的托盘按 3 倍放大看过之后,问题是两条:
+
+1. **玻璃是一块平涂。** `.tray` 只有 `--glass` 一层底色 + 上缘那道 1px 高光。
+   上缘那条线于是浮在一块平滑的半透明色块上,像贴上去的;底边没有暗线,
+   整块东西读作「一张半透明的纸」,而不是「一块有厚度的玻璃」。
+2. **选中的那颗几乎认不出来。** 选中态只有一层 `color-mix(accent 17%)`。
+   17% 的强调色压在 80% 不透明的玻璃上,只把药丸提亮两三个像素 ——
+   深色下远看就是「哪颗都一样」。
+
+### 二、玻璃:三层叠出来
+
+```css
+background: linear-gradient(180deg,
+  color-mix(in srgb, var(--glass-rim) 46%, transparent) 0%, transparent 38%),
+  var(--glass);
+box-shadow: inset 0 1px 0 var(--glass-rim),   /* 上缘高光(原有) */
+            inset 0 -1px 0 var(--glass-sh),   /* 下缘暗线(新) */
+            0 20px 40px -20px var(--depth);
+```
+
+- **薄雾走渐变的第一层颜色,不另叠不透明色块**:叠色块会把 `BackdropFilter`
+  透出的背景压平,玻璃只剩一圈边框。
+- 左竖栏 (`.railnav`) 逐条同一组 —— 两处是一层材质,分头写迟早一处有厚度、
+  一处还是纸片。应用侧对应 `NordicGlass` 新增的 `sheen` 档(只给
+  `NordicGlassPanel.nav`;面板玻璃与薄玻璃都承载文字,多一层会脏)。
+
+### 三、选中胶囊:渐变给体积,发丝边给边缘
+
+```css
+background: linear-gradient(180deg, var(--pill-a), var(--pill-b)); /* 26% → 13% */
+border: 1px solid var(--pill-ring);                                /* 30%        */
+```
+
+三档占比抽成 token(`--pill-a` / `--pill-b` / `--pill-ring`,浅色 20/10/24%),
+应用侧是 `NordicTokens.pillTop / pillBottom / pillRing`,`proto_sync_test`
+两边对读。
+
+**中间试过、并且否掉的一版:外发光。** 先做的是 `box-shadow: 0 6px 18px -10px`
+甚至 85% 的强调色光晕。截图一看,药丸**内部**被点亮了:BoxShadow 画在填充底下,
+而胶囊的底是半透明的 —— 光从里面透出来。实测顶缘从 26% 一路亮到 50% 以上,
+读成一块发光的板子。所以边缘改成一道 1px 的强调色边:
+它压在填充外面,不透、不溢、单像素上也清楚。**这条别改回去**,理由写在
+`styles.css` 的 `--pill-ring` 与 `docs/performance.md` 里。
+
+连带的两个细节:
+
+- 未选中那颗**也占着同样的 1px 边**(`transparent`)。只在一态出现边的话,
+  切换时内容盒会挪 1px —— 比没有过渡更容易被看见。
+- 两种态都走 `AnimatedContainer`,时长 `NordicMotion.pillFill`(200ms,
+  原型 `transition: ... background 0.2s`):渐变没法按透明度插值,只能插值
+  `decoration`,所以未选中那份必须是**一份完整的 `BoxDecoration`** 而不是 `null`。
+
+### 四、性能:药丸自己隔一层重绘边界
+
+选中 / 取消那 200ms 里药丸每帧重画(渐变 + 边框色一起插值)。不隔离的话每帧
+会顺着父链把托盘那片 `BackdropFilter` 与坞的内容一起标脏 ——
+与 `_TrayProgress`、「坞」两处同一条口径。见 `docs/performance.md`。
+
+### 五、验证
+
+- `flutter analyze` 0 issue;全量测试 **539 passed / 18 skipped / 0 failed**。
+- 原型侧 3 倍放大的实拍对账(`.tmp-shots/_xrow.png` 四档占比并排、
+  `_ring-cmp.png` 深 / 浅两套):最后取 26/13/30(深)与 20/10/24(浅)。
+- 应用侧用 `RenderRepaintBoundary.toImage` 把托盘按 3 倍导出来(`_app3-*.png`),
+  两套主题逐像素看过选中那颗:顶缘 124,140,255 —— 是强调色本身,不是被光晕
+  漂白的一块。
+- 判据改成渲染结果:`proto_sync_test` 现在读 **`.tabbar button[aria-selected]`
+  的 `background` / `border` / `box-shadow` 三条原文**,再与
+  `AnimatedContainer` 实际拿到的 `BoxDecoration` 逐条比 —— 包括
+  「未选中那颗也有 1px 透明边」「`boxShadow` 必须为 null」这两条防回退。
+
+### 六、这一轮没验到的
+
+1. **真机上的观感**:3 倍截图能看清那道边,但手机上的实际亮度还要上手。
+   深色下 26% 只把药丸提亮约 20 个色阶,觉得不够可以只调 `--pill-a` 一条。
+2. **动态强调色**:这一轮的对账都跑在默认中性紫上。封面取色之后,
+   浅色下那道边会不会跟着太淡(24%)要真机看。
+
+### 七、产物
+
+这一轮没有走 `tool/build.sh` 出包(改动在原型、Dart 侧与用例,验证用
+`flutter test` 与 `flutter analyze` 完成)。要侧载请照 README「构建」自己跑,
+产物名会是 `Nordic-1.0.62+63-*`。

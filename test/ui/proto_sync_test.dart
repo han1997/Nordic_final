@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -52,19 +51,21 @@ void main() {
   // ------------------------------------------------------------------ 原型
   final css = File('prototype/styles.css').readAsStringSync();
   final js = File('prototype/app.js').readAsStringSync();
-  final wideAt = css.indexOf('@container (min-width: 840px)');
+  /// **注释先整份去掉**再解析 —— 注释里也有 `}` 与 `:`(token 块那几条
+  /// 说明里就有),留在里面的话 `:root` 这种上千字的大块会切错地方。
+  /// 所有偏移(`from`)因此都在这份去注释文本上算。
+  final cssBare = css.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
+  final wideAt = cssBare.indexOf('@container (min-width: 840px)');
 
-  /// 取出某个选择器的声明块。**注释先去掉** —— 里面也有 `}` 与 `:`;
-  /// 选择器允许有缩进(宽屏那一档的规则都缩在容器查询里)。
+  /// 取出某个选择器的声明块。选择器允许有缩进(宽屏那一档的规则都缩在容器
+  /// 查询里)。
   String decls(String selector, {int from = 0}) {
     final m = RegExp('\\n[ \\t]*${RegExp.escape(selector)} \\{')
-        .firstMatch(css.substring(from));
+        .firstMatch(cssBare.substring(from));
     expect(m, isNotNull,
         reason: 'prototype/styles.css 里找不到 `$selector {` —— 选择器改名了？');
     final at = from + m!.end;
-    final chunk = css
-        .substring(at, math.min(css.length, at + 2000))
-        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
+    final chunk = cssBare.substring(at);
     return chunk.substring(0, chunk.indexOf('}'));
   }
 
@@ -89,6 +90,14 @@ void main() {
     return double.parse(m!.group(1)!);
   }
 
+  /// `color-mix(in srgb, var(--accent) 26%, transparent)` → 0.26
+  /// (应用侧 token 存的是比例,不是百分数)。
+  double colorMixPercent(String raw) {
+    final m = RegExp(r'([0-9.]+)%, *transparent').firstMatch(raw);
+    expect(m, isNotNull, reason: '这段值里没有 color-mix 的百分比：$raw');
+    return double.parse(m!.group(1)!) / 100;
+  }
+
   /// 一条 px 声明(`height: 58px` → 58)。
   double px(String block, String name) => num_(prop(block, name));
 
@@ -105,6 +114,10 @@ void main() {
 
   // **late**:这些块在第一个用例里才真的去读原型 —— 解析与断言都留在
   // 用例的作用域里(expect 在 main 的顶层会被判成「测试之外」)。
+  // 两条 token 块(:root 是深色,`[data-theme="light"]` 是浅色)——
+  // 选中胶囊那三档占比两边各一套,要分别读。
+  late final rootTokens = decls(':root');
+  late final lightTokens = decls('[data-theme="light"]');
   late final bottomstack = decls('.bottomstack');
   late final tray = decls('.tray');
   late final trayLine = decls('.tray-line');
@@ -232,6 +245,16 @@ void main() {
           .first)
       .decoration as BoxDecoration;
 
+  /// 玻璃**体内**那层(底色 / 薄雾 / 边框)—— 裁剪里面、模糊后面。
+  BoxDecoration glassFill(WidgetTester tester) => tester
+      .widget<DecoratedBox>(find
+          .descendant(
+            of: find.byType(BackdropFilter),
+            matching: find.byType(DecoratedBox),
+          )
+          .first)
+      .decoration as BoxDecoration;
+
   // ------------------------------------------------------------------ 用例
   testWidgets('托盘：左右 20 / 下 10、r-xl、深度影 0 20 40 -20', (tester) async {
     await pump(tester, trayAt(AppTab.home), const Size(390, 844));
@@ -252,12 +275,34 @@ void main() {
         reason: '两行的那块做成胶囊，上下缘会鼓得像药丸');
 
     expect(prop(tray, 'box-shadow').replaceAll(RegExp(r'\s+'), ' '),
-        'inset 0 1px 0 var(--glass-rim), 0 20px 40px -20px var(--depth)');
+        'inset 0 1px 0 var(--glass-rim), inset 0 -1px 0 var(--glass-sh), '
+        '0 20px 40px -20px var(--depth)');
     final shadow = decoration.boxShadow!.single;
     expect(shadow.offset, const Offset(0, 20));
     expect(shadow.blurRadius, 40);
     expect(shadow.spreadRadius, -20, reason: '少了这个负数，影会在四周散成一大圈灰');
     expect(shadow.color, NordicTokens.dark.depth);
+
+    // 上缘的薄雾：原型
+    // `background: linear-gradient(180deg, color-mix(...) 0%, transparent 38%), var(--glass)`
+    // —— 玻璃体内那道自上而下散开的高光。没有它，这块玻璃只是一片半透明色块。
+    expect(prop(tray, 'background').replaceAll(RegExp(r'\s+'), ' '),
+        startsWith('linear-gradient(180deg'));
+    final fillLayer = glassFill(tester);
+    expect(fillLayer.color, isNull, reason: '底色由渐变给，不再是单独一层纯色');
+    final sheen = fillLayer.gradient! as LinearGradient;
+    expect(sheen.stops, [0.0, 0.38], reason: '薄雾在 38% 处散尽，与原型同一条');
+    expect(sheen.colors.last, NordicTokens.dark.glass);
+    expect(
+      sheen.colors.first,
+      Color.alphaBlend(
+        NordicTokens.dark.glassRim.withValues(
+          alpha: NordicTokens.dark.glassRim.a * 0.46,
+        ),
+        NordicTokens.dark.glass,
+      ),
+      reason: '上缘那道光在玻璃体内散开的那一层（原型 46%）',
+    );
   });
 
   testWidgets('托盘那条分隔线：2 高 / 左右 --s4 / --fill-2 底槽 + 8px 的光', (tester) async {
@@ -335,7 +380,7 @@ void main() {
         reason: '手机这一档坞里只有播放键与下一首（上一首是宽屏那档才有的）');
   });
 
-  testWidgets('标签栏：58 / 药丸 50 / 内衬与内缩各 20；选中胶囊有两道 1px 内描边', (tester) async {
+  testWidgets('标签栏：58 / 药丸 50 / 内衬与内缩各 20；选中胶囊是渐变 + 外发光 + 两道 1px 内描边', (tester) async {
     await pump(tester, trayAt(AppTab.home), const Size(390, 844));
 
     final row = tester.getRect(find.ancestor(
@@ -361,12 +406,60 @@ void main() {
     expect(box(tabbar, 'padding')[1], NordicSpace.s5);
     expect(box(tabButton, 'margin')[1], NordicSpace.s5);
 
-    // 选中态:强调色 17% 的底 + 上下各一道 1px 的内描边。
+    // 选中态:上浓下淡的强调色渐变 + 一圈贴身的外发光 + 上下各一道 1px 的内描边。
     expect(prop(tabSelected, 'background').replaceAll(RegExp(r'\s+'), ' '),
-        'color-mix(in srgb, var(--accent) 17%, transparent)');
-    expect(selectFill(const Color(0xFF7C9EFF)).a, closeTo(0.17, 0.01));
+        'linear-gradient(180deg, var(--pill-a), var(--pill-b))');
+    expect(prop(tabSelected, 'border').replaceAll(RegExp(r'\s+'), ' '),
+        '1px solid var(--pill-ring)');
+    expect(prop(tabSelected, 'box-shadow').replaceAll(RegExp(r'\s+'), ' '),
+        'inset 0 1px 0 var(--glass-rim), inset 0 -1px 0 var(--glass-sh)');
+
+    // 三档占比:原型 :root 的两条 `color-mix(... N%, transparent)` 是渐变两端,
+    // 浅色那套收薄一档。应用侧从 NordicTokens 取同样的数,两边一起改。
+    final mix = colorMixPercent(prop(rootTokens, '--pill-a'));
+    expect(mix, NordicTokens.dark.pillTop);
+    expect(colorMixPercent(prop(lightTokens, '--pill-a')),
+        NordicTokens.light.pillTop);
+    expect(colorMixPercent(prop(rootTokens, '--pill-b')), NordicTokens.dark.pillBottom);
+    expect(colorMixPercent(prop(rootTokens, '--pill-ring')),
+        NordicTokens.dark.pillRing);
+    expect(colorMixPercent(prop(lightTokens, '--pill-ring')),
+        NordicTokens.light.pillRing);
 
     final home = find.byType(NavTabButton).at(AppTab.home.index);
+    final pill = tester.widget<AnimatedContainer>(find.descendant(
+      of: home,
+      matching: find.byType(AnimatedContainer),
+    ));
+    expect(pill.duration, NordicMotion.pillFill, reason: '原型 background 0.2s');
+    final pillDecoration = pill.decoration! as BoxDecoration;
+    final gradient = pillDecoration.gradient! as LinearGradient;
+    // 不在一屏沉浸页里时是中性强调色(`NordicAccent.neutral`),占比取 dark 那套。
+    expect(gradient.colors, [
+      const Color(0xFF7C8CFF).withValues(alpha: NordicTokens.dark.pillTop),
+      const Color(0xFF7C8CFF).withValues(alpha: NordicTokens.dark.pillBottom),
+    ]);
+    // 边缘是**发丝边**,不是外发光:BoxShadow 画在填充底下,而胶囊的底半透明
+    // —— 那圈光会从药丸内部透出来,把它点亮成一块板(原型里踩过这个坑)。
+    expect(pillDecoration.boxShadow, isNull, reason: '不许用外发光冒充边缘');
+    final ring = pillDecoration.border! as Border;
+    expect(ring.top.width, 1);
+    expect(ring.top.color,
+        const Color(0xFF7C8CFF).withValues(alpha: NordicTokens.dark.pillRing));
+    expect(ring.bottom.color, ring.top.color);
+
+    // 未选中那颗也要占着同样的圆角与 1px 的透明边 —— 只在一态写边,
+    // 切换时内容盒会挪 1px,那比「没有过渡」更容易被看见。
+    final idle = tester
+        .widget<AnimatedContainer>(find.descendant(
+          of: find.byType(NavTabButton).at(AppTab.settings.index),
+          matching: find.byType(AnimatedContainer),
+        ))
+        .decoration! as BoxDecoration;
+    expect(idle.border, isNotNull);
+    expect((idle.border! as Border).top.color, Colors.transparent);
+    expect(idle.borderRadius, pillDecoration.borderRadius);
+
     final edges = tester
         .widgetList<ColoredBox>(
             find.descendant(of: home, matching: find.byType(ColoredBox)))

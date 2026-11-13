@@ -38,13 +38,30 @@ class NavTabButton extends StatelessWidget {
     final t = context.nordic;
     final accent = context.accent.accent;
 
-    final content = Container(
+    final content = AnimatedContainer(
+      duration: NordicMotion.pillFill,
+      curve: NordicMotion.ease,
       height: height,
       width: width,
-      decoration: BoxDecoration(
-        color: selected ? selectFill(accent) : Colors.transparent,
-        borderRadius: BorderRadius.circular(NordicRadius.full),
-      ),
+      // 未选中是**完全无底、一圈透明边**(那颗药丸的位置由图标与文字自己说明);
+      // 选中态换成 [selectPillDecoration] 那层有体积的强调色,200ms 里淡进来 ——
+      // 与原型 `transition: ... background 0.2s var(--ease)` 同一条。
+      //
+      // **两态都给一份完整的 BoxDecoration**,未选中那份是
+      // `transparent` + 同样的圆角 + `transparent` 的 1px 边:框架插值的是
+      // 属性,写 `null` 的话过渡会直接跳过去。边也必须两态都在 —— 只在一态
+      // 出现会让那颗药丸的内容盒在切换时挪 1px。
+      //
+      // 用 AnimatedContainer 而不是外面套 FadeTransition:渐变没法按透明度
+      // 插值。代价是这颗药丸自己每帧重画,见下面 RepaintBoundary 那条。
+      decoration: selected
+          ? selectPillDecoration(t, accent)
+          : BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(NordicRadius.full),
+              border: Border.all(color: Colors.transparent, width: 1),
+            ),
+      // 选中胶囊那两道内描边在下面 (_PillEdges),与那道发丝边不冲突。
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -82,6 +99,12 @@ class NavTabButton extends StatelessWidget {
       ),
     );
 
+    // 这颗药丸自己隔一层重绘边界:选中 / 取消选中那 200ms 里它每帧都在重画
+    // (渐变与边框色一起插值),不隔离的话每帧会顺着父链把托盘里那片玻璃与
+    // 坞的内容一起标脏 —— 与 `_TrayProgress`、「坞」两处同一条口径
+    // (见 docs/performance.md)。
+    final pill = RepaintBoundary(child: content);
+
     if (pressedFeedback) {
       return Pressable(
         onTap: () => onSelected(tab),
@@ -89,13 +112,13 @@ class NavTabButton extends StatelessWidget {
           color: t.fill1,
           borderRadius: BorderRadius.circular(NordicRadius.full),
         ),
-        child: content,
+        child: pill,
       );
     }
     return GestureDetector(
       onTap: () => onSelected(tab),
       behavior: HitTestBehavior.opaque,
-      child: content,
+      child: pill,
     );
   }
 }

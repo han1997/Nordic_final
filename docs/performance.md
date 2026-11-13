@@ -155,6 +155,13 @@
   `ImageFilter.compose(blur + saturate 色矩阵)` 在 Android(Impeller)上不生效,
   表现是坞背后滚动过去的曲目文字**清晰可读**,毛玻璃等于没有(只有 80% 的填充色挡着)。
   换回裸模糊后立刻恢复。别为了那点饱和度再塞回组合过滤器。
+- **导航玻璃是三层叠出来的,不是一块纯色**(`glass.dart` 的 `NordicGlassPanel.nav`):
+  上缘那道光在玻璃体内散开的一层薄雾(0 → 38% 处散尽)+ 底色 + 下缘一道 1px 的
+  暗描边。少了前一层,上缘那条 1px 实线浮在平滑的半透明色块上,像贴上去的,
+  玻璃读不出厚度;少了后一层,底边就是一张纸。**薄雾走 `LinearGradient` 的两端
+  颜色(上端是 `alphaBlend(glassRim 46%, glass)`)而不是往上再叠一层不透明色块**
+  —— 叠色块会把模糊透出的背景压平,玻璃只剩边框。面板玻璃与薄玻璃**不加**这两层
+  (它们承载文字,多一层会脏)。
 - **歌词的滚动落点靠 `GlobalKey` + `Scrollable.ensureVisible(alignment: 0.5)`**,
   不要自己估每行高度(估过:与真实行高差 40%,误差累积到副歌就跑到屏幕外)。
   **而且每一行都得真的建出来**(歌词列走 `SingleChildScrollView` + `Column`,不是
@@ -189,6 +196,27 @@
   **不可点的图标键要压暗**(上一首 / 下一首到头了那颗,不压暗就跟能点的一样,
   点下去什么也不发生 = 「这键坏了」);**行高用 `minHeight` 不用写死高度**
   (系统字号拉大时行要能跟着长高,写死会把文字裁掉半截)。
+- **选中胶囊 = 上浓下淡的渐变 + 一道强调色发丝边**,不是一层平涂的强调色
+  (`selectPillDecoration`,`components.dart`;标签栏与左竖栏共用这一份)。
+  原先那层 17% 的平涂在深色玻璃上几乎读不出来 —— 一块 62 × 50 的药丸压在
+  80% 不透明的玻璃上,17% 的强调色只把它提亮两三个像素。占比住在 `NordicTokens`
+  的 `pillTop` / `pillBottom` / `pillRing`(深色 26/13/30%,浅色 20/10/24%),
+  原型 `--pill-a` / `--pill-b` / `--pill-ring` 是同一组,`proto_sync_test` 两边对读。
+  **边缘别改回外发光**:BoxShadow 画在填充**底下**,而胶囊的底是半透明的 ——
+  那圈光会从药丸内部透出来。实测过一版 `0 4 12 -8` / 85%:顶缘从 26% 一路亮到
+  50% 以上,读成一块发光的板子(原型里也踩过一次,见 `styles.css` `--pill-ring`
+  那段)。**"浮起来"靠渐变与那道 1px 的边,不靠影。**
+  **传输控制上的随机 / 循环键仍走 `selectFill`**(那边是一颗 48 的圆钮,平涂就够)。
+- **药丸自己隔一层 `RepaintBoundary`**(`NavTabButton`):选中 / 取消那次 200ms 里
+  渐变与边框色一起插值,药丸每帧重画。不隔离的话每帧会顺着父链把托盘那片玻璃与
+  坞的内容一起标脏(与 `_TrayProgress`、「坞」两处同一条口径)。时长住在
+  `NordicMotion.pillFill`(200ms,原型 `transition: ... background 0.2s`)——
+  **别并到 `screenFade`**:那是整屏换页的 220,药丸跟着会显得拖沓。
+- **`AnimatedContainer` 插值的是 `decoration`,不是透明度**:渐变没法按 alpha
+  淡入淡出,所以选中 / 未选中两态都给一份 `BoxDecoration`(未选中那份是
+  `color: transparent` + 同样的圆角 + 一圈 `transparent` 的 1px 边),让框架
+  插值属性。写成「有底 / 没底」(`null`)的话过渡会直接跳过去;边只在一态出现
+  的话,那一下内容盒会因 `Border` 的存在与否挪 1px —— 比没有过渡更容易被看见。
 - **玻璃里的行不能用 `InkWell`**:涟漪画在最近那个 `Material` 的墨层上,而那一层
   在这张纸的玻璃**底下** —— 按下去屏幕上什么都不动(队列面板当初靠垫一层
   `Material(color: transparent)` 绕开,现已统一走 `Pressable` 的 `pressedDecoration`)。
