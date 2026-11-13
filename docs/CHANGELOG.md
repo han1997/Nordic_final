@@ -2954,3 +2954,60 @@ none` + chunked,**没有长度**)根本不能 seek —— 见 `NordicAudioHandle
 这一轮没有走 `tool/build.sh` 出包(改动在 Dart 侧、原型与用例,验证用
 `flutter test` 与 `flutter analyze` 完成)。要侧载请照 README「构建」自己跑,
 产物名会是 `Nordic-1.0.60+61-*`。
+
+## 第三十七轮:切 tab 那一下 —— 淡的是盖在内容上的实色,不是内容本身(2026-11-13)
+
+一次纯粹的性能收口,屏幕上读到的效果**不变**:时长、缓动、谁先谁后都和原来一样。
+改的只是那 220ms 里框架被要求做多少事。版本 1.0.61+62。
+
+### 一、原先那笔账
+
+切 tab 的过渡一直是 `IndexedStack` 外面套一层 `FadeTransition`,外面再垫一张
+`RepaintBoundary`(第二十六轮为了让「不顿挫」成立而加的那张)。
+
+那张边界只解决了**重画**:子树的绘制结果被缓存成一张纹理,透明度变化不必重画子树。
+它解决不了**合成** —— 整屏不透明度意味着这棵树每帧都要作为一层离屏内容,按新的
+alpha 重新叠到屏幕上。而切 tab 那 220ms 恰好是内容最忙的一段:新一屏的数据落地、
+播放进度在走、底部胶囊在高亮滑动。内容每变一次,那层整屏纹理就得重新合成一次;
+里面还装着首页那层 62px 的 `ImageFiltered` 氛围与玻璃的 `BackdropFilter`。
+
+### 二、现在的做法
+
+`shell.dart` 新增 `TabEntrance`:一块盖在新一屏上、不参与命中测试的实色
+(`context.nordic.bg`),alpha 从 1 走到 0,`t >= 1` 时连这块 `ColoredBox` 都不建。
+
+- 内容**点下那一帧就换完**(`IndexedStack` 自己重建),一个像素都没淡;
+- 动的只有那一块实色 —— 没有模糊、没有玻璃、没有 `saveLayer`;
+- 常驻区(胶囊 / 竖栏 / 播放坞)仍在 `TabEntrance` **外面**,所以它不闪;
+- `IndexedStack` 外面那张 `RepaintBoundary` **保留**,理由换了一条:底下那块实色
+  每帧都在变,少了它就会把氛围与玻璃一起拖着重画。
+
+控制器、时长(`NordicMotion.screenFade`)、缓动(`NordicMotion.ease`)一个字没动 ——
+播放页那条路由仍与这里读同一对常量,「同一套」照旧成立。
+
+### 三、原型
+
+不动。原型切 tab 是**直接换**(`app.js` 里 `go(..., '')` 不带 View Transition),
+这一轮的可见行为与它一致;改的是实现代价,不是设计。
+
+### 四、验证
+
+- `flutter analyze` 0 issue;全量测试 **539 passed / 18 skipped / 0 failed**。
+- `shell_test` 原来那条「切 tab 的淡入与播放页进出是同一个时长、同一根缓动」
+  改读 `TabEntrance.progress`,判据不变(仍是 `screenFade` + `ease`)。
+- 新增一条:`切 tab：淡的是盖在内容上的实色，不是内容本身` ——
+  壳里**不许**出现任何 `FadeTransition`;静止时那块实色不建;切过去的第一帧
+  alpha > 0.5 且新一屏已在树里;`screenFade` 之后实色彻底消失。
+
+### 五、这一轮没验到的
+
+1. **真机上的手感与帧时**:单测只能证明「没有整屏离屏层」,省下来多少要看真机
+   的帧时间线。220ms 这一段的两端(刚切过去/快结束时)最容易看出差别。
+2. **宽屏**:1280 下 `wide_shell_test` 照旧通过(竖栏换树、`HeroMode` 每 tab 一层),
+   但宽屏内容面积更大,收益是否更明显仍要真机判断。
+
+### 六、产物
+
+这一轮没有走 `tool/build.sh` 出包(改动全在 Dart 侧与用例,验证用 `flutter test`
+与 `flutter analyze` 完成)。要侧载请照 README「构建」自己跑,产物名会是
+`Nordic-1.0.61+62-*`。

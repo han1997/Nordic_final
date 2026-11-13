@@ -188,27 +188,75 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  /// 切 tab 那一层淡入用的**就是播放页进出那个常量**(`NordicMotion.screenFade`)。
+  /// 切 tab 那一层用的**就是播放页进出那个常量**(`NordicMotion.screenFade`)。
   ///
   /// 2026-10-18 用户要求「进播放页用切 tab 那套动画」—— 两处各写一个字面量迟早漂开
   /// (一边改了另一边不知道)。`app_test` 那一组验的是播放页那条路由,这一条验的是
   /// 主壳这一层,两边合起来才说明「同一套」。
-  testWidgets('切 tab 的淡入与播放页进出是同一个时长、同一根缓动', (tester) async {
+  testWidgets('切 tab 的过渡与播放页进出是同一个时长、同一根缓动', (tester) async {
     await pumpShell(tester, playingController(playing));
 
-    final fade = tester.widget<FadeTransition>(
-      find
-          .ancestor(
-            of: find.byType(IndexedStack),
-            matching: find.byType(FadeTransition),
-          )
-          .first,
-    );
-    final curve = fade.opacity as CurvedAnimation;
+    final entrance = tester.widget<TabEntrance>(find.byType(TabEntrance));
+    final curve = entrance.progress as CurvedAnimation;
 
     expect((curve.parent as AnimationController).duration,
         NordicMotion.screenFade);
     expect(curve.curve, NordicMotion.ease);
+    expect(tester.takeException(), isNull);
+  });
+
+  /// 切 tab 时**内容不进离屏层**:动的是盖在内容上的一层实色(`TabEntrance`)。
+  ///
+  /// 早先那一版是 `FadeTransition` 包住整棵内容树(整屏不透明度 = 每帧一次离屏
+  /// 合成,里面还有 62px 氛围模糊与玻璃)。这一条把两件事一起钉住:内容外面
+  /// **没有** `FadeTransition`;那层实色第一帧盖住、`screenFade` 之后彻底消失。
+  testWidgets('切 tab：淡的是盖在内容上的实色，不是内容本身', (tester) async {
+    await pumpShell(tester, playingController(playing));
+
+    // 壳里不许出现任何 `FadeTransition`:上面那几条 `MaterialPageRoute` 自带的
+    // 淡入在壳**外面**(祖先),与这里无关。
+    expect(
+      find.descendant(
+        of: find.byType(NordicShell),
+        matching: find.byType(FadeTransition),
+      ),
+      findsNothing,
+      reason: '整屏不透明度会把内容关进离屏层，每帧重合成',
+    );
+
+    // 静止时那层实色根本不画。
+    expect(
+      find.descendant(
+        of: find.byType(TabEntrance),
+        matching: find.byType(ColoredBox),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(tabButton('音乐库'));
+    await tester.pump();
+
+    final scrim = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byType(TabEntrance),
+        matching: find.byType(ColoredBox),
+      ),
+    );
+    expect(scrim.color.a, greaterThan(0.5),
+        reason: '切过去的第一帧：新一屏还盖在底色里');
+
+    // 内容已经在第一帧换过去了 —— 淡的只是那块实色。
+    expect(find.byType(LibraryScreen), findsOneWidget);
+
+    await tester.pump(NordicMotion.screenFade);
+    expect(
+      find.descendant(
+        of: find.byType(TabEntrance),
+        matching: find.byType(ColoredBox),
+      ),
+      findsNothing,
+      reason: '淡完就该彻底不画了',
+    );
     expect(tester.takeException(), isNull);
   });
 

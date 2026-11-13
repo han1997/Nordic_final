@@ -43,11 +43,20 @@ class _NordicShellState extends State<NordicShell>
   /// 设置页有几十行。建过之后 IndexedStack 照旧保活,滚动位置不丢。
   final Set<AppTab> _built = {AppTab.home};
 
-  /// 切 tab 时那一下淡入。**与底部悬浮 tab 的胶囊同一套缓动**(`NordicMotion.ease`)——
-  /// 高亮滑过去、内容淡进来,两件事读起来才是一下。
+  /// 切 tab 那一下的进度。**与底部悬浮 tab 的胶囊同一套缓动**(`NordicMotion.ease`,
+  /// 时长 `NordicMotion.screenFade`)—— 高亮滑过去、新一屏浮上来,两件事读起来
+  /// 才是一下。
   ///
-  /// 时长与播放页的进出是**同一个常量**(`NordicMotion.screenFade`):那一屏
-  /// 2026-10-18 起也走这套淡入(见 `routes.dart` 的 [AppRoutes.fade])。
+  /// 这个值**只喂给 [TabEntrance] 那一块实色**,不参与任何内容的合成:内容在
+  /// 点下的那一帧就换完了(`IndexedStack` 自己重建),220ms 里动的只有盖在新一屏
+  /// 上的那层底色。
+  ///
+  /// 2026-10-18 那版是挂在 `IndexedStack` 外面的 `FadeTransition`(整屏不透明度
+  /// 外面垫一张 `RepaintBoundary`)。手感一样,账不一样:整屏不透明度会为整棵
+  /// 子树开一层离屏 —— 边界只隔住**重画**,那 220ms 里每一帧仍要把整屏当成一张
+  /// 纹理重新合成;而这段里正赶上新一屏的数据落地、播放进度与胶囊高亮,内容每
+  /// 重画一次都要再穿过那层。换成 [TabEntrance] 之后内容根本不进离屏层,每帧
+  /// 只多画一块实色。
   late final AnimationController _fade = AnimationController(
     vsync: this,
     duration: NordicMotion.screenFade,
@@ -67,8 +76,8 @@ class _NordicShellState extends State<NordicShell>
       _tab = tab;
       _built.add(tab);
     });
-    // **整屏淡入**而不是只淡 IndexedStack 里的新一屏:停在同一棵树上时
-    // 位置是保活的,淡的是「换过来」这一下本身,来回切不会越切越糊。
+    // 从 0 起:这一帧 [TabEntrance] 整片盖住新一屏,220ms 内褪干净。
+    // 淡的是「换过来」这一下,不是某一棵子树 —— 切回来时位置照旧保活。
     _fade.forward(from: 0);
   }
 
@@ -221,48 +230,86 @@ class _NordicShellState extends State<NordicShell>
       body: DismissKeyboardOnTap(
         child: Stack(
           children: [
-            // IndexedStack 而不是条件渲染 —— 切回来时滚动位置还在。
-            //
-            // 外面那层 FadeTransition 是切 tab 的**唯一动效**:与底部胶囊的
-            // 高亮同一套缓动,新一屏淡进来而不是硬切。
-            FadeTransition(
-              opacity: _fadeCurve,
-              // 第二十六轮:宽屏下内容整体右移 104,给左侧竖栏让位 ——
-              // 让位只在壳上给一次,页面里那 12 处 listInset 不必各改一遍。
-              child: NavGutter(
-                // 淡入时给下面这棵子树一张**缓存层**。`IndexedStack` 里挂着各
-                // tab 保活的整棵子树(含首页那层 62px 的 `ImageFiltered` 氛围),
-                // 少了这层边界,透明度每变一次就把整屏重画一遍 —— 与
-                // `routes.dart` 里「页面过渡只做位移、不做淡入」是同一个道理。
-                // 透明度、时长、缓动一个字没改,只是让它合成一张现成的层。
-                child: RepaintBoundary(
-                  child: IndexedStack(
-                    index: _tab.index,
-                    children: [
-                      for (final tab in AppTab.values)
-                        if (_built.contains(tab))
-                          // **只有屏幕上那一屏的 `Hero` 才参与共享元素过渡。**
-                          //
-                          // 框架按 tag 在**整个来源路由**里找起点,不看元素在不在
-                          // 屏幕上(`heroes.dart` 的 `_allHeroesFor` 只认 `HeroMode`)。
-                          // 而 IndexedStack 把逛过的 tab **整棵保活**:只要切过一次
-                          // 音乐库的「专辑」分段,那张网格就一直挂着 —— 于是
-                          // 「在首页点一张专辑 / 点播放坞」时起点会被**看不见的那张
-                          // 网格**偷走,封面从屏幕外飞进来(每帧重画一次,
-                          // 正好落在滑入动画上)。`HeroMode` 就是框架给这件事的做法:
-                          // 关掉的子树整个跳过,英雄名字空间于是**每个 tab 一份**。
-                          HeroMode(enabled: tab == _tab, child: _screenOf(tab))
-                        else
-                          const SizedBox.shrink(),
-                    ],
+            // 第二十六轮:宽屏下内容整体右移 104,给左侧竖栏让位 ——
+            // 让位只在壳上给一次,页面里那 12 处 listInset 不必各改一遍。
+            NavGutter(
+              // 这张 Stack 只装两样:内容,和盖在内容上的那一层 [TabEntrance]。
+              // 常驻区在它**外面** —— 切 tab 时胶囊 / 竖栏 / 播放坞一下都不闪。
+              child: Stack(
+                children: [
+                  // IndexedStack 而不是条件渲染 —— 切回来时滚动位置还在。
+                  //
+                  // 这张 `RepaintBoundary` 守的是**重画**:里面挂着各 tab 保活的
+                  // 整棵子树(含首页那层 62px 的 `ImageFiltered` 氛围与玻璃的
+                  // `BackdropFilter`),而上面那块实色每帧都在变 —— 少了边界,
+                  // 它每变一次就把这些一起拖着重画一遍。
+                  RepaintBoundary(
+                    child: IndexedStack(
+                      index: _tab.index,
+                      children: [
+                        for (final tab in AppTab.values)
+                          if (_built.contains(tab))
+                            // **只有屏幕上那一屏的 `Hero` 才参与共享元素过渡。**
+                            //
+                            // 框架按 tag 在**整个来源路由**里找起点,不看元素在不在
+                            // 屏幕上(`heroes.dart` 的 `_allHeroesFor` 只认 `HeroMode`)。
+                            // 而 IndexedStack 把逛过的 tab **整棵保活**:只要切过一次
+                            // 音乐库的「专辑」分段,那张网格就一直挂着 —— 于是
+                            // 「在首页点一张专辑 / 点播放坞」时起点会被**看不见的那张
+                            // 网格**偷走,封面从屏幕外飞进来(每帧重画一次,
+                            // 正好落在滑入动画上)。`HeroMode` 就是框架给这件事的做法:
+                            // 关掉的子树整个跳过,英雄名字空间于是**每个 tab 一份**。
+                            HeroMode(enabled: tab == _tab, child: _screenOf(tab))
+                          else
+                            const SizedBox.shrink(),
+                      ],
+                    ),
                   ),
-                ),
+                  // 切 tab 那一下盖在新一屏上的实色(见 [_fade] 上那段)。
+                  TabEntrance(progress: _fadeCurve),
+                ],
               ),
             ),
             // 常驻区:窄屏是底部胶囊托盘,宽屏(>= 840)换左竖栏 + 播放横条。
             // 形态切换只此一处(见 chrome.dart)。
             NordicChrome(activeTab: _tab, onTabSelected: _select),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 切 tab 时盖在新一屏上的那一层实色 —— 唯一一件还在动的东西。
+///
+/// 为什么不是 `FadeTransition` 包住内容:整屏不透明度会为整棵子树开一层离屏
+/// 合成。外面垫一张 `RepaintBoundary` 只省掉**重画**,那 220ms 里每一帧仍要把
+/// 这张整屏纹理重新合成一次 —— 而这段里正赶上新一屏的数据落地、播放进度与
+/// 底部胶囊高亮,内容每一次重画都得再穿过那层。
+///
+/// 这里反过来:内容一帧切到位(一点没淡),淡的是**盖在它前面的一层不透明
+/// 底色**,从满到零。读起来仍然是「一屏化进另一屏」,贵的东西一次都没进过
+/// 离屏层,每帧只多画一块实色。
+class TabEntrance extends StatelessWidget {
+  const TabEntrance({super.key, required this.progress});
+
+  /// 0 = 整片盖住(刚切过去),1 = 完全褪掉。
+  final Animation<double> progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = context.nordic.bg;
+    return Positioned.fill(
+      // 不吃点击:这一层只是视觉上的过渡,底下的新一屏从第一帧起就是活的。
+      child: IgnorePointer(
+        child: AnimatedBuilder(
+          animation: progress,
+          builder: (context, child) {
+            final t = progress.value;
+            // 到点连这块实色都不必再画。
+            if (t >= 1) return const SizedBox.shrink();
+            return ColoredBox(color: bg.withValues(alpha: 1 - t));
+          },
         ),
       ),
     );
