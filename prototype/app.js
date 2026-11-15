@@ -2235,7 +2235,7 @@ function screenSettings() {
    同源策略挡掉,而「零外链」是这一份原型的硬约束(见 index.html / player.html
    的注释)。所以它靠**用例**跟住 `pubspec.yaml` —— `test/ui/prototype_parity_test.dart`
    在两边不一致时直接红。改版本号时要么改这里,要么让那条用例红一次提醒你。 */
-const ABOUT_VERSION = '1.0.63+64';
+const ABOUT_VERSION = '1.0.64+65';
 
 function screenAbout() {
   return `<div class="appbar nav">

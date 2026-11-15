@@ -14,6 +14,11 @@ Nordic —— 多平台 NAS 音乐播放器(Flutter,单一代码库铺 Android /
 
 1. **界面 / 交互的增删改,先改 `prototype/`**,应用再去实现;别在应用里「顺手」做一个
    原型里没有的东西。详见 README 的「界面改动一律先改原型」一节。
+   **改原型就是改两处,不是一处**:`player.html`(交互流)与 `index.html`(设计板)
+   共用同一份 `app.js` / `styles.css`,新增或改动一屏 / 一张纸必须同时进 `BOARD`
+   与 `VIEWS` —— 只改交互流等于让设计板上看不见它,而那正是「没人能对照」的开始。
+   两个入口文件的 `<head>` 与 `<body>` 除标题与 `data-mode` 外必须逐行一致。
+   守卫:`test/ui/prototype_parity_test.dart`。
 2. **用户可见文案里的中文标点用全角**(`,` `;` `!` `?` `:` `(` `)`),守卫是
    `test/ui/copy_punctuation_test.dart`。**但本文件与 README / docs 的叙述照旧用半角,
    别去「统一」它们** —— 那条规矩管的是应用文案,不是文档。

@@ -254,6 +254,53 @@ void main() {
     });
   });
 
+  group('两个入口除了该差的那几行，逐行相同', () {
+    /// `player.html` 与 `index.html` 共用同一份 `app.js` / `styles.css`,
+    /// 差别只有三处:**标题**、**`data-mode`**、以及各自那句注释。
+    ///
+    /// 这一条挡的是「改了一个入口、忘了另一个」—— 比它看起来常见:引一个新
+    /// script、加一个 meta、改一次 favicon 的插法,都只会在其中一页上做。
+    /// 两份 head 一旦分叉,`index.html` 打开时能看见的东西就和交互流不一样了,
+    /// 而**没有任何人会发现**(它们长得都像「那个只差一个 mode 的文件」)。
+    List<String> normalized(String file) => File('prototype/$file')
+        .readAsStringSync()
+        .split('\n')
+        .map((line) => line.trimRight())
+        .where((line) => line.isNotEmpty)
+        .map((line) => line
+            // 标题:设计板 / 可点击原型,各自的名字。
+            .replaceAll(RegExp(r'<title>[^<]*</title>'), '<title>')
+            // mode:board / stage,这是两个文件存在的唯一理由。
+            .replaceAll(RegExp(r'data-mode="[^"]*"'), 'data-mode=""'))
+        // 两边各有一句说明「这是什么」的注释,内容本就该不同 —— 整行去掉。
+        .where((line) => !line.startsWith('<!--'))
+        .toList();
+
+    test('player.html 与 index.html 除标题 / mode / 注释外逐行一致', () {
+      final stage = normalized('player.html');
+      final board = normalized('index.html');
+
+      final onlyStage = stage.where((l) => !board.contains(l)).toList();
+      final onlyBoard = board.where((l) => !stage.contains(l)).toList();
+
+      expect(onlyStage, isEmpty,
+          reason: '这几行只在 player.html 里有 —— 原型改动要包括 index.html:\n'
+              '${onlyStage.join('\n')}');
+      expect(onlyBoard, isEmpty,
+          reason: '这几行只在 index.html 里有 —— 另一页也要跟上：\n'
+              '${onlyBoard.join('\n')}');
+      expect(stage.length, board.length, reason: '两页行数该一样');
+    });
+
+    test('index.html 确实是板模式，player.html 是舞台模式', () {
+      // 上面那条把 mode 抹平了才比较,所以这里补一句「谁该是哪个」。
+      expect(File('prototype/index.html').readAsStringSync(),
+          contains('data-mode="board"'));
+      expect(File('prototype/player.html').readAsStringSync(),
+          contains('data-mode="stage"'));
+    });
+  });
+
   group('两处硬编码的值不许漂', () {
     test('关于页的版本号 == pubspec.yaml', () {
       final proto = RegExp(r"ABOUT_VERSION = '([^']+)'").firstMatch(js)?.group(1);
