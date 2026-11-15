@@ -57,6 +57,8 @@ const ICONS = {
   paste:   '<rect x="5.6" y="5.2" width="12.8" height="14.8" rx="2.2"/><path d="M9.6 5.2V4a1.6 1.6 0 0 1 1.6-1.6h1.6A1.6 1.6 0 0 1 14.4 4v1.2"/><path d="M9 11.4h6M9 15h4"/>',
   copy:    '<rect x="8.6" y="8.6" width="10.8" height="10.8" rx="2.2"/><path d="M15.4 5.6H6.6A1.8 1.8 0 0 0 4.8 7.4v8.8"/>',
   /* 歌曲信息与「回到正在播放」各一颗 —— 原先一个都没有。 */
+  person:  '<circle cx="12" cy="8.2" r="3.4"/><path d="M5.2 19.6c0-3.5 3-5.8 6.8-5.8s6.8 2.3 6.8 5.8"/>',
+  edit:    '<path d="M4.6 19.4h4l10-10a2.1 2.1 0 0 0-3-3l-10 10z"/><path d="M14.6 7.4l2 2"/>',
   info:    '<circle cx="12" cy="12" r="8.4"/><path d="M12 11.2v5.2"/><path d="M12 7.7h.01"/>',
   locate:  '<circle cx="12" cy="12" r="6.6"/><circle cx="12" cy="12" r="1.9" fill="currentColor" stroke="none"/><path d="M12 2.6v3.4M12 18v3.4M2.6 12h3.4M18 12h3.4"/>',
 };
@@ -315,6 +317,9 @@ const STATE = {
   routeTag: '内网',
   /* 上下文菜单:点「⋯」弹出的那张纸,内容随来源不同 */
   menuFor: 'song',
+  /* 当前打开的是哪一张歌单 —— 歌单详情的路由参数与它自己的「⋯」菜单共用这一件
+     (菜单里没有参数可传,只能从状态取)。 */
+  plId: 'p1',
   /* 扫码同步:导入那一屏的模式、粘贴框里那段文本、读出来了没有、这段载带不带密码。
      文本**预填**一段 —— 与搜索页预填「程响」同一个理由:可点原型一进门就走得通
      那条路,不必先手打一串 base64 才有东西看。结尾那个 `#pw` 是**原型自己的记号**,
@@ -419,6 +424,21 @@ function dayLabel(iso) {
    页脚会用一行小字把这件事说清楚,免得看起来像漏数据。 */
 const tracksOf = (albumId)    => SONGS.filter((s) => s.albumId === albumId);
 const songsOf  = (artistName) => SONGS.filter((s) => s.artist === artistName);
+
+/* 歌单里的曲目 —— **从 SONGS 派生**,不另开一份手写表(两个数据源迟早各说各话,
+   与 tracksOf 同一条理由)。原型不真连服务器,所以按「歌单 id + 歌曲 id」哈希
+   取前几首:同一张歌单每次进来都是同样几首,四张歌单也不会长成同一副样子。
+   p.count 是服务器上的真实首数,这里只摊出其中几首,页脚会说明这是抽样。 */
+const playlistSongsOf = (p) => [...SONGS]
+    .sort((a, b) => fnv1a(p.id + a.id) - fnv1a(p.id + b.id))
+    .slice(0, 4);
+
+/* FNV-1a —— 与 [seededShuffle] 里那条同一个算法,提出来单用。 */
+function fnv1a(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
 
 /* 择优结果:延迟最低的那条可用线路。两处要用,所以提到外面来一份。 */
 const bestRoute = () =>
@@ -974,7 +994,7 @@ function screenLibrary(tab = 'songs', notConnected = false) {
   } else {
     body = `<div class="section"><h2>我的歌单</h2><span class="count">${PLAYLISTS.length} 个</span></div>
       ${PLAYLISTS.map((p) => `
-        <div class="row" style="height:72px">
+        <div class="row" style="height:72px" data-playlist="${p.id}">
           ${cover(p, '', 'width:56px;height:56px;border-radius:16px')}
           <div class="grow"><div class="line1">${p.name}</div><div class="line2">${p.count} 首 · ${p.desc}</div></div>
           ${ic('chevron', 18)}
@@ -1016,6 +1036,60 @@ function trackRow(s, { number = null, playing = false, line2 = null } = {}) {
     </div>
     <span class="trail">${mmss(s.dur)}</span>
   </div>`;
+}
+
+/* ---------------- 歌单详情 ----------------
+
+   从「音乐库 · 歌单」点进去的那一屏。**它在应用里一直存在**(第三十四轮起,
+   `lib/ui/screens/playlist_screen.dart`),原型这边补上是为了让那一屏有对照 ——
+   同一次补的还有「加入歌单」那张纸(见 sheetPlaylistPicker)。
+
+   头部照 [screenAlbum] 的居中构图(封面 / 名字 / 首数),但**曲目行要带封面**:
+   歌单不是专辑,顺序不按 track,曲序数字在这里没有意义,而封面是「一眼认出是
+   哪首」最快的线索(应用侧同一个决定,见 playlist_screen.dart 的同名注释)。
+   只读歌单(别人分享给你的那种)不给改写入口 —— 摆出来也只会换来一句服务器拒绝。 */
+function screenPlaylist(id) {
+  const p = PLAYLISTS.find((x) => x.id === id) || PLAYLISTS[0];
+  const songs = playlistSongsOf(p);
+  const cur = currentSong();
+  /* 抽样:原型只摊出几首,而 p.count 是服务器上的真实首数。
+     两处对不上时由页脚一行小字说明(与专辑页同一条规矩)。 */
+  const rest = p.count - songs.length;
+
+  const rows = songs.map((s) => songRow(s, STATE.playing && s.id === cur.id)).join('');
+  const more = rest > 0
+    ? `<div class="list-note">原型只带了这张歌单的 ${songs.length} 首,库里还有 ${rest} 首未列出。</div>`
+    : '';
+
+  return `${ambient(p)}
+    <div class="appbar nav">
+      <button class="icon-btn" data-back>${ic('back', 22)}</button>
+      <span class="spacer"></span>
+      <button class="icon-btn quiet" data-menu-for="playlist">${ic('more', 20)}</button>
+    </div>
+    <div class="scroll">
+      <div class="album-hero">
+        ${cover(p, '', 'width:168px;height:168px;border-radius:26px')}
+        <div class="hero-text">
+          <div class="title">${p.name}</div>
+          <!-- 只报首数:**不报总时长**。原型只摊出 4 首,那 4 首之和(16:04)
+               与「32 首」并列会被读成「32 首共计 16 分钟」。应用里取的是全量曲目,
+               两处数字含义不同 —— 少一行比多一行错的好。 -->
+          <div class="meta"><span>${p.count} 首</span></div>
+          ${p.desc ? `<div class="meta">${p.desc}</div>` : ''}
+        </div>
+      </div>
+      <div class="album-play">
+        <button class="btn primary" data-song="${(songs[0] || cur).id}">${ic('play', 20)} 播放</button>
+      </div>
+      ${rows || `<div class="empty" style="padding-top:40px">
+        <span class="big">这个歌单里还没有歌</span>
+        <span class="small">在歌曲菜单里可以把它加进来</span>
+      </div>`}
+      ${more}
+      <div style="height:var(--s5)"></div>
+    </div>
+    ${bottom(cur, progressOf(cur, STATE.elapsed))}`;
 }
 
 function screenAlbum(id) {
@@ -1368,7 +1442,10 @@ function sheetMenu() {
     title = s.title; sub = `${s.artist} · ${a.name}`;
     items = [
       [faved ? 'heartF' : 'heart', faved ? '取消收藏' : '收藏这首歌', 'act:fav'],
-      ['download', '下载到本机（FLAC）', 'act:dl-song'],
+      ['download', STATE.downloads.some((d) => d.songId === s.id)
+        ? '已下载到本机' : '下载到本机（FLAC）', 'act:dl-song'],
+      ['plus', '加入歌单', 'sheet:playlistPicker'],
+      ['queue', '下一首播放', 'act:queue-next'],
       ['queue', '加入播放队列', 'act:queue-add'],
       ['queue', '查看播放队列', 'sheet:queue'],
       ['route', '切换线路', 'sheet:routes'],
@@ -1386,6 +1463,15 @@ function sheetMenu() {
       ['download', '整张下载到本机', 'act:dl-album'],
       ['queue', '加入播放队列', 'act:queue-add'],
       ['queue', '查看播放队列', 'sheet:queue'],
+    ];
+  } else if (forWhat === 'playlist') {
+    /* 歌单自己的菜单:改名 / 删除。与专辑 / 艺人那两支同一副骨架 ——
+       应用侧的 `_showMenu` 摆的正是这两条(playlist_screen.dart)。 */
+    const p = PLAYLISTS.find((x) => x.id === STATE.plId) || PLAYLISTS[0];
+    title = p.name; sub = `${p.count} 首`;
+    items = [
+      ['edit', '重命名歌单', 'act:rename-playlist'],
+      ['trash', '删除这个歌单', 'act:delete-playlist'],
     ];
   } else if (forWhat === 'artist') {
     const ar = ARTIST_BY_ID(STATE.params.artist || STATE.artistId);
@@ -1446,6 +1532,34 @@ function sheetSongInfo() {
             <div class="info-row"><span class="k">${label}</span><span class="v">${value}</span></div>`).join('')}
         </div>
         <div class="menu-item" data-menu-go="album:${a.id}">${ic('disc', 20)}<span>查看专辑</span></div>
+        ${artistIdOf(s.artist)
+          ? `<div class="menu-item" data-artist="${artistIdOf(s.artist)}">${ic('person', 20)}<span>查看艺人</span></div>`
+          : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* 「加入歌单」—— 歌曲「⋯」菜单里那条。
+
+   应用侧是 `playlist_picker_sheet.dart`:列库里的歌单,点一条就把这首塞进去。
+   **用纸不用屏**:这是「顺手把这首塞进某个歌单」的小动作,走进去再退出来会打断
+   正在听的东西(点它的时候多半还在放歌)。
+
+   歌单列表取自本地快照,不为这一个动作再打一次服务器 —— 库里那份就是用户在
+   歌单页看到的同一份,两处不同步比慢一点更糟。原型那边同理:同一份 PLAYLISTS。 */
+function sheetPlaylistPicker() {
+  const s = currentSong();
+  return `<div class="sheet-scrim">
+    <div class="sheet">
+      <div class="handle"></div>
+      <h2>加入歌单 <span>${s.title} · ${s.artist}</span></h2>
+      <div class="sheet-body">
+        ${PLAYLISTS.map((p) => `
+          <div class="menu-item" data-menu-go="act:add-to-playlist:${p.id}">
+            ${ic('queue', 20)}<span>${p.name}</span>
+            <span class="trail" style="margin-left:auto;font-size:var(--fs-sm);color:var(--fg-3)">${p.count} 首</span>
+          </div>`).join('')}
       </div>
     </div>
   </div>`;
@@ -1994,7 +2108,7 @@ function screenSettings() {
         </div>
       </div>`;
   return `<div class="appbar">
-      <div><div class="h1">设置</div><div class="sub">Nordic 原型 v1</div></div>
+      <div><div class="h1">设置</div><div class="sub">Nordic</div></div>
     </div>
     <div class="scroll">
       ${themeRow}
@@ -2115,8 +2229,13 @@ function screenSettings() {
    **这一屏只写真的**:版本号在应用里是从**包**里读的
    (`package_info_plus` 读出的那份就是 `pubspec.yaml` 那一行,不是另存的一份);
    服务器那行读当前配置;隐私那两条是**陈述不是开关** —— 原先它们和开关混在
-   同一屏里,读起来像可以关掉的东西。 */
-const ABOUT_VERSION = '1.0.44+45';
+   同一屏里,读起来像可以关掉的东西。
+
+   **这里那一行只能手写**:原型是 `file://` 打开的静态页,fetch 一份 YAML 会被
+   同源策略挡掉,而「零外链」是这一份原型的硬约束(见 index.html / player.html
+   的注释)。所以它靠**用例**跟住 `pubspec.yaml` —— `test/ui/prototype_parity_test.dart`
+   在两边不一致时直接红。改版本号时要么改这里,要么让那条用例红一次提醒你。 */
+const ABOUT_VERSION = '1.0.63+64';
 
 function screenAbout() {
   return `<div class="appbar nav">
@@ -2248,7 +2367,7 @@ function screenIcon() {
 
 /* ---------------- 视图表 ---------------- */
 
-const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort, cache: sheetCache, exportConfig: sheetExportConfig, songInfo: sheetSongInfo, scan: sheetScan, resume: sheetResume };
+const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort, cache: sheetCache, exportConfig: sheetExportConfig, songInfo: sheetSongInfo, scan: sheetScan, resume: sheetResume, playlistPicker: sheetPlaylistPicker };
 
 /* 弹层是叠在当前屏上的，不是某一屏专属 —— 专辑页的「队列」、设置里的
    「默认转码质量」、音乐库的「排序」都要能把同一张面板揭起来。之前只有
@@ -2272,6 +2391,10 @@ const VIEWS = {
   home:           () => shell(withOverlay(screenHome(STATE.removed)), { rail: 'home' }),
   /* 默认落在「歌曲」:打开音乐库多半是想找一首具体的歌(2026-10-17 用户要求)。 */
   library:        (p) => shell(withOverlay(screenLibrary((p && p.lib) || 'songs', STATE.removed)), { rail: 'library' }),
+  /* 歌单详情 —— 从「音乐库 · 歌单」点进来。与 album / artist 同一条摆法:
+     带底部托盘、谁都不高亮的竖栏,强调色跟着这张歌单走。 */
+  playlist:       (p) => { const pl = PLAYLISTS.find((x) => x.id === ((p && p.playlist) || STATE.plId)) || PLAYLISTS[0];
+                            return shell(withOverlay(screenPlaylist(pl.id)), { rail: '', home: true, accent: pl.accent, c1: pl.c1 }); },
   album:          (p) => { const a = ALBUM_BY_ID((p && p.album) || STATE.albumId); return shell(withOverlay(screenAlbum(a.id)), { rail: '', home: true, accent: a.accent, c1: a.c1 }); },
   artist:         (p) => { const ar = ARTIST_BY_ID((p && p.artist) || STATE.artistId); return shell(withOverlay(screenArtist(ar.id)), { rail: '', home: true, accent: ar.accent, c1: ar.c1 }); },
   player:         () => shell(withOverlay(screenPlayer()), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 }),
@@ -2305,6 +2428,9 @@ const BOARD = [
   ['播放中断流', '播着播着线路断了', () => shell(screenPlayer() + toastMarkup('播放中断了 —— 这一首没能接着放'))],
   ['音乐库 · 歌曲',   '全部歌曲',             () => shell(screenLibrary('songs'))],
   ['音乐库 · 歌单',   '我的歌单',             () => shell(screenLibrary('playlists'))],
+  /* 歌单详情 —— 应用里一直有(playlist_screen.dart),原型这一格是第三十八轮补的。
+     头部照专辑页的居中构图,但曲目行**带封面**:歌单不按曲序,封面才是最快的线索。 */
+  ['歌单详情',        '曲目表 + 整单播放',     () => shell(screenPlaylist('p1'), { home: true, accent: PLAYLISTS[0].accent, c1: PLAYLISTS[0].c1 })],
   /* 专辑 / 艺人 / 播放这几屏的强调色要跟着内容走，和交互流里走的是同一份取值 ——
      漏传的话这一格会退回默认紫，和旁边几格的「随封面取色」对不上。 */
   ['专辑详情',        '氛围背景 + 曲目',      () => shell(screenAlbum('a1'), { home: true, accent: ALBUM_BY_ID('a1').accent, c1: ALBUM_BY_ID('a1').c1 })],
@@ -2333,6 +2459,12 @@ const BOARD = [
   ['扫码同步 · 没有摄像头', '退成纯粘贴',      () => shell(screenSync(true))],
   ['导出配置',        '二维码 + 复制文本',    () => shell(screenSettings() + sheetExportConfig())],
   ['上下文菜单',      '歌曲的「⋯」',          () => shell(screenPlayer() + sheetMenu(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
+  /* 这三张是「⋯」菜单与设置里已经接好的纸,应用里一直在用,设计板上先前都没铺 ——
+     只在交互里点得到、板子上看不见,等于没人能对照它们的排版。 */
+  ['加入歌单',        '把这首塞进某个歌单',    () => shell(screenPlayer() + sheetPlaylistPicker(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
+  ['歌曲信息',        '这一首真有的字段',      () => shell(screenPlayer() + sheetSongInfo(), { home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
+  ['专辑排序',        '只影响全部专辑这一栏',  () => shell(screenLibrary('albums') + sheetSort(), { rail: 'library' })],
+  ['歌曲缓存',        '听过的留一份 · 上限',   () => shell(screenSettings() + sheetCache(), { rail: 'settings' })],
   /* ---- 宽屏 / 平板(第二十六轮)----
      `frame` 换外壳尺寸(phone.wide 1280×800);>= 840 的形状由容器查询自己翻转
      (竖栏 / 播放横条 / 多列网格 / 两栏播放页 —— 见 styles.css 尾部)。
@@ -2668,7 +2800,7 @@ function renderStage(root) {
        <body> 上，而 body 是所有点击的祖先。closest() 在没命中更近的 [data-*] 元素时
        会一路匹配到 body，于是「点遮罩关闭弹层」这条分支永远走不到（点遮罩会变成
        重新应用一次主题）。所以主题按钮改用独立属性 data-set-theme。 */
-    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-seek-line],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-set-frame],[data-rail-tab],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-dl-del],[data-hue],[data-route-tag],[data-sync-mode],[data-sort-for],[data-sort],[data-cache]');
+    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-seek-line],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-set-frame],[data-rail-tab],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-playlist],[data-dl-del],[data-hue],[data-route-tag],[data-sync-mode],[data-sort-for],[data-sort],[data-cache]');
     if (t) {
       const d = t.dataset;
       if (d.back !== undefined) return back();
@@ -2686,6 +2818,10 @@ function renderStage(root) {
         STATE.pendingLine = -1;
         STATE.playing = true;
         return go('player');
+      }
+      if (d.playlist) {
+        STATE.plId = d.playlist;
+        return go('playlist', { playlist: d.playlist });
       }
       if (d.album) {
         morphEl = t.closest('[data-morph]') ? t.querySelector('.cover') : null;
@@ -2830,7 +2966,9 @@ function renderStage(root) {
          死按钮的解法不是气泡,是把按钮背后的屏补出来。 */
       if (d.menuFor) { STATE.menuFor = d.menuFor; STATE.overlay = 'menu'; return render(); }
       if (d.menuGo) {
-        const [kind, val] = d.menuGo.split(':');
+        /* `kind:val[:extra]` —— 第三段留给「对哪一张歌单」这类带参数的动作用
+           (加入歌单要报出歌单名)。**不要把 val 写成解构**,那样第三段会被丢掉。 */
+        const [kind, val, extra] = d.menuGo.split(':');
         STATE.overlay = '';
         if (kind === 'act') {
           if (val === 'fav') {
@@ -2844,6 +2982,18 @@ function renderStage(root) {
             const id = STATE.params.artist; if (id) set.has(id) ? set.delete(id) : set.add(id);
           } else if (val === 'queue-add') {
             toast('已加入播放队列');
+          } else if (val === 'queue-next') {
+            /* 「下一首播放」在原型里只报一句 —— 它改的是队列,而原型这份队列
+               就是 SONGS 本身(见 sheetQueue),没有「插到第几位」这回事。
+               应用那边是真插队(playable.playNext),不在这里假装。 */
+            toast('会插到下一首之前');
+          } else if (val === 'add-to-playlist') {
+            const pl = PLAYLISTS.find((x) => x.id === extra);
+            toast(pl ? `已加入「${pl.name}」` : '已加入歌单');
+          } else if (val === 'rename-playlist') {
+            toast('原型不接输入 —— 改名这条在应用里会开一张纸');
+          } else if (val === 'delete-playlist') {
+            toast('原型不真删歌单 —— 应用里会先问一句');
           } else if (val === 'shuffle-album') {
             /* 随机播这张专辑:进播放页、打开随机、从这张专辑里挑一首起。
                原型不假装真的重排队列,但「按下之后去了哪儿」要是真的。 */
