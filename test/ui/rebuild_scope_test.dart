@@ -306,9 +306,15 @@ void main() {
         reason: '设置页不显示下载进度，不该跟着它重建');
 
     // 反过来:它**确实**订阅的那一件变了,必须重建。
-    // (那一行在 `ListView` 的第二屏,先滚下去 —— 懒加载的列表没建出来就查不到。)
+    // (那一行在 `ListView` 的第二屏,先滚下去 —— 懒加载的列表没建出来就查不到。
+    // 滚多少不写死:设置页的行数会随新加的一节往下走,「流量下不缓存」在第几屏
+    // 是页面自己的事,这里只要求「滚到它出现」。)
     await state.setWifiOnlyDownload(true);
-    await tester.drag(find.byType(ListView), const Offset(0, -800));
+    await tester.scrollUntilVisible(
+      find.text('流量下不缓存'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pump();
     expect(find.text('流量下不缓存'), findsOneWidget,
         reason: '订阅的东西变了还不更新，就是把界面收死了');

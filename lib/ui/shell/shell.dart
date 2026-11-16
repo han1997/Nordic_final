@@ -8,6 +8,7 @@ import '../../playback/playback_controller.dart';
 import '../../state/app_state.dart';
 import '../../theme/accent.dart';
 import '../../theme/context_ext.dart';
+import '../../theme/fx.dart';
 import '../../theme/ambient.dart';
 import '../../theme/tokens.dart';
 import '../adaptive/window.dart';
@@ -34,7 +35,7 @@ class NordicShell extends StatefulWidget {
 }
 
 class _NordicShellState extends State<NordicShell>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   /// 冷启动落在**首页**:「现在在听 / 最近在听」是打开播放器最想先看到的一屏。
   AppTab _tab = AppTab.home;
 
@@ -66,12 +67,31 @@ class _NordicShellState extends State<NordicShell>
   late final Animation<double> _fadeCurve =
       CurvedAnimation(parent: _fade, curve: NordicMotion.ease);
 
+  /// 「切 tab 横向推移」。新一屏从**来向**那一侧 16px 处滑进来(往右切就从右侧
+  /// 进、往左切就从左侧进)—— 原型 `tabx` 里两屏一前一后错开的那 16px。
+  ///
+  /// 动的是**内容那一层**,和 [_fade] 那块盖在前面的实色互不相干:前者管
+  /// 「从哪儿来」,后者管「换过来了」。关掉这一条时 [AnimationController.value]
+  /// 恒为 1,连一次 `setState` 都不多。
+  late final AnimationController _slide = AnimationController(
+    vsync: this,
+    duration: NordicFx.tabSlide,
+    value: 1,
+  );
+  late final Animation<double> _slideCurve =
+      CurvedAnimation(parent: _slide, curve: NordicMotion.ease);
+
+  /// 这一下从哪边进来(+1 从右 / -1 从左)。
+  double _slideFrom = 0;
+
   /// 「接着上次听」那一问是不是正在进行(纸开着 / 正在打 `getPlayQueue`)。
   /// 见 [_maybeOfferQueueRestore]。
   bool _offeringRestore = false;
 
   void _select(AppTab tab) {
     if (tab == _tab && _built.contains(tab)) return;
+    final from = tab.index > _tab.index ? 1.0 : -1.0;
+    final slide = MotionScope.read(context).isOn(FxId.tabx);
     setState(() {
       _tab = tab;
       _built.add(tab);
@@ -79,6 +99,10 @@ class _NordicShellState extends State<NordicShell>
     // 从 0 起:这一帧 [TabEntrance] 整片盖住新一屏,220ms 内褪干净。
     // 淡的是「换过来」这一下,不是某一棵子树 —— 切回来时位置照旧保活。
     _fade.forward(from: 0);
+    if (slide) {
+      _slideFrom = from;
+      _slide.forward(from: 0);
+    }
   }
 
   /// tab → 那一屏。没建过的用空盒子占位(IndexedStack 要按 index 取用)。
@@ -219,6 +243,7 @@ class _NordicShellState extends State<NordicShell>
     WidgetsBinding.instance.removeObserver(this);
     pendingTab.removeListener(_applyPendingTab);
     _fade.dispose();
+    _slide.dispose();
     super.dispose();
   }
 
@@ -243,26 +268,30 @@ class _NordicShellState extends State<NordicShell>
                   // 整棵子树(含首页那层 62px 的 `ImageFiltered` 氛围与玻璃的
                   // `BackdropFilter`),而上面那块实色每帧都在变 —— 少了边界,
                   // 它每变一次就把这些一起拖着重画一遍。
-                  RepaintBoundary(
-                    child: IndexedStack(
-                      index: _tab.index,
-                      children: [
-                        for (final tab in AppTab.values)
-                          if (_built.contains(tab))
-                            // **只有屏幕上那一屏的 `Hero` 才参与共享元素过渡。**
-                            //
-                            // 框架按 tag 在**整个来源路由**里找起点,不看元素在不在
-                            // 屏幕上(`heroes.dart` 的 `_allHeroesFor` 只认 `HeroMode`)。
-                            // 而 IndexedStack 把逛过的 tab **整棵保活**:只要切过一次
-                            // 音乐库的「专辑」分段,那张网格就一直挂着 —— 于是
-                            // 「在首页点一张专辑 / 点播放坞」时起点会被**看不见的那张
-                            // 网格**偷走,封面从屏幕外飞进来(每帧重画一次,
-                            // 正好落在滑入动画上)。`HeroMode` 就是框架给这件事的做法:
-                            // 关掉的子树整个跳过,英雄名字空间于是**每个 tab 一份**。
-                            HeroMode(enabled: tab == _tab, child: _screenOf(tab))
-                          else
-                            const SizedBox.shrink(),
-                      ],
+                  FxTabSlide(
+                    progress: _slideCurve,
+                    from: _slideFrom,
+                    child: RepaintBoundary(
+                      child: IndexedStack(
+                        index: _tab.index,
+                        children: [
+                          for (final tab in AppTab.values)
+                            if (_built.contains(tab))
+                              // **只有屏幕上那一屏的 `Hero` 才参与共享元素过渡。**
+                              //
+                              // 框架按 tag 在**整个来源路由**里找起点,不看元素在不在
+                              // 屏幕上(`heroes.dart` 的 `_allHeroesFor` 只认 `HeroMode`)。
+                              // 而 IndexedStack 把逛过的 tab **整棵保活**:只要切过一次
+                              // 音乐库的「专辑」分段,那张网格就一直挂着 —— 于是
+                              // 「在首页点一张专辑 / 点播放坞」时起点会被**看不见的那张
+                              // 网格**偷走,封面从屏幕外飞进来(每帧重画一次,
+                              // 正好落在滑入动画上)。`HeroMode` 就是框架给这件事的做法:
+                              // 关掉的子树整个跳过,英雄名字空间于是**每个 tab 一份**。
+                              HeroMode(enabled: tab == _tab, child: _screenOf(tab))
+                            else
+                              const SizedBox.shrink(),
+                        ],
+                      ),
                     ),
                   ),
                   // 切 tab 那一下盖在新一屏上的实色(见 [_fade] 上那段)。
@@ -276,6 +305,44 @@ class _NordicShellState extends State<NordicShell>
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 切 tab 时内容那一层的横向推移 —— **「切 tab 横向推移」**。
+///
+/// 只挪这一层,不碰托盘也不碰 [TabEntrance] 那块实色:托盘在常驻区里(切 tab
+/// 时本来就不该动,[FxDockRise] 会自己重演一次落位),而盖在前面的实色是
+/// 「换过来了」那一半,两件事各管各的。
+///
+/// **位移只做一次、不做整屏翻页**:原型那 16px 是「错开」,不是划过一整屏 ——
+/// 拉长成整屏宽就会读成「进了另一页」,而这三个 tab 是并列的。
+class FxTabSlide extends StatelessWidget {
+  const FxTabSlide({
+    super.key,
+    required this.progress,
+    required this.from,
+    required this.child,
+  });
+
+  /// 1 = 已落位(没有正在走的推移),0 = 刚从 [from] 那一侧进来。
+  final Animation<double> progress;
+
+  /// +1 从右进 / -1 从左进。
+  final double from;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: progress,
+      builder: (context, child) {
+        final left = NordicFx.tabShift * from * (1 - progress.value);
+        if (left == 0) return child!;
+        return Transform.translate(offset: Offset(left, 0), child: child);
+      },
+      child: child,
     );
   }
 }

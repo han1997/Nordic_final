@@ -7,6 +7,7 @@ import '../../theme/tokens.dart';
 import '../adaptive/window.dart';
 import '../routes.dart';
 import 'cover.dart';
+import 'fx.dart';
 
 /// 专辑网格 —— `.grid-covers`(音乐库「专辑」栏与搜索页共用一份,
 /// 原先两处各写一遍)。
@@ -51,7 +52,12 @@ class AlbumGridSliver extends StatelessWidget {
               mainAxisExtent: tileWidth + _captionHeight(context),
             ),
             delegate: SliverChildBuilderDelegate(
-              (context, index) => AlbumTile(album: albums[index], repo: repo),
+              // 「列表错开入场」:格子在 `.grid-covers` 里本来就各得一个延迟
+              // (原型对网格单独补了一条,否则整块网格只会整片浮起)。
+              (context, index) => FxRise(
+                index: index,
+                child: AlbumTile(album: albums[index], repo: repo),
+              ),
               childCount: albums.length,
             ),
           );

@@ -2469,6 +2469,13 @@ html[data-fx~="lyric"] .lyric-line.on .txt {
   cursor: pointer;
 }
 .fx-actions button:active { transform: scale(0.97); }
+/* 当前这一档亮起来 —— syncFxUI 按「逐条相同」判定,逐条改过之后三颗全灭。 */
+.fx-actions button[aria-selected="true"],
+.motion-presets button[aria-selected="true"] {
+  color: var(--fg);
+  background: var(--fill-3);
+  border-color: color-mix(in srgb, var(--fg) 14%, transparent);
+}
 
 /* ---- 动效研究(设计交付物) ---- */
 .motion-intro {

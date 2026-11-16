@@ -176,6 +176,7 @@ class ConfigStore {
   static const _cacheLimitKey = 'nordic.pref.cacheLimit';
   static const _repeatKey = 'nordic.pref.repeat';
   static const _shuffleKey = 'nordic.pref.shuffle';
+  static const _fxOffKey = 'nordic.pref.fxOff';
 
   /// 「上一次我们**自己**写回服务器的那份队列」的指纹(见
   /// `playback/play_queue_sync.dart` 的 `queueMark`)。
@@ -244,6 +245,15 @@ class ConfigStore {
   bool loadShuffle() => _prefs.getBool(_shuffleKey) ?? false;
 
   Future<void> saveShuffle(bool value) => _prefs.setBool(_shuffleKey, value);
+
+  /// 动效开关里**关掉的那几条**,空格分隔的 id(`stagger tabx`;全开时是空串)。
+  ///
+  /// 存「关掉的」而不是「开着的」:以后加一条新动效时,老用户拿到的是开 ——
+  /// 与原型默认全开一致;存开着的那一串则会让新条目悄悄关着。
+  /// 没存过(返回 null)= 全开,与原型 [STATE.fx] 的初值同一条口径。
+  String? loadFxOff() => _prefs.getString(_fxOffKey);
+
+  Future<void> saveFxOff(String ids) => _prefs.setString(_fxOffKey, ids);
 }
 
 /// 用已有配置拼一个可直接开工的客户端。

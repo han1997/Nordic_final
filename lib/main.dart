@@ -14,6 +14,7 @@ import 'playback/audio_handler.dart';
 import 'playback/playback_controller.dart';
 import 'playback/quality.dart';
 import 'state/app_state.dart';
+import 'theme/fx.dart';
 import 'ui/widgets/cover.dart';
 
 Future<void> main() async {
@@ -128,7 +129,12 @@ Future<void> main() async {
         Provider<ConfigStore>.value(value: configStore),
         Provider<CredentialStore>.value(value: credentialStore),
       ],
-      child: const NordicApp(),
+      // 动效开关挂在**所有东西外面**:弹层、路由、托盘都在它下面
+      // (见 MotionScope 的说明 —— 没挂上时各条按全开处理,不是静默关掉)。
+      child: MotionScope(
+        prefs: MotionPrefs.fromStore(configStore),
+        child: const NordicApp(),
+      ),
     ),
   );
 

@@ -222,7 +222,9 @@ void main() {
         home: Scaffold(body: Stack(children: [child])),
       ),
     ));
-    await tester.pump();
+    // 托盘挂载时演一次「落位」(22px 升上来,0.42s)—— 下面几条量的是**停稳之后**
+    // 的几何,所以先等它演完。
+    await tester.pumpAndSettle();
   }
 
   Widget trayAt(AppTab active) =>

@@ -3,8 +3,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../theme/context_ext.dart';
+import '../../theme/fx.dart';
 import '../../theme/glass.dart';
 import '../../theme/tokens.dart';
+import 'fx.dart';
 
 /// 按下去缩一点 —— 原型里 `.icon-btn` / `.btn` / `.play-btn` 都带
 /// `transform: scale(0.92~0.975)`。
@@ -55,6 +57,10 @@ class _PressableState extends State<Pressable> {
     // 不可点就完全走原样 —— 不给一个「按得下去但没反应」的假反馈。
     if (widget.onTap == null) return widget.child;
 
+    // 「按压回弹」关掉时连缩放都不给 —— 这一条就是那颗缩。
+    // (底下那层底色是另一件事:它是「按到了」的反馈,不是动效。)
+    final scaleFx = MotionScope.of(context).isOn(FxId.press);
+
     final decoration = widget.pressedDecoration;
     if (decoration != null) {
       return GestureDetector(
@@ -76,13 +82,15 @@ class _PressableState extends State<Pressable> {
       onTapDown: (_) => _set(true),
       onTapUp: (_) => _set(false),
       onTapCancel: () => _set(false),
-      child: AnimatedScale(
-        scale: _down ? widget.scale : 1,
-        // 按下要立刻、回弹可以慢一点 —— 与原型 `0.14s var(--ease)` 一致。
-        duration: Duration(milliseconds: _down ? 70 : 140),
-        curve: Curves.easeOut,
-        child: widget.child,
-      ),
+      child: scaleFx
+          ? AnimatedScale(
+              scale: _down ? widget.scale : 1,
+              // 按下要立刻、回弹可以慢一点 —— 与原型 `0.14s var(--ease)` 一致。
+              duration: Duration(milliseconds: _down ? 70 : 140),
+              curve: Curves.easeOut,
+              child: widget.child,
+            )
+          : widget.child,
     );
   }
 }
@@ -651,7 +659,10 @@ class SegmentedControl<T> extends StatelessWidget {
   });
 
   final List<T> options;
-  final T value;
+
+  /// 当前选中的那一档。**可以为空** —— 逐条改过的动效开关不属于任何一档,
+  /// 那种时候三格都不该亮(硬挑一格亮出来就是在编一个状态)。
+  final T? value;
   final ValueChanged<T> onChanged;
   final String Function(T)? labelOf;
   final double height;
@@ -1207,22 +1218,34 @@ class NordicSheet extends StatelessWidget {
 Future<T?> showNordicSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
-}) =>
-    showModalBottomSheet<T>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      barrierColor: Colors.transparent,
-      // **显式给曲线**,不靠「框架默认应该也是它」—— 见 [nordicSheetCurve]:
-      // 框架按这条曲线定位整块内容,而 [NordicScrim] 那层补偿要按**同一条**
-      // 把它抵消掉。两边要是各拿各的(一边默认、一边写死),补偿就抵不干净,
-      // 表现是蒙版带着边缘从上方压下来。
-      sheetAnimationStyle: const AnimationStyle(
-        curve: nordicSheetCurve,
-        reverseCurve: nordicSheetCurve,
-      ),
-      builder: builder,
-    );
+}) {
+  final spring = MotionScope.read(context).isOn(FxId.spring);
+  return showModalBottomSheet<T>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    barrierColor: Colors.transparent,
+    // **显式给曲线**,不靠「框架默认应该也是它」—— 见 [nordicSheetCurve]:
+    // 框架按这条曲线定位整块内容,而 [NordicScrim] 那层补偿要按**同一条**
+    // 把它抵消掉。两边要是各拿各的(一边默认、一边写死),补偿就抵不干净,
+    // 表现是蒙版带着边缘从上方压下来。
+    //
+    // 「弹层回弹」开着时升起换成 [nordicSpringCurve](冲过落点 1.4% 再落定),
+    // **收回仍走原来那条** —— 关一张纸不该先往上顶一下再走。
+    sheetAnimationStyle: spring
+        ? const AnimationStyle(
+            curve: nordicSpringCurve,
+            reverseCurve: nordicSheetCurve,
+            duration: NordicFx.sheet,
+            reverseDuration: NordicFx.sheet,
+          )
+        : const AnimationStyle(
+            curve: nordicSheetCurve,
+            reverseCurve: nordicSheetCurve,
+          ),
+    builder: builder,
+  );
+}
 
 /// 弹层升起那条曲线 —— **与框架默认同一条**(`bottom_sheet.dart` 的
 /// `_kModalBottomSheetCurve`),这里只是把它写成显式的。
@@ -1234,22 +1257,72 @@ Future<T?> showNordicSheet<T>({
 /// (中途可达屏高的四分之一),看上去就是**蒙版从上方压下来**。
 const Curve nordicSheetCurve = Easing.legacyDecelerate;
 
+/// 「弹层回弹」开着时升起走的那条 —— 冲过落点再落定(原型 `fx-sheet-spring`)。
+///
+/// 蒙版补偿与框架定位**必须同款**:两处都通过 [nordicSheetCurveFor] 取,
+/// 谁也别自己写一条(见 [NordicScrim] 里那段「补偿为什么必须同曲线」)。
+const Curve nordicSpringCurve = NordicSpringCurve();
+
+/// 这一刻该用哪条升起曲线 —— 开关是活的,所以不能写成常量。
+Curve nordicSheetCurveFor(BuildContext context) =>
+    MotionScope.of(context).isOn(FxId.spring)
+        ? nordicSpringCurve
+        : nordicSheetCurve;
+
 /// 弹层遮罩 —— `.sheet-scrim`。
 ///
 /// **就这一层**:原型的 `.sheet-scrim`(66% 压暗 + `blur(6px)`),铺满整屏。
 /// 框架自带的那层黑由 [showNordicSheet] 关掉 —— 两层叠起来是 84% 黑。
-class NordicScrim extends StatelessWidget {
+class NordicScrim extends StatefulWidget {
   const NordicScrim({super.key, required this.child, this.onTap});
 
   final Widget child;
   final VoidCallback? onTap;
 
   @override
+  State<NordicScrim> createState() => _NordicScrimState();
+}
+
+class _NordicScrimState extends State<NordicScrim> {
+  /// 与框架里那条 `_sheetAnimation` **同款**的曲线动画:
+  /// `CurvedAnimation` 自己按方向挑 `curve` / `reverseCurve`,这里照抄它的挑法,
+  /// 于是「升起冲过落点、收回走原来那条」两边完全一致。
+  ///
+  /// 早先这里是 `animation.drive(CurveTween(...))` —— 只看一条曲线,
+  /// 收回那一路就和框架对不上(实测蒙版上边缘跑 3.2px)。方向这回事不能由
+  /// 调用方猜,得让同一个对象管。
+  CurvedAnimation? _curved;
+  Animation<double>? _parent;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animation = ModalRoute.of(context)?.animation;
+    final curve = nordicSheetCurveFor(context);
+    if (identical(animation, _parent) && _curved?.curve == curve) return;
+    _curved?.dispose();
+    _parent = animation;
+    _curved = animation == null
+        ? null
+        : CurvedAnimation(
+            parent: animation,
+            curve: curve,
+            reverseCurve: nordicSheetCurve,
+          );
+  }
+
+  @override
+  void dispose() {
+    _curved?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final t = context.nordic;
 
     final layer = GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       // 遮罩也轻轻糊一下(原型 `blur(6px)`)—— 弹层后面的内容
       // 从「被压暗」变成「退到后面」,层次才分得开。
       child: BackdropFilter(
@@ -1270,10 +1343,10 @@ class NordicScrim extends StatelessWidget {
     // 两条不等价,补偿只抵消掉一部分,净剩 `H[v - curve(v)]` 的位移 ——
     // 中途可达屏高的四分之一,看上去就是**一整块蒙版带着边缘从上方压下来**
     // (原型 `.sheet-scrim` 只淡入、不位移,所以那是 bug 不是设计)。
-    // 现在两边都走 [nordicSheetCurve](`showNordicSheet` 也是显式传的那一条),
-    // 净位移恒为 0。
+    // 现在两边都走同一条([nordicSheetCurveFor] 给升起、[nordicSheetCurve] 给收回,
+    // 与 `showNordicSheet` 显式传的那一对完全一样),净位移恒为 0。
     final animation = ModalRoute.of(context)?.animation;
-    final curved = animation?.drive(CurveTween(curve: nordicSheetCurve));
+    final curved = _curved;
 
     return Stack(
       children: [
@@ -1294,7 +1367,7 @@ class NordicScrim extends StatelessWidget {
                   ),
                 ),
         ),
-        child,
+        widget.child,
       ],
     );
   }
@@ -1329,7 +1402,10 @@ class NordicCard extends StatelessWidget {
         children: [
           for (var i = 0; i < children.length; i++) ...[
             if (i > 0) const NordicDivider(),
-            children[i],
+            // 「列表错开入场」:卡里每一行按位置依次浮起。
+            // 没有 [FxStagger] 包着的页面(弹层里的卡、单开的表单)拿不到
+            // 时间线,[FxRise] 原样返回 —— 所以这一层对它们没有代价。
+            FxRise(index: i, child: children[i]),
           ],
         ],
       ),

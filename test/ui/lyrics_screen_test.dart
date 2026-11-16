@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import 'package:nordic/data/subsonic_client.dart';
 import 'package:nordic/playback/playback_controller.dart';
 import 'package:nordic/playback/quality.dart';
 import 'package:nordic/state/app_state.dart';
+import 'package:nordic/theme/fx.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/screens/lyrics_screen.dart';
@@ -156,6 +158,7 @@ void main() {
     WidgetTester tester, {
     Duration at = Duration.zero,
     Song? track,
+    MotionPrefs? motion,
   }) async {
     final playable = recordingController(track ?? song);
     addTearDown(() {
@@ -169,9 +172,14 @@ void main() {
           ChangeNotifierProvider<AppState>.value(value: state),
           ChangeNotifierProvider<PlaybackController>.value(value: playable),
         ],
-        child: MaterialApp(
-          theme: NordicTheme.build(NordicTokens.dark),
-          home: const Scaffold(body: SizedBox.shrink()),
+        // 动效开关:产品里挂在 `NordicApp` 外面,这里照挂一份 ——
+        // 「歌词换行浮起」那一条要能在开关两边各测一次。
+        child: MotionScope(
+          prefs: motion ?? MotionPrefs.fallback,
+          child: MaterialApp(
+            theme: NordicTheme.build(NordicTokens.dark),
+            home: const Scaffold(body: SizedBox.shrink()),
+          ),
         ),
       ),
     );
@@ -368,6 +376,67 @@ void main() {
     expect(playable.seeks, isEmpty, reason: '空白那一下是退出，不是跳转');
     expect(find.byType(LyricsScreen), findsNothing,
         reason: '「点封面看歌词」的回头路不能因为「点句子跳转」被吃掉');
+  });
+
+  /// 「歌词换行浮起」:新亮起来的那一句从下方 4px 浮起、从 0.35 的暗亮到全亮,
+  /// 那 0.42s 里**只有那一行在动**;开关关掉之后连一层 `Opacity` 都不该有。
+  testWidgets('「歌词换行浮起」：新一句浮起来又落定，关掉之后一步不动', (tester) async {
+    /// 那一行此刻被推下去多少 / 压到多暗。
+    double riseOf(String text) {
+      var dy = 0.0;
+      final transforms = tester.widgetList<Transform>(
+        find.ancestor(of: find.text(text), matching: find.byType(Transform)),
+      );
+      for (final t in transforms) {
+        dy += t.transform.getTranslation().y;
+      }
+      return dy;
+    }
+
+    /// 那一行此刻被压到多暗。**取祖先里最暗的那一层**:这一行外面本来就有
+    /// 别的 `Opacity`(行尾辉光那一圈),不能只看最近的一层。
+    double alphaOf(String text) {
+      final ops = tester
+          .widgetList<Opacity>(
+            find.ancestor(of: find.text(text), matching: find.byType(Opacity)),
+          )
+          .map((o) => o.opacity);
+      return ops.isEmpty ? 1 : ops.reduce(math.min);
+    }
+
+    final playable = await pumpLyrics(tester, at: const Duration(seconds: 305));
+    expect(riseOf('第 30 句'), 0, reason: '进来时那一句是静的');
+    expect(alphaOf('第 30 句'), 1, reason: '进来时那一句是亮的');
+
+    playable.position.value = const Duration(seconds: 315);
+    await tester.pump();
+    await tester.pump();
+
+    final rising = riseOf('第 31 句');
+    expect(rising, greaterThan(0), reason: '新那一句要从下方浮起');
+    expect(rising, lessThanOrEqualTo(NordicFx.lyricDistance));
+    expect(alphaOf('第 31 句'), lessThan(1));
+    expect(
+      alphaOf('第 31 句'),
+      greaterThanOrEqualTo(NordicFx.lyricOpacity),
+      reason: '再暗也不低于起点那 0.35',
+    );
+
+    await tester.pumpAndSettle();
+    expect(riseOf('第 31 句'), 0, reason: '演完就落定在位置上');
+    expect(alphaOf('第 31 句'), 1, reason: '落定之后不该再压着一层不透明度');
+
+    // 同一条路,开关关掉之后:换行照旧,但那一行一步不动。
+    final off = await pumpLyrics(
+      tester,
+      at: const Duration(seconds: 305),
+      motion: MotionPrefs(off: {FxId.lyric}),
+    );
+    off.position.value = const Duration(seconds: 315);
+    await tester.pump();
+    await tester.pump();
+    expect(riseOf('第 31 句'), 0);
+    expect(alphaOf('第 31 句'), 1);
   });
 
   testWidgets('换行只重画那两行，整列歌词不重建', (tester) async {

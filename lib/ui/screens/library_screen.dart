@@ -19,6 +19,7 @@ import '../shell/shell.dart';
 import '../widgets/album_grid.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
+import '../widgets/fx.dart';
 import '../widgets/rows.dart';
 import '../widgets/states.dart';
 import 'sort_sheet.dart';
@@ -361,7 +362,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
             color: context.accentSafe,
             backgroundColor: context.nordic.glass3,
             onRefresh: () => state.loadLibrary(silent: true),
-            child: switch (_tab) {
+            // 「列表错开入场」的时间线:一栏一根,换栏(以及第一次进来)时
+            // 从头演一次 —— 保活的列表滚回来不再重演(见 [FxStagger])。
+            child: FxStagger(
+              child: switch (_tab) {
         LibraryTab.albums => _AlbumsTab(library: library),
         LibraryTab.artists => _ArtistsTab(library: library, top: _topArtists),
         LibraryTab.songs => _SongsTab(
@@ -375,6 +379,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
               LibraryTab.playlists => _PlaylistsTab(library: library),
             },
+            ),
           ),
         ),
       ],
@@ -495,33 +500,36 @@ class _ArtistsTab extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(width: NordicSpace.s4),
             itemBuilder: (context, index) {
               final artist = top[index];
-              return GestureDetector(
-                onTap: () => AppRoutes.openArtist(context, artist.id),
-                child: SizedBox(
-                  width: 152,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ArtistPlate(artist: artist, size: 152, radius: 26),
-                      const SizedBox(height: 11),
-                      Text(
-                        artist.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '${artist.albumCount} 张专辑',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: t.fg3),
-                      ),
-                    ],
+              return FxRise(
+                index: index,
+                child: GestureDetector(
+                  onTap: () => AppRoutes.openArtist(context, artist.id),
+                  child: SizedBox(
+                    width: 152,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ArtistPlate(artist: artist, size: 152, radius: 26),
+                        const SizedBox(height: 11),
+                        Text(
+                          artist.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${artist.albumCount} 张专辑',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: t.fg3),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -535,12 +543,15 @@ class _ArtistsTab extends StatelessWidget {
           itemCount: library.artists.length,
           itemBuilder: (context, index) {
             final artist = library.artists[index];
-            return NordicRow(
-              leading: ArtistPlate(artist: artist, size: 52, circular: true),
-              title: artist.name,
-              subtitle: '${artist.albumCount} 张专辑',
-              trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
-              onTap: () => AppRoutes.openArtist(context, artist.id),
+            return FxRise(
+              index: index,
+              child: NordicRow(
+                leading: ArtistPlate(artist: artist, size: 52, circular: true),
+                title: artist.name,
+                subtitle: '${artist.albumCount} 张专辑',
+                trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
+                onTap: () => AppRoutes.openArtist(context, artist.id),
+              ),
             );
           },
         ),
@@ -638,15 +649,19 @@ class _SongsTab extends StatelessWidget {
           // 正在放的那一行多三件东西:一个行键(「回到正在播放」要靠它量真实位置)、
           // 一个听 [located] 的包装(只有这一行会亮)。别的行一个都不多。
           final isCurrent = song.id == currentSongId;
-          final row = SongRow(
-            song: song,
-            coverUri: (id) => albumCoverUri(repo, id, size: 128),
-            playing: isCurrent && playing,
-            onTap: () => playTapped(
-              context,
-              library.songs,
-              index: index - 1,
-              label: song.title,
+          // 「列表错开入场」:第 index 行等 index×24ms 起(见 [FxRise])。
+          final row = FxRise(
+            index: index,
+            child: SongRow(
+              song: song,
+              coverUri: (id) => albumCoverUri(repo, id, size: 128),
+              playing: isCurrent && playing,
+              onTap: () => playTapped(
+                context,
+                library.songs,
+                index: index - 1,
+                label: song.title,
+              ),
             ),
           );
           if (!isCurrent) return row;
@@ -780,7 +795,9 @@ class _PlaylistsTab extends StatelessWidget {
         }
 
         final playlist = library.playlists[index - 1];
-        return NordicRow(
+        return FxRise(
+          index: index,
+          child: NordicRow(
             height: 72,
             leading: Cover(
               coverArtId: playlist.coverArtId,
@@ -797,7 +814,8 @@ class _PlaylistsTab extends StatelessWidget {
             ].join(' · '),
             trailing: Icon(Icons.chevron_right, size: 18, color: t.fg3),
             onTap: () => AppRoutes.openPlaylist(context, playlist.id),
-          );
+          ),
+        );
       },
     );
   }

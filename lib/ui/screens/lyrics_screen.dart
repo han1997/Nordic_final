@@ -13,6 +13,7 @@ import '../../theme/tokens.dart';
 import '../adaptive/window.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
+import '../widgets/fx.dart';
 import '../widgets/playback_controls.dart';
 import '../widgets/rows.dart';
 import '../widgets/states.dart';
@@ -610,6 +611,7 @@ class _LyricLineState extends State<_LyricLine> {
   bool _selected = false;
   bool _pressed = false;
 
+
   _LineState _stateFor(int active) => widget.index == active
       ? _LineState.active
       : widget.index < active
@@ -717,7 +719,14 @@ class _LyricLineState extends State<_LyricLine> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Expanded(child: Text(widget.line.text)),
+                Expanded(
+                  // 只动文字那一截,不动整行 —— 整行右缘还有辉光与跳转胶囊,
+                  // 一起做位移会把它们推离原位(原型也是挂在 `.txt` 上)。
+                  child: FxLyricRise(
+                    active: _state == _LineState.active,
+                    child: Text(widget.line.text),
+                  ),
+                ),
                 // 高亮句右缘那一撮辉光 —— 给当前行一个「正在被读到」的方向感。
                 // 选中时让它让位:一行的右缘只放一个东西。
                 AnimatedOpacity(

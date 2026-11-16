@@ -12,6 +12,7 @@ import '../adaptive/window.dart';
 import '../routes.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
+import '../widgets/fx.dart';
 import 'nav_tabs.dart';
 
 /// 底部常驻区:播放坞 + 标签栏 —— `.bottomstack`。
@@ -80,30 +81,36 @@ class BottomStack extends StatelessWidget {
       left: 0,
       right: 0,
       bottom: 0,
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: trayMargin,
-          right: trayMargin,
-          bottom: MediaQuery.paddingOf(context).bottom + 10,
-        ),
-        child: RepaintBoundary(
-          // 坞里那行曲目名字、进度条、标签高亮都是会变的,而这块玻璃
-          // (`BackdropFilter` + 一层 80% 填充)本身不变 —— 隔一层重绘边界,
-          // 播放状态一变就只重画坞里那点内容,不再连玻璃一起重扫一遍背景。
-          child: NordicGlass(
-            panel: NordicGlassPanel.nav,
-            // 一行时是胶囊,两行时取大圆角 —— 一整块两行的东西做成胶囊,
-            // 上下缘会鼓得像药丸。
-            borderRadius: BorderRadius.circular(
-              docked ? NordicRadius.xl : NordicRadius.full,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (docked) const _PlayerDock(),
-                if (docked) const _TrayProgress(),
-                _TabBar(active: activeTab, onSelected: onTabSelected),
-              ],
+      // 「托盘落位」:切 tab(或第一次进这一屏)演一次,从下方 22px 升上来。
+      // **只包这一层,不碰内容** —— 内容是各屏自己的事,而托盘是常驻的:
+      // 它升起来的这 0.42s 里,上面那一屏照常滚动、照常响应。
+      child: FxDockRise(
+        replay: activeTab,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: trayMargin,
+            right: trayMargin,
+            bottom: MediaQuery.paddingOf(context).bottom + 10,
+          ),
+          child: RepaintBoundary(
+            // 坞里那行曲目名字、进度条、标签高亮都是会变的,而这块玻璃
+            // (`BackdropFilter` + 一层 80% 填充)本身不变 —— 隔一层重绘边界,
+            // 播放状态一变就只重画坞里那点内容,不再连玻璃一起重扫一遍背景。
+            child: NordicGlass(
+              panel: NordicGlassPanel.nav,
+              // 一行时是胶囊,两行时取大圆角 —— 一整块两行的东西做成胶囊,
+              // 上下缘会鼓得像药丸。
+              borderRadius: BorderRadius.circular(
+                docked ? NordicRadius.xl : NordicRadius.full,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (docked) const _PlayerDock(),
+                  if (docked) const _TrayProgress(),
+                  _TabBar(active: activeTab, onSelected: onTabSelected),
+                ],
+              ),
             ),
           ),
         ),

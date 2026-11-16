@@ -13,6 +13,7 @@ import 'package:nordic/data/server_config.dart';
 import 'package:nordic/playback/playback_controller.dart';
 import 'package:nordic/playback/quality.dart';
 import 'package:nordic/state/app_state.dart';
+import 'package:nordic/theme/fx.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/routes.dart';
@@ -117,8 +118,9 @@ void main() {
 
   Future<void> pumpShell(
     WidgetTester tester,
-    PlaybackController playable,
-  ) async {
+    PlaybackController playable, {
+    MotionPrefs? motion,
+  }) async {
     addTearDown(() {
       playable.dispose();
       playable.handler.player.dispose();
@@ -131,11 +133,16 @@ void main() {
           // 设置页要看转码档位(与 main.dart 同一份)。
           ChangeNotifierProvider<QualityController>.value(value: quality),
         ],
-        child: MaterialApp(
-          theme: NordicTheme.build(NordicTokens.dark),
-          // 路由表也接上 —— 点坞要能真的推到播放页。
-          onGenerateRoute: AppRoutes.generate,
-          home: const NordicShell(),
+        // 动效开关挂在壳外面(产品里挂在 `NordicApp` 外面,同一件事)——
+        // 切 tab 那条推移要能在开关两边各测一次。
+        child: MotionScope(
+          prefs: motion ?? MotionPrefs.fallback,
+          child: MaterialApp(
+            theme: NordicTheme.build(NordicTokens.dark),
+            // 路由表也接上 —— 点坞要能真的推到播放页。
+            onGenerateRoute: AppRoutes.generate,
+            home: const NordicShell(),
+          ),
         ),
       ),
     );
@@ -159,10 +166,83 @@ void main() {
       )
       .enabled;
 
+  /// 内容那一层此刻被横着推了多少(见 [FxTabSlide])。没推就是 0。
+  double contentShift(WidgetTester tester) => tester
+      .widgetList<Transform>(
+        find.ancestor(
+          of: find.byType(IndexedStack),
+          matching: find.byType(Transform),
+        ),
+      )
+      .fold(0, (sum, t) => sum + t.transform.getTranslation().x);
+
   /// 底部胶囊上的某颗 tab。**必须限定在托盘里** —— 音乐库那屏的顶栏
   /// 标题也叫「音乐库」。
   Finder tabButton(String label) =>
       find.descendant(of: find.byType(BottomStack), matching: find.text(label));
+
+  /// 「切 tab 横向推移」:新一屏从**来向**那一侧 16px 处滑进来,0.24s 落位;
+  /// 关掉之后连一次都不起——托盘与盖在内容上的实色各管各的,不受它影响。
+  testWidgets('切 tab：内容那一层往右切就从右边滑进来，关掉之后一步不动', (tester) async {
+    await pumpShell(tester, playingController(playing));
+    FxTabSlide slide() => tester.widget<FxTabSlide>(find.byType(FxTabSlide));
+    expect(slide().progress.value, 1, reason: '没切之前停在落位');
+    expect(slide().from, 0);
+
+    await tester.tap(tabButton('音乐库'));
+    await tester.pump();
+
+    // 往右切(首页 → 音乐库):从右侧进来。
+    expect(slide().from, 1);
+    final curve = slide().progress as CurvedAnimation;
+    expect(
+      (curve.parent as AnimationController).duration,
+      NordicFx.tabSlide,
+      reason: '推移那一下的时长就是原型那 0.24s',
+    );
+
+    await tester.pump(const Duration(milliseconds: 60));
+    final moved = slide().progress.value;
+    expect(moved, greaterThan(0));
+    expect(moved, lessThan(1));
+    // 位移真的落在内容那一层上:16px 乘上「还没走完」的那一截。
+    // (没有位移时 `FxTabSlide` 那层根本不在树里 —— 加起来是 0,不是没测到。)
+    expect(
+      contentShift(tester),
+      closeTo(NordicFx.tabShift * (1 - moved), 0.5),
+    );
+
+    await tester.pumpAndSettle();
+    expect(slide().progress.value, 1, reason: '落位之后停在原位');
+
+    // 往回切:从左侧进来。
+    await tester.tap(tabButton('首页'));
+    await tester.pump();
+    expect(slide().from, -1);
+    // 等这一下走完 —— 下面换了开关但**壳是同一棵树**(State 留着),
+    // 不落位的话量到的还是这一下没走完的位移。
+    await tester.pumpAndSettle();
+
+    // 关掉这一条之后:切 tab 照旧,但一次位移都不起。
+    await pumpShell(
+      tester,
+      playingController(playing),
+      motion: MotionPrefs(off: {FxId.tabx}),
+    );
+    await tester.tap(tabButton('音乐库'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(slide().progress.value, 1);
+    expect(contentShift(tester), 0);
+    expect(
+      find.ancestor(
+        of: find.byType(IndexedStack),
+        matching: find.byType(Transform),
+      ),
+      findsNothing,
+      reason: '关掉之后那层连建都不建',
+    );
+  });
 
   testWidgets('每个 tab 一层 HeroMode —— 只有屏幕上那一屏参与共享元素过渡', (tester) async {
     await pumpShell(tester, playingController(playing));

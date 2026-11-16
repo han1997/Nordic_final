@@ -17,6 +17,7 @@ import '../shell/shell.dart';
 import '../widgets/album_rail.dart';
 import '../widgets/components.dart';
 import '../widgets/cover.dart';
+import '../widgets/fx.dart';
 import '../widgets/rows.dart';
 import '../widgets/states.dart';
 import 'library_screen.dart';
@@ -171,66 +172,69 @@ class HomeScreen extends StatelessWidget {
       color: context.accentSafe,
       backgroundColor: context.nordic.glass3,
       onRefresh: () => state.loadLibrary(silent: true),
-      child: CustomScrollView(
-        // 内容装得下时也要能下拉:那句「或下拉刷新」的空态正好出现在
-        // **内容最短**的时候,而不可滚动的 scroll view 不发滚动通知,
-        // RefreshIndicator 于是永远等不到那一下。
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          const SliverToBoxAdapter(child: _NowPlayingHeader()),
-          SliverToBoxAdapter(child: _NowPlayingCard()),
-          if (view.refreshError != null)
-            SliverToBoxAdapter(
-              child: StaleBanner(
-                message: view.refreshError!,
-                savedAt: view.cachedAt,
-                onRetry: () => state.loadLibrary(silent: true),
-                // 货架列表里没有音乐库那样的顶部留白,这条自己带一点。
-                padding: const EdgeInsets.fromLTRB(
-                  NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s2),
+      // 「列表错开入场」的时间线:首页第一条货架起就依次落位(见 [FxStagger])。
+      child: FxStagger(
+        child: CustomScrollView(
+          // 内容装得下时也要能下拉:那句「或下拉刷新」的空态正好出现在
+          // **内容最短**的时候,而不可滚动的 scroll view 不发滚动通知,
+          // RefreshIndicator 于是永远等不到那一下。
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            const SliverToBoxAdapter(child: _NowPlayingHeader()),
+            SliverToBoxAdapter(child: _NowPlayingCard()),
+            if (view.refreshError != null)
+              SliverToBoxAdapter(
+                child: StaleBanner(
+                  message: view.refreshError!,
+                  savedAt: view.cachedAt,
+                  onRetry: () => state.loadLibrary(silent: true),
+                  // 货架列表里没有音乐库那样的顶部留白,这条自己带一点。
+                  padding: const EdgeInsets.fromLTRB(
+                    NordicSpace.s5, 0, NordicSpace.s5, NordicSpace.s2),
+                ),
               ),
+            // 三条货架 —— 「最近在听什么」。还没播过任何东西时,它们正是
+            // 「从哪儿开始」的答案,所以这一屏不给空态(那是播放卡自己的事)。
+            // 「最近添加」铺**歌曲**而不是专辑 —— 用户要的是「最近加进来的那几首」,
+            // 专辑只是它们的容器。服务器没有这个端点,列表由本地按入库时间排出来
+            // (见 `app_state.dart` 的 `_recentlyAddedSongs`)。
+            _SongShelf(
+              title: '最近添加',
+              songs: library.recentlyAddedSongs,
+              repo: view.repository,
+              playable: playable,
             ),
-          // 三条货架 —— 「最近在听什么」。还没播过任何东西时,它们正是
-          // 「从哪儿开始」的答案,所以这一屏不给空态(那是播放卡自己的事)。
-          // 「最近添加」铺**歌曲**而不是专辑 —— 用户要的是「最近加进来的那几首」,
-          // 专辑只是它们的容器。服务器没有这个端点,列表由本地按入库时间排出来
-          // (见 `app_state.dart` 的 `_recentlyAddedSongs`)。
-          _SongShelf(
-            title: '最近添加',
-            songs: library.recentlyAddedSongs,
-            repo: view.repository,
-            playable: playable,
-          ),
-          _Shelf(
-            title: '最近播放',
-            albums: library.recentlyPlayed,
-            repo: view.repository,
-            heroPrefix: 'cover-rail-recent',
-          ),
-          _Shelf(
-            title: '最常播放',
-            albums: library.mostPlayed,
-            repo: view.repository,
-            heroPrefix: 'cover-rail-frequent',
-          ),
-          if (library.recentlyAddedSongs.isEmpty &&
-              library.recentlyPlayed.isEmpty &&
-              library.mostPlayed.isEmpty)
-            const SliverToBoxAdapter(
-              child: EmptyState(
-                title: '这个库里还没有内容',
-                detail: '如果服务器上确实有歌，到设置里重新扫描一次曲库，或下拉刷新。',
-                topPadding: 40,
+            _Shelf(
+              title: '最近播放',
+              albums: library.recentlyPlayed,
+              repo: view.repository,
+              heroPrefix: 'cover-rail-recent',
+            ),
+            _Shelf(
+              title: '最常播放',
+              albums: library.mostPlayed,
+              repo: view.repository,
+              heroPrefix: 'cover-rail-frequent',
+            ),
+            if (library.recentlyAddedSongs.isEmpty &&
+                library.recentlyPlayed.isEmpty &&
+                library.mostPlayed.isEmpty)
+              const SliverToBoxAdapter(
+                child: EmptyState(
+                  title: '这个库里还没有内容',
+                  detail: '如果服务器上确实有歌，到设置里重新扫描一次曲库，或下拉刷新。',
+                  topPadding: 40,
+                ),
               ),
-            ),
-          if (library.playlists.isNotEmpty)
+            if (library.playlists.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _PlaylistShelf(playlists: library.playlists),
+              ),
             SliverToBoxAdapter(
-              child: _PlaylistShelf(playlists: library.playlists),
+              child: SizedBox(height: BottomStack.listInset(context)),
             ),
-          SliverToBoxAdapter(
-            child: SizedBox(height: BottomStack.listInset(context)),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -593,49 +597,53 @@ class _SongShelf extends StatelessWidget {
               separatorBuilder: (_, _) => const SizedBox(width: NordicSpace.s4),
               itemBuilder: (context, index) {
                 final song = songs[index];
-                return Pressable(
-                  // 点哪首就从哪首开始,队列就是这一条货架 —— 与货架的
-                  // 直觉一致(横滑看到的就是接下来会播的)。
-                  onTap: () => playTapped(
-                    context,
-                    songs,
-                    index: index,
-                    label: song.title,
-                  ),
-                  scale: 0.97,
-                  child: SizedBox(
-                    width: _tileWidth,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Cover(
-                          coverArtId: song.coverArtId,
-                          seed: song.albumId,
-                          uri: albumCoverUri(repo, song.coverArtId, size: 256),
-                          size: _artwork,
-                          radius: 20,
-                        ),
-                        const SizedBox(height: 9),
-                        Text(
-                          song.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          song.artist,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
-                              ?.copyWith(color: t.fg3),
-                        ),
-                      ],
+                // 「列表错开入场」:一格一个延迟(见 [FxRise])。
+                return FxRise(
+                  index: index,
+                  child: Pressable(
+                    // 点哪首就从哪首开始,队列就是这一条货架 —— 与货架的
+                    // 直觉一致(横滑看到的就是接下来会播的)。
+                    onTap: () => playTapped(
+                      context,
+                      songs,
+                      index: index,
+                      label: song.title,
+                    ),
+                    scale: 0.97,
+                    child: SizedBox(
+                      width: _tileWidth,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Cover(
+                            coverArtId: song.coverArtId,
+                            seed: song.albumId,
+                            uri: albumCoverUri(repo, song.coverArtId, size: 256),
+                            size: _artwork,
+                            radius: 20,
+                          ),
+                          const SizedBox(height: 9),
+                          Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            song.artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: t.fg3),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -680,43 +688,47 @@ class _PlaylistShelf extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(width: NordicSpace.s2),
             itemBuilder: (context, index) {
               final playlist = shown[index];
-              return Pressable(
-                onTap: () => AppRoutes.openPlaylist(context, playlist.id),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: t.fill1,
-                    borderRadius: BorderRadius.circular(NordicRadius.full),
-                    border: Border.all(color: t.line),
-                  ),
-                  child: Row(
-                    children: [
-                      Cover(
-                        coverArtId: playlist.coverArtId,
-                        seed: playlist.id,
-                        uri: albumCoverUri(repo, playlist.coverArtId, size: 128),
-                        size: 30,
-                        radius: 9,
-                        showShadow: false,
-                      ),
-                      const SizedBox(width: NordicSpace.s3),
-                      Text(
-                        playlist.name,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(width: NordicSpace.s2),
-                      Text(
-                        '${playlist.songCount} 首',
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelSmall
-                            ?.copyWith(color: t.fg3),
-                      ),
-                    ],
+              return FxRise(
+                index: index,
+                child: Pressable(
+                  onTap: () => AppRoutes.openPlaylist(context, playlist.id),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: t.fill1,
+                      borderRadius: BorderRadius.circular(NordicRadius.full),
+                      border: Border.all(color: t.line),
+                    ),
+                    child: Row(
+                      children: [
+                        Cover(
+                          coverArtId: playlist.coverArtId,
+                          seed: playlist.id,
+                          uri:
+                              albumCoverUri(repo, playlist.coverArtId, size: 128),
+                          size: 30,
+                          radius: 9,
+                          showShadow: false,
+                        ),
+                        const SizedBox(width: NordicSpace.s3),
+                        Text(
+                          playlist.name,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(width: NordicSpace.s2),
+                        Text(
+                          '${playlist.songCount} 首',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: t.fg3),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );

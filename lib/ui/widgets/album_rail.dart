@@ -7,6 +7,7 @@ import '../../theme/tokens.dart';
 import '../routes.dart';
 import 'components.dart';
 import 'cover.dart';
+import 'fx.dart';
 import 'rows.dart';
 
 /// 横滑货架 —— `.rail`。首页与音乐库共用一份。
@@ -50,47 +51,51 @@ class AlbumRail extends StatelessWidget {
         itemBuilder: (context, index) {
           final album = albums[index];
           final tag = '$heroPrefix-${album.id}';
-          return Pressable(
-            // **这张卡片的 tag 跟着路由一起走** —— 专辑页照传进去的那个挂 Hero,
-            // 这条货架才飞得起来。写死一个 tag 的话两条货架会撞名(见 heroPrefix)。
-            onTap: () => AppRoutes.openAlbum(context, album.id, heroTag: tag),
-            scale: 0.97,
-            child: SizedBox(
-              width: 142,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Hero(
-                    tag: tag,
-                    child: Cover(
-                      coverArtId: album.coverArtId,
-                      seed: album.id,
-                      uri: albumCoverUri(repo, album.coverArtId),
-                      size: 142,
-                      radius: 22,
+          // 「列表错开入场」:一格一个延迟(见 [FxRise])。
+          return FxRise(
+            index: index,
+            child: Pressable(
+              // **这张卡片的 tag 跟着路由一起走** —— 专辑页照传进去的那个挂 Hero,
+              // 这条货架才飞得起来。写死一个 tag 的话两条货架会撞名(见 heroPrefix)。
+              onTap: () => AppRoutes.openAlbum(context, album.id, heroTag: tag),
+              scale: 0.97,
+              child: SizedBox(
+                width: 142,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Hero(
+                      tag: tag,
+                      child: Cover(
+                        coverArtId: album.coverArtId,
+                        seed: album.id,
+                        uri: albumCoverUri(repo, album.coverArtId),
+                        size: 142,
+                        radius: 22,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    album.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    album.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: t.fg3),
-                  ),
-                ],
+                    const SizedBox(height: 10),
+                    Text(
+                      album.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      album.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: t.fg3),
+                    ),
+                  ],
+                ),
               ),
             ),
           );

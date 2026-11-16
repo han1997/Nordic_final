@@ -8,6 +8,7 @@ import '../../data/server_config.dart';
 import '../../playback/quality.dart';
 import '../../state/app_state.dart';
 import '../../theme/context_ext.dart';
+import '../../theme/fx.dart';
 import '../../theme/theme_mode.dart';
 import '../../theme/tokens.dart';
 import '../adaptive/window.dart';
@@ -15,6 +16,7 @@ import '../routes.dart';
 import '../shell/bottom_stack.dart';
 import '../shell/shell.dart';
 import '../widgets/components.dart';
+import '../widgets/fx.dart';
 import '../widgets/rows.dart';
 import 'config_export_sheet.dart';
 import 'cache_sheet.dart';
@@ -61,141 +63,146 @@ class SettingsScreen extends StatelessWidget {
         // 宽屏下正文收成一栏(720)。ListView 本体不动(有几个按
         // find.byType(ListView) 找它 / 拖它的用例),只在外面包一层限宽。
         child: NarrowContent(
-          child: ListView(
-            padding: EdgeInsets.only(
-              bottom: BottomStack.listInset(context),
-            ),
-            children: [
-            NordicAppBar(
-              title: '设置',
-              subtitle: 'Nordic',
-            ),
-            const _ThemeSection(),
-            const SectionHeader(title: '播放'),
-            NordicCard(
+          // 「列表错开入场」的时间线:下面每一张卡里的行按位置依次浮起
+          // (见 [FxStagger] 与 [NordicCard])。
+          child: FxStagger(
+            child: ListView(
+              padding: EdgeInsets.only(
+                bottom: BottomStack.listInset(context),
+              ),
               children: [
-                NordicIconRow(
-                  icon: Icons.graphic_eq,
-                  title: '默认转码质量',
-                  subtitle: quality.description,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        quality.name,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: context.nordic.fg2,
-                            ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(Icons.chevron_right,
-                          size: 17, color: context.nordic.fg3),
-                    ],
-                  ),
-                  onTap: () => showQualitySheet(context),
-                ),
-                NordicIconRow(
-                  icon: Icons.route_outlined,
-                  title: '线路自动择优',
-                  subtitle: view.autoRoute ? '按延迟选择最快可用地址' : '每条线路要手动锁定',
-                  trailing: NordicSwitch(
-                    value: view.autoRoute,
-                    onChanged: state.setAutoRoute,
-                  ),
-                ),
-                NordicIconRow(
-                  icon: Icons.notifications_none,
-                  title: '播放时后台运行',
-                  subtitle: view.backgroundPlay
-                      ? '通知栏与锁屏可控制'
-                      : '切到后台即暂停',
-                  trailing: NordicSwitch(
-                    value: view.backgroundPlay,
-                    onChanged: state.setBackgroundPlay,
-                  ),
-                ),
-              ],
-            ),
-            const SectionHeader(title: '服务器'),
-            NordicCard(
-              children: [
-                NordicIconRow(
-                  icon: Icons.dns_outlined,
-                  title: view.server?.name ?? '还没有连接服务器',
-                  subtitle: view.server == null
-                      ? '填上地址、账号与密码就能开始'
-                      : '${view.server!.kind.label} · '
-                          '${view.server!.routes.length} 条线路',
-                  // 右边明说点进去是什么。原先只有一颗箭头,而这一屏里
-                  // 「服务器」到底是**改配置**还是**只看线路**说不清 ——
-                  // 点进去能改的其实是账号 / 密码 / 地址那整张表单。
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '服务器与线路',
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelSmall
-                            ?.copyWith(color: context.nordic.fg3),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(Icons.chevron_right,
-                          size: 18, color: context.nordic.fg3),
-                    ],
-                  ),
-                  onTap: () => AppRoutes.openServers(context),
-                ),
-                NordicIconRow(
-                  icon: Icons.add_circle_outline,
-                  title: '添加服务器',
-                  subtitle: '用另一个账号或另一台机器',
-                  trailing: Icon(Icons.chevron_right,
-                      size: 18, color: context.nordic.fg3),
-                  // 直接落在表单上 —— 用户已经说了要填新的,不必再自己找一下
-                  // 「服务器设置」(那是改现有配置的入口)。
-                  onTap: () => AppRoutes.openServers(context, form: true),
-                ),
-                NordicIconRow(
-                  icon: Icons.qr_code_scanner,
-                  title: '扫码同步',
-                  subtitle: '扫码或粘贴，把服务器与线路带到这台设备',
-                  trailing: Icon(Icons.chevron_right,
-                      size: 18, color: context.nordic.fg3),
-                  onTap: () => AppRoutes.openSync(context),
-                ),
-                // 只在真连着的时候出现。[NordicIconRow] 没有禁用态,给一个
-                // `onTap: null` 的行既不置灰也不回弹,读起来就是个坏按钮。
-                // 曲库扫描 —— 这一行原先**只存在于文案里**:首页 / 音乐库 / 搜索的
-                // 空态都写着「到设置里重新扫描一次曲库」,而设置里没有这一条。
-                if (view.server != null) const _ScanRow(),
-                if (view.server != null)
+              NordicAppBar(
+                title: '设置',
+                subtitle: 'Nordic',
+              ),
+              const _ThemeSection(),
+              const _MotionSection(),
+              const SectionHeader(title: '播放'),
+              NordicCard(
+                children: [
                   NordicIconRow(
-                    icon: Icons.qr_code_2,
-                    title: '导出配置',
-                    subtitle: '二维码 · 可复制成一段文本',
+                    icon: Icons.graphic_eq,
+                    title: '默认转码质量',
+                    subtitle: quality.description,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          quality.name,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: context.nordic.fg2,
+                              ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.chevron_right,
+                            size: 17, color: context.nordic.fg3),
+                      ],
+                    ),
+                    onTap: () => showQualitySheet(context),
+                  ),
+                  NordicIconRow(
+                    icon: Icons.route_outlined,
+                    title: '线路自动择优',
+                    subtitle: view.autoRoute ? '按延迟选择最快可用地址' : '每条线路要手动锁定',
+                    trailing: NordicSwitch(
+                      value: view.autoRoute,
+                      onChanged: state.setAutoRoute,
+                    ),
+                  ),
+                  NordicIconRow(
+                    icon: Icons.notifications_none,
+                    title: '播放时后台运行',
+                    subtitle: view.backgroundPlay
+                        ? '通知栏与锁屏可控制'
+                        : '切到后台即暂停',
+                    trailing: NordicSwitch(
+                      value: view.backgroundPlay,
+                      onChanged: state.setBackgroundPlay,
+                    ),
+                  ),
+                ],
+              ),
+              const SectionHeader(title: '服务器'),
+              NordicCard(
+                children: [
+                  NordicIconRow(
+                    icon: Icons.dns_outlined,
+                    title: view.server?.name ?? '还没有连接服务器',
+                    subtitle: view.server == null
+                        ? '填上地址、账号与密码就能开始'
+                        : '${view.server!.kind.label} · '
+                            '${view.server!.routes.length} 条线路',
+                    // 右边明说点进去是什么。原先只有一颗箭头,而这一屏里
+                    // 「服务器」到底是**改配置**还是**只看线路**说不清 ——
+                    // 点进去能改的其实是账号 / 密码 / 地址那整张表单。
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '服务器与线路',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: context.nordic.fg3),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.chevron_right,
+                            size: 18, color: context.nordic.fg3),
+                      ],
+                    ),
+                    onTap: () => AppRoutes.openServers(context),
+                  ),
+                  NordicIconRow(
+                    icon: Icons.add_circle_outline,
+                    title: '添加服务器',
+                    subtitle: '用另一个账号或另一台机器',
                     trailing: Icon(Icons.chevron_right,
                         size: 18, color: context.nordic.fg3),
-                    onTap: () => showConfigExportSheet(context),
+                    // 直接落在表单上 —— 用户已经说了要填新的,不必再自己找一下
+                    // 「服务器设置」(那是改现有配置的入口)。
+                    onTap: () => AppRoutes.openServers(context, form: true),
                   ),
+                  NordicIconRow(
+                    icon: Icons.qr_code_scanner,
+                    title: '扫码同步',
+                    subtitle: '扫码或粘贴，把服务器与线路带到这台设备',
+                    trailing: Icon(Icons.chevron_right,
+                        size: 18, color: context.nordic.fg3),
+                    onTap: () => AppRoutes.openSync(context),
+                  ),
+                  // 只在真连着的时候出现。[NordicIconRow] 没有禁用态,给一个
+                  // `onTap: null` 的行既不置灰也不回弹,读起来就是个坏按钮。
+                  // 曲库扫描 —— 这一行原先**只存在于文案里**:首页 / 音乐库 / 搜索的
+                  // 空态都写着「到设置里重新扫描一次曲库」,而设置里没有这一条。
+                  if (view.server != null) const _ScanRow(),
+                  if (view.server != null)
+                    NordicIconRow(
+                      icon: Icons.qr_code_2,
+                      title: '导出配置',
+                      subtitle: '二维码 · 可复制成一段文本',
+                      trailing: Icon(Icons.chevron_right,
+                          size: 18, color: context.nordic.fg3),
+                      onTap: () => showConfigExportSheet(context),
+                    ),
+                ],
+              ),
+              const _StorageSection(),
+              const SectionHeader(title: '关于'),
+              NordicCard(
+                children: [
+                  NordicIconRow(
+                    icon: Icons.info_outline,
+                    title: '关于 Nordic',
+                    subtitle: '版本 · 开源许可 · 服务器与隐私',
+                    trailing: Icon(Icons.chevron_right,
+                        size: 18, color: context.nordic.fg3),
+                    onTap: () => AppRoutes.openAbout(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: NordicSpace.s6),
               ],
             ),
-            const _StorageSection(),
-            const SectionHeader(title: '关于'),
-            NordicCard(
-              children: [
-                NordicIconRow(
-                  icon: Icons.info_outline,
-                  title: '关于 Nordic',
-                  subtitle: '版本 · 开源许可 · 服务器与隐私',
-                  trailing: Icon(Icons.chevron_right,
-                      size: 18, color: context.nordic.fg3),
-                  onTap: () => AppRoutes.openAbout(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: NordicSpace.s6),
-            ],
           ),
         ),
       ),
@@ -402,6 +409,82 @@ class _ThemeSection extends StatelessWidget {
                           .labelSmall
                           ?.copyWith(color: t.fg3),
                     ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// 动效:六条逐条开关 + 三档预设。
+///
+/// **与原型同一张表**:六条来自 [FxId](逐字镜像 `prototype/app.js` 的
+/// `FX_ITEMS`),三档来自 [FxPreset](`FX_PRESETS`)。图上那三档不是「另一套
+/// 动效」,只是这六条的一次取值 —— 所以预设下面紧接着就是六条,改一条预设
+/// 会跟着变(逐条改过之后三档都不亮,见 [MotionPrefs.preset])。
+///
+/// 开关**当场生效**:每一处用到动效的地方都从 [MotionScope] 取这一份,
+/// 拨一下就换,不用重启。
+class _MotionSection extends StatelessWidget {
+  const _MotionSection();
+
+  /// 六条各自的图标 —— 与名字对得上就行(原型用的是自绘的一组)。
+  static IconData _iconOf(FxId fx) => switch (fx) {
+        FxId.stagger => Icons.view_headline,
+        FxId.tabx => Icons.swap_horiz,
+        FxId.spring => Icons.vertical_align_top,
+        FxId.press => Icons.touch_app_outlined,
+        FxId.dock => Icons.vertical_align_bottom,
+        FxId.lyric => Icons.subtitles_outlined,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nordic;
+    final prefs = MotionScope.of(context);
+
+    return Column(
+      children: [
+        const SectionHeader(title: '动效'),
+        NordicCard(
+          children: [
+            for (final fx in FxId.values)
+              NordicIconRow(
+                icon: _iconOf(fx),
+                title: fx.name,
+                subtitle: '${fx.where} · ${fx.short}',
+                trailing: NordicSwitch(
+                  value: prefs.isOn(fx),
+                  onChanged: (on) => prefs.set(fx, on),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                NordicSpace.s4, NordicSpace.s3, NordicSpace.s4, NordicSpace.s3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SegmentedControl<FxPreset>(
+                    options: FxPreset.values,
+                    value: prefs.preset,
+                    labelOf: (preset) => preset.label,
+                    onChanged: prefs.applyPreset,
+                  ),
+                  const SizedBox(height: NordicSpace.s2),
+                  Text(
+                    // 预设与「逐条」的关系说一句 —— 否则改过一条之后三档全灭
+                    // 会读成坏掉了。
+                    '预设只是这六条的一次取值，逐条改过之后三档都不亮。'
+                    '推荐组合留下错开、回弹、按压与歌词：横向推移与托盘落位'
+                    '每次换屏都出现，留久了容易读成噪音。',
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: t.fg3),
                   ),
                 ],
               ),

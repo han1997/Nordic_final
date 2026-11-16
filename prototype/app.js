@@ -368,12 +368,12 @@ const THEMES = [
    上的词与样式里的 [data-fx~="id"];所以改名字只在这张表里改一处。
    `where` 说的是它**什么时候**会出现 —— 判断要不要留,先看这一条。 */
 const FX_ITEMS = [
-  { id: 'stagger', name: '列表错开入场', where: '进入任何列表 / 首页', short: '每块内容依次浮起 6px' },
-  { id: 'tabx',    name: '切 tab 横向推移', where: '首页 / 音乐库 / 设置', short: '两屏一前一后错开 16px' },
-  { id: 'spring',  name: '弹层回弹',     where: '所有底部面板',       short: '升上来轻过一点再落定' },
-  { id: 'press',   name: '按压回弹',     where: '歌曲行 / 专辑格 / 歌单', short: '按下缩到 0.97，松手弹回' },
-  { id: 'dock',    name: '托盘落位',     where: '带底部托盘的每一屏',   short: '播放条从下方 22px 升上来' },
-  { id: 'lyric',   name: '歌词换行浮起', where: '歌词页',             short: '新一句从下方 4px 浮起并亮起' },
+  { id: 'stagger', name: '列表错开入场', where: '进入任何列表 / 首页', short: '每块内容依次浮起 6px', icon: 'queue' },
+  { id: 'tabx',    name: '切 tab 横向推移', where: '首页 / 音乐库 / 设置', short: '两屏一前一后错开 16px', icon: 'chevron' },
+  { id: 'spring',  name: '弹层回弹',     where: '所有底部面板',       short: '升上来轻过一点再落定', icon: 'sparkle' },
+  { id: 'press',   name: '按压回弹',     where: '歌曲行 / 专辑格 / 歌单', short: '按下缩到 0.97，松手弹回', icon: 'gauge' },
+  { id: 'dock',    name: '托盘落位',     where: '带底部托盘的每一屏',   short: '播放条从下方 22px 升上来', icon: 'stack' },
+  { id: 'lyric',   name: '歌词换行浮起', where: '歌词页',             short: '新一句从下方 4px 浮起并亮起', icon: 'lyrics' },
 ];
 
 const FX_ALL_ON  = Object.fromEntries(FX_ITEMS.map((f) => [f.id, true]));
@@ -2136,11 +2136,38 @@ function screenSettings() {
           ${THEMES.map((t) => `<button data-set-theme="${t.id}" aria-selected="${STATE.theme === t.id}">${t.name}</button>`).join('')}
         </div>
       </div>`;
+  /* 动效:六条逐条开关 + 三档预设 —— 与交互流侧栏、设计板**同一张表**
+     (FX_ITEMS / FX_PRESETS)。点一下只改 `<html data-fx>` 与这两处控件态,
+     **不整屏重绘**(重绘会把正在演的那一条拦腰截断,也就没法在同一屏里比对)。
+     行上的 switch 由 syncFxUI 对齐,所以这里照抄「开关行」的写法即可。 */
+  const fxRow = (f) => `
+        <div class="row" data-fx-toggle="${f.id}" role="switch"
+             aria-checked="${!!STATE.fx[f.id]}" aria-selected="${!!STATE.fx[f.id]}"
+             title="出现于：${f.where}">
+          <span class="set-icon">${ic(f.icon, 18)}</span>
+          <div class="grow"><div class="line1">${f.name}</div><div class="line2">${f.short}</div></div>
+          <span class="switch${STATE.fx[f.id] ? ' on' : ''}"><i></i></span>
+        </div>`;
+  const motionRow = `
+      <div class="section"><h2>动效</h2></div>
+      <div class="card" style="margin:0 var(--s5)">
+        ${FX_ITEMS.map((f, i) => `${i ? '<div class="divider"></div>' : ''}${fxRow(f)}`).join('')}
+        <div class="divider"></div>
+        <div class="segmented" style="margin:var(--s3) var(--s4) var(--s2)">
+          ${['all', 'rec', 'none'].map((id) =>
+            `<button data-fx-preset="${id}">${{ all: '全部开启', rec: '推荐组合', none: '全部关闭' }[id]}</button>`).join('')}
+        </div>
+        <div style="padding:0 var(--s4) var(--s4);font-size:var(--fs-xs);color:var(--fg-3);line-height:1.7">
+          预设只是这六条的一次取值；逐条改过之后三档都不亮。推荐组合留下错开、回弹、按压与歌词 ——
+          横向推移与托盘落位每次换屏都出现，留久了容易读成噪音。
+        </div>
+      </div>`;
   return `<div class="appbar">
       <div><div class="h1">设置</div><div class="sub">Nordic</div></div>
     </div>
     <div class="scroll">
       ${themeRow}
+      ${motionRow}
       <div class="section"><h2>播放</h2></div>
       <div class="card" style="margin:0 var(--s5)">
         ${rows.map((r, i) => {
@@ -2264,7 +2291,7 @@ function screenSettings() {
    同源策略挡掉,而「零外链」是这一份原型的硬约束(见 index.html / player.html
    的注释)。所以它靠**用例**跟住 `pubspec.yaml` —— `test/ui/prototype_parity_test.dart`
    在两边不一致时直接红。改版本号时要么改这里,要么让那条用例红一次提醒你。 */
-const ABOUT_VERSION = '1.0.67+68';
+const ABOUT_VERSION = '1.0.68+69';
 
 function screenAbout() {
   return `<div class="appbar nav">
@@ -2458,7 +2485,7 @@ function screenMotion() {
     <div class="scroll">
       <div class="motion-intro">这一轮新增的六条动效，默认全开。每张卡自己循环播放；到
         <b>player.html</b> 右侧「动效」里逐条开关，就能在完整链路里比对。
-        应用侧尚未实现 —— 先定取舍，再按选定那一档写进 Flutter。</div>
+        应用侧已按这套实现：<b>设置 → 动效</b> 里逐条开关，与这里的开关是同一张表。</div>
       <div class="motion-presets">
         <button data-fx-preset="all">全部开启</button>
         <button data-fx-preset="rec">推荐组合</button>
@@ -2681,8 +2708,20 @@ function renderStage(root) {
   };
   /* 侧栏与「动效研究」里的状态签一起对齐 —— 两边都能按,不能只改一边。 */
   const syncFxUI = () => {
-    root.querySelectorAll('[data-fx-toggle]').forEach((b) =>
-      b.setAttribute('aria-selected', String(!!STATE.fx[b.dataset.fxToggle])));
+    root.querySelectorAll('[data-fx-toggle]').forEach((b) => {
+      const on = !!STATE.fx[b.dataset.fxToggle];
+      b.setAttribute('aria-selected', String(on));
+      b.setAttribute('aria-checked', String(on));
+      // 设置页那一版的开关是 `.switch`,侧栏那一版是勾选标 —— 两处都对齐。
+      const sw = b.querySelector('.switch');
+      if (sw) sw.classList.toggle('on', on);
+    });
+    /* 三档预设:当前这份与哪一档**逐条相同**就亮那一颗(逐条改过之后全灭)。 */
+    root.querySelectorAll('[data-fx-preset]').forEach((b) => {
+      const preset = FX_PRESETS[b.dataset.fxPreset];
+      const same = FX_ITEMS.every((f) => !!STATE.fx[f.id] === !!preset[f.id]);
+      b.setAttribute('aria-selected', String(same));
+    });
     root.querySelectorAll('[data-fx-state]').forEach((el) => {
       const on = !!STATE.fx[el.dataset.fxState];
       el.classList.toggle('on', on);
@@ -2895,7 +2934,7 @@ function renderStage(root) {
           </div>
           <button class="btn ghost" data-go="motion" style="height:38px;margin-top:10px;font-size:12px">看动效说明</button>
           <div style="font-size:11px;color:var(--fg-3);line-height:1.7;margin-top:8px">
-            逐条开关，交互流里立刻生效。应用侧还没实现 —— 先定取舍。
+            逐条开关，交互流里立刻生效。应用侧同一份：「设置 → 动效」。
           </div>
         </div>
         <div style="border-top:1px solid var(--line);padding-top:16px">

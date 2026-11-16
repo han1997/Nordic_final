@@ -11,9 +11,11 @@ import 'package:nordic/data/server_config.dart';
 import 'package:nordic/data/subsonic_client.dart';
 import 'package:nordic/playback/quality.dart';
 import 'package:nordic/state/app_state.dart';
+import 'package:nordic/theme/fx.dart';
 import 'package:nordic/theme/nordic_theme.dart';
 import 'package:nordic/theme/tokens.dart';
 import 'package:nordic/ui/routes.dart';
+import 'package:nordic/ui/widgets/components.dart';
 import 'package:nordic/ui/screens/about_screen.dart';
 import 'package:nordic/ui/screens/settings_screen.dart';
 import 'package:provider/provider.dart';
@@ -48,8 +50,13 @@ void main() {
   late MediaCache audioCache;
   late AppState state;
 
+  /// 动效开关 —— 产品里它挂在 `NordicApp` 外面([MotionScope]),
+  /// 设置页只是它的一个读写面。这里给真的那一份,才测得着「拨一下真的改了」。
+  late MotionPrefs motion;
+
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    motion = MotionPrefs.fromStore(await ConfigStore.open());
     root = await Directory.systemTemp.createTemp('nordic-settings-ui');
     audioCache = await MediaCache.open(
       limitBytes: CacheLimit.gb1.bytes,
@@ -93,13 +100,16 @@ void main() {
           ChangeNotifierProvider<AppState>.value(value: state),
           ChangeNotifierProvider<QualityController>.value(value: state.quality),
         ],
-        child: MaterialApp(
+        child: MotionScope(
+          prefs: motion,
+          child: MaterialApp(
           theme: NordicTheme.build(NordicTokens.dark),
           // 「关于」那一条是**推入的路由** —— 路由表得在场,与产品里同一份。
           onGenerateRoute: (settings) =>
               settings.name == Navigator.defaultRouteName
                   ? MaterialPageRoute<void>(builder: (_) => const SettingsScreen())
                   : AppRoutes.generate(settings),
+        ),
         ),
       ),
     );
@@ -332,6 +342,57 @@ testWidgets('「存储」把缓存与下载收在一栏里', (tester) async {
     await tester.tap(find.text('关于 Nordic'));
     await tester.pumpAndSettle();
     expect(find.byType(AboutScreen), findsOneWidget);
+  });
+
+  /// 「动效」那一栏:六条逐条开关 + 三档预设。
+  ///
+  /// 钉的是**这一栏真的连到开关上**:拨一下 [MotionPrefs] 就变、点一档预设六条
+  /// 一起变,而且逐条改过之后三档全灭(那是「自定义」的样子,不是坏了)。
+  testWidgets('动效那一栏：六条都在，拨一下真的改，三档预设一次改六条', (tester) async {
+    await pumpSettings(tester);
+
+    await tester.dragUntilVisible(
+      find.text('动效'),
+      find.byType(ListView),
+      const Offset(0, -140),
+    );
+    await tester.pump();
+
+    // 六条的名字与「出现于哪儿 · 一句话」都在。
+    for (final fx in FxId.values) {
+      expect(find.text(fx.name), findsOneWidget, reason: '${fx.id} 那一行不在');
+      expect(find.text('${fx.where} · ${fx.short}'), findsOneWidget);
+    }
+
+    // 三档都在,当前这一份是全开 —— 亮的是「全部开启」。
+    expect(find.text('全部开启'), findsOneWidget);
+    expect(find.text('推荐组合'), findsOneWidget);
+    expect(find.text('全部关闭'), findsOneWidget);
+    expect(motion.preset, FxPreset.all);
+
+    // 点一档预设:六条一起变。
+    await tester.tap(find.text('推荐组合'));
+    await tester.pump();
+    expect(motion.preset, FxPreset.rec);
+    expect(motion.isOn(FxId.tabx), isFalse);
+    expect(motion.isOn(FxId.dock), isFalse);
+    expect(motion.isOn(FxId.lyric), isTrue);
+
+    // 逐条拨回来:那一行上的开关就是入口,拨完就不再属于任何一档。
+    final tabxRow = find.ancestor(
+      of: find.text('切 tab 横向推移'),
+      matching: find.byType(NordicIconRow),
+    );
+    await tester.tap(
+      find.descendant(of: tabxRow, matching: find.byType(NordicSwitch)),
+    );
+    await tester.pump();
+    expect(motion.isOn(FxId.tabx), isTrue);
+    expect(motion.preset, isNull, reason: '逐条改过之后三档全灭');
+
+    // 而且这一下是**写进盘里**的 —— 重启之后还是这个样子。
+    final reopened = await ConfigStore.open();
+    expect(reopened.loadFxOff(), 'dock');
   });
 
 testWidgets('服务器那一栏里有「曲库扫描」—— 三处空态那句承诺落在这儿', (tester) async {
