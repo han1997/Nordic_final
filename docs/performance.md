@@ -37,6 +37,14 @@
 - **封面按显示尺寸解码**(`Cover` 里取 2 的幂做桶),并走磁盘缓存
   (`configureCoverCache`)。缓存键是「封面 id + 尺寸」而**不是 URL** ——
   Subsonic 每次请求换 salt,同一张图每次 URL 都不同。
+- **跟着「正在播放」走的那几处封面都要留旧帧**(`gaplessPlayback: true`)。换歌
+  就是换图,新图解码要几十毫秒,这段里画什么由 `Image.frameBuilder` 决定 ——
+  `Cover` 那条写成 `frame != null ? child : fallback()`,而换 provider 时框架会把
+  `_frameNumber` 置 `null`,于是**不留旧帧就一定退回渐变兜底**(`gaplessPlayback`
+  本身救不了这一条路:它只在 `_updateSourceStream` 里跳过 `_replaceImage(info: null)`),
+  而兜底配色是跟着**新**专辑算的 —— 那一下读起来就是「闪」。播放页那张大封面、
+  底栏坞、宽屏横条、首页「正在播放」卡四处都不能摘;护栏在 `shell_test`。
+  「列表里一行一张」的那些封面按行固定,换歌不动它们,不用管。
 - **新缓存只在「不花流量」的时候留**:听过的歌那份额度由播放触发,判据是设置页
   那个「仅 Wi-Fi 下载」开关 + 当前连接是否计费(`shouldWriteCache`)。**别把这层
   门控去掉** —— 留缓存等于在后台把整首歌拉完,用户以为流量下没下东西其实下了。

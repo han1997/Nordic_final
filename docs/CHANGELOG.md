@@ -3424,3 +3424,89 @@ bbox 横跨整页的正常交叉淡出混色,不是空页);推入 300ms 到 9.4 
 
 应用侧(Flutter)仍然一行没写 —— 六条候选要等你挑定或确认「推荐组合」,这一步
 没有越过。真机手感、`prefers-reduced-motion` 在应用侧的那一层,同上一轮。
+
+## 第四十三轮:每次重绘都整屏闪一下(2026-11-16)
+
+用户报:「切歌或者切画面会有突然的闪屏,不知道是什么原因,我不希望看到,请你优化」。
+根因不在切歌,也不在换屏 —— 在 **`render()` 本身**:每次重绘都会换掉整段
+`innerHTML`,`paint()` 里那个新建的 `.screen` 节点带着一条**无条件**的
+`animation: screen-in 0.22s both`,一插进 DOM 就从 `opacity: 0` 淡回 1。所以凡是
+走 `render()` 的动作(切歌、暂停 / 播放、换栏、开弹层、弹气泡)都闪一下;真正
+「只刷进度」的 1 Hz ticker 反倒不闪 —— 它特意避开了整屏重绘,这恰好是反证。
+六条动效候选**一条没删**。版本 1.0.67+68。
+
+### 一、实测
+
+`requestAnimationFrame` 里逐帧读 `getComputedStyle('.screen').opacity`
+(`.tmp-shots/_flash.cjs`,修前):
+
+| 动作 | 0ms | 17ms | 33ms | 50ms | 100ms | 150ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| 下一首(切歌) | **0.00** | 0.21 | 0.40 | 0.55 | 0.84 | 0.96 |
+| 暂停 / 播放 | **0.00** | 0.21 | 0.40 | 0.55 | 0.84 | 0.96 |
+| 换栏(歌曲→专辑) | **0.00** | 0.21 | 0.40 | 0.55 | 0.84 | 0.96 |
+| 开弹层(排序) | **0.00** | 0.21 | 0.55 | 0.68 | 0.84 | 0.98 |
+
+四类重绘**全部**从 0.00 起 —— 不是某一条路径的偶发,是同一处。空闲播放采样 181 帧,
+`opacity < 0.5` 的帧数 **0**。
+
+### 二、修法:把极性反过来
+
+入场动画与 `fx-stagger` / `fx-dock` 是同一类东西 —— **只该在「真换了屏」那一次
+演一回**。挂在会被整体重建的基类上,等于每次重绘都演;所以改由 `paint()` 点名,
+与那两条走**同一道门**(`enter && screen && !vt`):
+
+- `styles.css`:`.screen` 基类删掉 `animation`,新增 `.screen.fx-screen` 承载 `screen-in`
+  (改 `backwards` 填法,动画结束后不再留着 `both` 的末态)。
+- `app.js`:`if (nav && screen) screen.style.animation = 'none'` 那句**行内补丁整个删掉**
+  —— 它只按住了「有 `nav` 的那一半」,剩下那些照样闪;样式修好后它只会掩盖问题。
+  改成 `if (enter && screen && !vt) screen.classList.add('fx-screen')`。
+
+修后重测(`_flash2.cjs` / `_aii.cjs`):四类重绘逐帧 **恒为 1.00**
+(0–161ms 每一帧),`getAnimations()` 空;上一首 / 下一首 / 点歌行 / 拖进度 / 换歌词行
+五种动作的最暗一帧也都是 1.00。该演的三处照旧(`_where.cjs` / `_where2.cjs` /
+`_novt.cjs`):
+
+| 路径 | 类 | 40ms 时 opacity |
+| --- | --- | --- |
+| 冷启动首帧 | `screen fx-screen fx-stagger fx-dock` | 0 → 700ms 到 1 |
+| servers→库(无 VT) | 同上 | 0.40 淡入中 |
+| 关掉 `tabx` 的切 tab | 同上 | 0.40 淡入中 |
+| 有 VT 的换屏(切 tab / 推入 / 返回 / 进播放页) | `screen` | **1.00**,不淡(过渡自己演) |
+| 把 `startViewTransition` 删掉之后的推入 | `screen fx-screen …` | 0.21 淡入中 |
+
+最后那一行是这一轮的额外收获:无 VT 引擎上的推入原先是一记**硬切**,现在补上了淡入。
+
+### 三、应用侧同一条缺陷(封面)
+
+切歌时「闪」还有第二个来源,而且是真的闪图:封面换图要解码几十毫秒,这期间画什么
+由 `Image.frameBuilder` 决定 —— `lib/ui/widgets/cover.dart` 写成
+`wasSynchronouslyLoaded || frame != null ? child : fallback()`,换 provider 时
+`_frameNumber` 被框架置 `null`,于是**即使 `gaplessPlayback: true` 也照样退回渐变兜底**
+(那条参数只在 `_updateSourceStream` 里跳过 `_replaceImage(info: null)`,救不了被
+`frameBuilder` 换掉的这一条路)。而兜底配色是跟着**新**专辑算的 —— 那一下是一块
+不相干的颜色。
+
+播放页那张大封面一直是 `gaplessPlayback: true`,漏的是它的两处小尺寸兄弟:
+`lib/ui/shell/bottom_stack.dart`(底栏坞)与 `lib/ui/shell/wide_bar.dart`(宽屏横条),
+另有首页那块「正在播放」的 92px 封面(`home_screen.dart`)。三处补齐,并补一条
+用例钉住坞那一处(去掉参数就红)。
+
+### 四、守卫
+
+`prototype_parity_test` 新增一条(21 → 22 条):`.screen` 基类不许带 `animation`、
+`.screen.fx-screen` 必须存在、`paint()` 里那道门必须逐字是
+`if (enter && screen && !vt) screen.classList.add('fx-screen');`、行内
+`style.animation = 'none'` 不许再出现(查之前先摘注释 —— 解释它的注释里就带着那段代码)。
+`shell_test` 新增一条:坞里的 `Cover.gaplessPlayback` 必须是 `true`。
+
+三条变异都**真能红**(逐条改坏再跑,每次都从 `.tmp-shots/*.bak` 还原并 `diff` 确认):
+① 把 `animation` 加回 `.screen` 基类 → 整屏淡入那条红;② 那道门去掉 `!vt` →
+同一条红(第一版守卫因为两行门逐字相同而放过它,改成逐字匹配整行才咬住);③ 坞封面
+删掉 `gaplessPlayback` → 封面那条红。`flutter analyze` 0 issue,全量 562 passed /
+18 skipped。
+
+### 五、这一轮没动的
+
+应用侧**一条动效都没实现**,仍然等六条候选的取舍(与第四十一 / 四十二轮同一件事)。
+这一轮动的是「别闪」,不是「加动效」。

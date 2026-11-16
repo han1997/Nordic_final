@@ -74,6 +74,9 @@ class WidePlaybackBar extends StatelessWidget {
                       size: 48,
                       radius: 14,
                       showShadow: false,
+                      // 同手机那一条坞 —— 换歌时先留住上一帧,
+                      // 否则这块小封面每次都先闪一下渐变兜底。
+                      gaplessPlayback: true,
                     ),
                     Expanded(
                       child: Column(

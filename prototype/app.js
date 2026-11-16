@@ -2264,7 +2264,7 @@ function screenSettings() {
    同源策略挡掉,而「零外链」是这一份原型的硬约束(见 index.html / player.html
    的注释)。所以它靠**用例**跟住 `pubspec.yaml` —— `test/ui/prototype_parity_test.dart`
    在两边不一致时直接红。改版本号时要么改这里,要么让那条用例红一次提醒你。 */
-const ABOUT_VERSION = '1.0.66+67';
+const ABOUT_VERSION = '1.0.67+68';
 
 function screenAbout() {
   return `<div class="appbar nav">
@@ -2738,11 +2738,16 @@ function renderStage(root) {
        入场那两条要认识它,理由见类挂上去那一处的注释。 */
     const paint = (vt = false) => {
       slot().innerHTML = view(STATE.params) + toastMarkup();
-      /* 推入 / 返回时新页**不自己淡入** —— 那件事改由整格承担(滑动或淡入,见 navKind)。
-         写成行内样式而不是类:行内跟着这次 paint 的节点一起生灭,
-         撤标记时不会把淡入动画重新启动一遍。 */
+      /* 整屏淡入**只给真的换了屏的那一次**(`enter`)。
+         这句话原先写作 `if (nav && screen) screen.style.animation = 'none'` ——
+         因为 `.screen` 自带一条无条件的 screen-in,凡是不走视图过渡的重绘
+         (切歌、暂停、换栏、开弹层、气泡)都得靠行内样式把它按住,而那一句只按住了
+         有 `nav` 的那一半 —— 剩下那些每次重绘都整屏从全透明淡回来,就是用户看到的
+         「闪一下」。现在样式那一侧不再无条件挂(见 styles.css 的 `.screen.fx-screen`),
+         要不要演由这里点名:有视图过渡的这一次(`vt`)由过渡自己演,类不挂;
+         没有过渡又确实换了屏,才挂上。 */
       const screen = slot().querySelector('.screen');
-      if (nav && screen) screen.style.animation = 'none';
+      if (enter && screen && !vt) screen.classList.add('fx-screen');
       /* 入场那一下的两条(CSS 只管「怎么动」,这里只管「这一次要不要动」):
          - fx-stagger 给 .scroll 的每一块排延迟,见 styles.css「动效候选」;
          - fx-dock 让托盘从下方落位。

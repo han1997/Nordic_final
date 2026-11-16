@@ -23,6 +23,7 @@ import 'package:nordic/ui/screens/settings_screen.dart';
 import 'package:nordic/ui/shell/bottom_stack.dart';
 import 'package:nordic/ui/shell/shell.dart';
 import 'package:nordic/ui/widgets/components.dart';
+import 'package:nordic/ui/widgets/cover.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -299,5 +300,21 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(PlayerScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('坞里那张封面换歌时先留住上一帧', (tester) async {
+    // 切歌就是换图,而新图要解码几十毫秒。不留旧帧的话,坞里这张小封面
+    // 每次都先闪一下渐变兜底 —— 而兜底配色是跟着**新**专辑算的,
+    // 于是那一下是一块不相干的颜色,看起来就是「闪屏」。
+    // 播放页那张大封面一直是留帧的(`gaplessPlayback: true`),坞漏了。
+    await pumpShell(tester, playingController(playing));
+
+    final covers = find.descendant(
+      of: find.byType(BottomStack),
+      matching: find.byType(Cover),
+    );
+    expect(covers, findsOneWidget, reason: '坞里有且只有一张封面');
+    expect(tester.widget<Cover>(covers).gaplessPlayback, isTrue,
+        reason: '换歌那几十毫秒要一直画着上一帧，不能闪成渐变兜底');
   });
 }

@@ -367,6 +367,32 @@ void main() {
               '把旧页按上去（z-index: 1）会读成旧页赖着不散');
     });
 
+    test('整屏淡入只给真的换了屏的那一次', () {
+      // 「切歌 / 切画面闪一下」那一处的根因:`.screen` 上**无条件**挂着 220ms 的
+      // screen-in,而每次重绘都会换掉整段 innerHTML,新节点上的动画就重演一遍 ——
+      // 切歌、暂停、换栏、开弹层、弹气泡全都要走 `render()`,于是整屏在那一下
+      // 从全透明淡回来(实测切歌那一帧 `.screen` 的 opacity 是 0.00)。
+      //
+      // 所以这条淡入必须由 app.js 点名,而且要点在「真的换了屏」那一次上。
+      final base = css.substring(
+        css.indexOf('.screen {'),
+        css.indexOf('}', css.indexOf('.screen {')),
+      );
+      expect(base, isNot(contains('animation')),
+          reason: '.screen 的无条件淡入会让任何一次重绘整屏闪一下 —— '
+              '同屏重绘（切歌 / 暂停 / 换栏 / 弹层）不该演这一条');
+      expect(css, contains('.screen.fx-screen'),
+          reason: '淡入要留一条能被点名的规则，否则真的换屏就没过渡了');
+      // 摘注释再查:解释「原先那句行内样式」的注释本身带着那段代码。
+      final jsCode = js.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+      expect(jsCode, contains("if (enter && screen && !vt) screen.classList.add('fx-screen');"),
+          reason: '换了屏要真的把那一类挂上去，而且同样要放过「会被拍成快照」的这一次');
+      expect(jsCode, contains('if (enter && screen && !vt) {'),
+          reason: '入场那两条也要守着同一道门');
+      expect(jsCode, isNot(contains("style.animation = 'none'")),
+          reason: '行内按住动画那一句是给无条件淡入打补丁用的，样式修好后它只会掩盖问题');
+    });
+
     test('推荐组合对每一条都明写了取舍', () {
       // `all` / `none` 是按 FX_ITEMS 派生的,不可能漏;`rec` 是逐个手写的 ——
       // 新加一条候选而没在推荐组合里表态,这一条就会红。

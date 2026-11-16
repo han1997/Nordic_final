@@ -344,9 +344,21 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   display: flex;
   flex-direction: column;
   min-height: 0;
-  /* 切页/切 tab 的淡入 —— 与底部悬浮 tab 的胶囊同一套缓动(220ms / --ease)。
-     真机上由 Flutter 侧的 FadeTransition 实现,这里只是原型对齐。 */
-  animation: screen-in 0.22s var(--ease) both;
+}
+
+/* 整屏淡入 —— **只给「真的换了屏、又没人替它演过渡」的那一次**。与底部悬浮
+   tab 的胶囊同一套缓动(220ms / --ease)。真机上由 Flutter 侧的 FadeTransition
+   实现,这里只是原型对齐。
+
+   这条原先**无条件**挂在 `.screen` 上,于是每次重绘都会重演一遍:切歌、暂停、
+   换栏、开弹层、弹个气泡 —— 这些都要 `render()`,而 `render()` 换掉的是整段
+   `innerHTML`,新节点上的动画就从头再跑一次。整屏在 220ms 里从全透明淡回来,
+   读起来就是**闪一下**(实测切歌那一帧 `.screen` 的 opacity 是 0.00)。
+   现在由 app.js 点名(见 renderStage 的 paint):换了屏才加 `.fx-screen`。 */
+.screen.fx-screen {
+  /* `backwards` 而不是 `both`:只借它撑住起始那一帧,演完把值交还给普通样式,
+     免得一层动画结果永远压在元素上(同时挂 transform 时会顶掉按压回弹)。 */
+  animation: screen-in 0.22s var(--ease) backwards;
 }
 
 @keyframes screen-in {

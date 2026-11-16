@@ -411,6 +411,9 @@ class _NowPlayingCard extends StatelessWidget {
                     uri: albumCoverUri(repo, song.coverArtId, size: 256),
                     size: 92,
                     radius: 20,
+                    // 这一块跟着「正在播放」走,切歌时同样换图 —— 留住上一帧,
+                    // 免得整块先闪成渐变。
+                    gaplessPlayback: true,
                   ),
                   const SizedBox(width: NordicSpace.s4),
                   Expanded(

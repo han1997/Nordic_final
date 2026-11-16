@@ -165,6 +165,11 @@ class _PlayerDock extends StatelessWidget {
                 size: 46,
                 radius: 13,
                 showShadow: false,
+                // 换歌就是换一张图,而新图要解码几十毫秒 —— 不留旧帧的话,
+                // 坞里这张小封面每次切歌都先闪一下渐变兜底(配色还跟着新专辑变,
+                // 于是那一下是一块不相干的颜色). 与播放页那张大封面同一档,
+                // 与原型一致:浏览器本来就把上一张一直画到新图解码完。
+                gaplessPlayback: true,
               ),
               Expanded(
                 child: Column(
