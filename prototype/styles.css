@@ -2055,13 +2055,17 @@ html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
 @keyframes vt-tab-out-back { from { opacity: 1; transform: none; }              to { opacity: 0; transform: translateX(12px); } }
 
 html[data-fx~="tabx"][data-nav="tab"]::view-transition-group(phone) { animation-duration: 0.24s; }
+/* 两页都在动、也都在淡,**新快照留在上层**(不写 z-index,就是默认层序)。
+   早先这里把旧的按到 z-index: 1 上,是错的:旧页在整段过渡里压着新页,
+   而那时新页的快照还是「空的」(入场动画被拍了进去,见 app.js 的 paint 注释),
+   读起来就成了「下层文字要等半天才被盖住」。两头都修过之后不翻层序更好读 ——
+   新页压上来、旧页在底下退出去,才像同一条轴上的两页;翻过来则是两张半透明
+   底片叠着,中段发灰。(返回那一条另有原因要翻,见上面 vt-slide-out-right。) */
 html[data-fx~="tabx"][data-nav="tab"]::view-transition-old(phone) {
   animation: vt-tab-out-fwd 0.24s var(--ease) both;
-  z-index: 1;
 }
 html[data-fx~="tabx"][data-nav="tab"]::view-transition-new(phone) {
   animation: vt-tab-in-fwd 0.24s var(--ease) both;
-  z-index: 0;
 }
 html[data-fx~="tabx"][data-nav="tab"][data-tabdir="back"]::view-transition-old(phone) {
   animation-name: vt-tab-out-back;
@@ -2376,7 +2380,11 @@ html[data-fx~="press"] .artist-tile,
 html[data-fx~="press"] .hero-card {
   transition: transform 0.16s var(--ease);
 }
-html[data-fx~="pressx"] .row:active { transform: scale(0.985); }
+/* 这里原本写的是 `[data-fx~="pressx"]` —— 多一个 x,`data-fx` 上永远没有这个词,
+   所以**歌曲行那一条回弹从来没生效过**(其余几类都正常,才一直没被看出来)。
+   `prototype_parity_test` 那条守卫查的是「id 有对应选择器」,方向相反,查不出来;
+   现在补了一条反查孤儿词。 */
+html[data-fx~="press"] .row:active { transform: scale(0.985); }
 html[data-fx~="press"] .pl-chip:active,
 html[data-fx~="press"] .qopt:active,
 html[data-fx~="press"] .album-tile:active,

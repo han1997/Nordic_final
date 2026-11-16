@@ -2264,7 +2264,7 @@ function screenSettings() {
    同源策略挡掉,而「零外链」是这一份原型的硬约束(见 index.html / player.html
    的注释)。所以它靠**用例**跟住 `pubspec.yaml` —— `test/ui/prototype_parity_test.dart`
    在两边不一致时直接红。改版本号时要么改这里,要么让那条用例红一次提醒你。 */
-const ABOUT_VERSION = '1.0.65+66';
+const ABOUT_VERSION = '1.0.66+67';
 
 function screenAbout() {
   return `<div class="appbar nav">
@@ -2734,7 +2734,9 @@ function renderStage(root) {
   const render = (morph = false, nav = '', enter = false) => {
     const view = VIEWS[STATE.view];
     if (!view) return;
-    const paint = () => {
+    /* `vt` = 这一次 paint 会被 View Transition 拍成快照(见下面的分支)。
+       入场那两条要认识它,理由见类挂上去那一处的注释。 */
+    const paint = (vt = false) => {
       slot().innerHTML = view(STATE.params) + toastMarkup();
       /* 推入 / 返回时新页**不自己淡入** —— 那件事改由整格承担(滑动或淡入,见 navKind)。
          写成行内样式而不是类:行内跟着这次 paint 的节点一起生灭,
@@ -2744,8 +2746,18 @@ function renderStage(root) {
       /* 入场那一下的两条(CSS 只管「怎么动」,这里只管「这一次要不要动」):
          - fx-stagger 给 .scroll 的每一块排延迟,见 styles.css「动效候选」;
          - fx-dock 让托盘从下方落位。
-         类挂在这次 paint 的节点上,下次重绘自然消失 —— 不必手动摘。 */
-      if (enter && screen) {
+         类挂在这次 paint 的节点上,下次重绘自然消失 —— 不必手动摘。
+
+         **有视图过渡的这一次不挂**(`vt`)。它们从 opacity: 0 起,而 View Transition
+         是在 startViewTransition 的回调里**同步**取新快照的 —— 那一刻新页的每一块
+         都还是透明的,拍出来的新页等于**一张空页**;旧页那张快照在整段过渡里压在
+         它上面(切 tab 那 0.24s),读起来就是「下层文字要等半天才被盖住」。
+         而且这件事没法两全:动画若被拍进快照,拍出来就是空的;若等过渡结束再演,
+         新页那时已经看得见了,再从透明重来一遍就是闪一下。所以过渡期间让位给过渡
+         (位移 / 交叉淡出自己就是动效);**没有过渡的换屏照旧演** —— 冷启动第一次
+         点底栏 tab(from = -1,本来就不走横向推移)、关了 tabx 的切 tab 都走这一支。
+         库内换栏不在此列:它走的是 enter = false(同屏重绘不演),与这里无关。 */
+      if (enter && screen && !vt) {
         if (STATE.fx.stagger) screen.classList.add('fx-stagger');
         if (STATE.fx.dock) screen.classList.add('fx-dock');
       }
@@ -2772,7 +2784,7 @@ function renderStage(root) {
     }
 
     const t = document.startViewTransition(() => {
-      paint();
+      paint(true);
       if (!morph) return;
       /* 播放页与专辑页的大封面在这里点名 —— 名字只在过渡期间挂着。
          不能图省事写成标记里的静态样式：t.finished 撤名时会连静态值一起抹掉，

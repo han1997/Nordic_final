@@ -324,6 +324,49 @@ void main() {
               '${orphan.join('\n')}');
     });
 
+    test('样式里没有认不出来的 [data-fx~] 词', () {
+      // **反查一遍**。上面那条只查「表里有、样式里没有」,方向反过来那一半
+      // 一直是空的:样式里写一个 `data-fx~="pressx"`(多一个字符),那条规则
+      // 永远不会命中,而所有守卫都不响 —— 「歌曲行按压回弹」就这么静默地
+      // 从未生效过(其余几类都正常,肉眼也看不出少了一处)。
+      //
+      // 先摘注释:解释这条笔误的注释里就带着那个词,不摘的话守卫会对着
+      // 「没人真的挂上去」的一行红 —— 注释不是规则。
+      final code = css.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+      final words = {
+        for (final m in RegExp(r'data-fx~="([a-z]+)"').allMatches(code)) m.group(1)!,
+      };
+      final unknown = [for (final w in words) if (!ids.contains(w)) w]..sort();
+      expect(unknown, isEmpty,
+          reason: '样式里认这些词，`FX_ITEMS` 里却没有 —— 挂上去的选择器永远不命中：\n'
+              '${unknown.join('\n')}');
+    });
+
+    test('入场类在视图过渡那一次不被挂上', () {
+      // 「切 tab 时下层文字要等半天才被盖住」那一处的根因:入场动画从 opacity: 0
+      // 起,而 View Transition 是在回调里**同步**取新快照的 —— 那一刻新页整块透明,
+      // 拍出来就是一张空页,旧页的快照在 0.24s 里压在它上面。
+      // 所以那条门必须同时认 `enter` 与「这一次会被拍成快照」:少认后者,
+      // 缺陷原样回来;少认前者,入场就再也不会演。
+      expect(js, contains('paint(true)'),
+          reason: '被 View Transition 拍快照的那次 paint 要明说是哪一次');
+      expect(js, contains('if (enter && screen && !vt)'),
+          reason: '入场类那一道门要排除「会被拍成快照」的这一次，否则新页快照是空的');
+    });
+
+    test('切 tab 那条过渡不再把旧页按到新页上面', () {
+      // 第二半条根因:旧那一格被置 `z-index: 1`、新的置 `0`,旧页在整段过渡里
+      // 压着新页 —— 与新页快照是空的叠加,就成了「下层文字延迟被覆盖」。
+      // 新页压上来才是对的(与「推入」同一层意思),所以这里反着钉住。
+      final rule = css.substring(
+        css.indexOf('html[data-fx~="tabx"][data-nav="tab"]::view-transition-old(phone)'),
+        css.indexOf('html[data-fx~="tabx"][data-nav="tab"][data-tabdir="back"]'),
+      );
+      expect(rule, isNot(contains('z-index')),
+          reason: '切 tab 时两页都在动、也都在淡，新快照要留在上层 —— '
+              '把旧页按上去（z-index: 1）会读成旧页赖着不散');
+    });
+
     test('推荐组合对每一条都明写了取舍', () {
       // `all` / `none` 是按 FX_ITEMS 派生的,不可能漏;`rec` 是逐个手写的 ——
       // 新加一条候选而没在推荐组合里表态,这一条就会红。
