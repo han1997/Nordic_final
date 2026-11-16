@@ -333,6 +333,11 @@ const STATE = {
   /* 这台设备有没有相机。原型默认跑在手机上(有);置真之后那一屏退成纯粘贴 ——
      设计板上单独铺一格的就是这个状态,因为 Windows 桌面与浏览器看到的是它。 */
   syncNoCamera: false,
+  /* 动效候选(2026-11-15):六条互相独立,交互流侧栏逐条开关。
+     取舍记在这里既是原型的「看样子的开关」,也是给应用侧的唯一口径 ——
+     与主题 / 尺寸同一类,不另存一份。默认全开:先让人看到全部候选,
+     再按 presets 里的「推荐组合」收一档。 */
+  fx: { stagger: true, tabx: true, spring: true, press: true, dock: true, lyric: true },
 };
 
 /* 进度换算:秒 → 百分比(夹在 0..100) */
@@ -357,6 +362,30 @@ const THEMES = [
   { id: 'dark',  name: '深色', desc: '近黑底，靠光晕撑层次' },
   { id: 'light', name: '浅色', desc: '浅灰底，靠留白与描边' },
 ];
+
+/* ---- 动效候选(2026-11-15) ----
+   六条各自独立,交互流侧栏逐条开关。`id` 同时是 STATE.fx 的键、<html data-fx>
+   上的词与样式里的 [data-fx~="id"];所以改名字只在这张表里改一处。
+   `where` 说的是它**什么时候**会出现 —— 判断要不要留,先看这一条。 */
+const FX_ITEMS = [
+  { id: 'stagger', name: '列表错开入场', where: '进入任何列表 / 首页', short: '每块内容依次浮起 6px' },
+  { id: 'tabx',    name: '切 tab 横向推移', where: '首页 / 音乐库 / 设置', short: '两屏一前一后错开 16px' },
+  { id: 'spring',  name: '弹层回弹',     where: '所有底部面板',       short: '升上来轻过一点再落定' },
+  { id: 'press',   name: '按压回弹',     where: '歌曲行 / 专辑格 / 歌单', short: '按下缩到 0.97，松手弹回' },
+  { id: 'dock',    name: '托盘落位',     where: '带底部托盘的每一屏',   short: '播放条从下方 22px 升上来' },
+  { id: 'lyric',   name: '歌词换行浮起', where: '歌词页',             short: '新一句从下方 4px 浮起并亮起' },
+];
+
+const FX_ALL_ON  = Object.fromEntries(FX_ITEMS.map((f) => [f.id, true]));
+const FX_ALL_OFF = Object.fromEntries(FX_ITEMS.map((f) => [f.id, false]));
+/* 「推荐组合」是**取舍的起点**,不是另一套动效:错开与回弹承担「内容在哪儿」
+   的读法,横向推移与托盘落位每次换屏都出现、留久了会腻,歌词那条只在歌词页。
+   两档都留在这里,侧栏与设计板上点的都是同一张表。 */
+const FX_PRESETS = {
+  all:  FX_ALL_ON,
+  rec:  { stagger: true, tabx: false, spring: true, press: true, dock: false, lyric: true },
+  none: FX_ALL_OFF,
+};
 
 /* ---- 强调色 ----
    --accent      画描边 / 光晕 / 选中底色,保留封面原色
@@ -2235,7 +2264,7 @@ function screenSettings() {
    同源策略挡掉,而「零外链」是这一份原型的硬约束(见 index.html / player.html
    的注释)。所以它靠**用例**跟住 `pubspec.yaml` —— `test/ui/prototype_parity_test.dart`
    在两边不一致时直接红。改版本号时要么改这里,要么让那条用例红一次提醒你。 */
-const ABOUT_VERSION = '1.0.64+65';
+const ABOUT_VERSION = '1.0.65+66';
 
 function screenAbout() {
   return `<div class="appbar nav">
@@ -2365,6 +2394,84 @@ function screenIcon() {
     </div>`;
 }
 
+/* ---------------- 动效研究 ----------------
+
+   这一屏也**不是应用里的页面**,是设计交付物:交互流里新增的六条动效,
+   逐条摊在这里看。每张卡自己循环播放 —— 设计板是**静态截图**的地方,
+   只有会自己动的样片才看得出「错开」「回弹」与「直接切」的差别。
+
+   六条互相独立,侧栏(以及下面那一排)逐条开关;关掉哪一条,交互流里就不演哪一条
+   (见 renderStage 的 applyFx)。默认全开,「推荐组合」是留给应用侧收档的起点。 */
+
+const motionDemo = (id) => {
+  if (id === 'stagger') {
+    return `<div class="fx-demo">
+      <div class="fxd-list">${['可能', '人间烟火', '四季予你'].map((t, i) => `
+        <div class="fxd-row" style="animation-delay:${i * 90}ms">
+          <span class="fxd-sq"></span><b>${t}</b><i>4:12</i>
+        </div>`).join('')}</div>
+    </div>`;
+  }
+  if (id === 'tabx') {
+    return `<div class="fx-demo fxd-tabwrap">
+      <div class="fxd-tabpage fxd-tab-a"><span class="fxd-tabbar"></span><b>音乐库</b><i>全部歌曲</i></div>
+      <div class="fxd-tabpage fxd-tab-b"><span class="fxd-tabbar"></span><b>设置</b><i>播放与缓存</i></div>
+    </div>`;
+  }
+  if (id === 'spring') {
+    return `<div class="fx-demo fxd-sheetwrap">
+      <div class="fxd-under">播放页</div>
+      <div class="fxd-sheet"><span class="fxd-handle"></span><b>转码质量</b><i></i><i></i></div>
+    </div>`;
+  }
+  if (id === 'press') {
+    return `<div class="fx-demo fxd-presswrap">
+      <div class="fxd-tile"><span class="fxd-cover"></span><b>山丘</b><i>李宗盛</i></div>
+    </div>`;
+  }
+  if (id === 'dock') {
+    return `<div class="fx-demo fxd-dockwrap">
+      <div class="fxd-page"><i></i><i></i><i></i></div>
+      <div class="fxd-tray"><span class="fxd-mini"></span><b>可能</b><span class="fxd-eq"><i></i><i></i><i></i></span></div>
+    </div>`;
+  }
+  return `<div class="fx-demo fxd-lyricwrap">${['夜色铺开得像一条河', '我数着路灯慢慢走过', '风把声音吹得很轻'].map((l, i) => `
+    <div class="fxd-lyric" style="animation-delay:${i * 1.5}s">${l}</div>`).join('')}</div>`;
+};
+
+function screenMotion() {
+  const on = (id) => STATE.fx[id] !== false;
+  const cards = FX_ITEMS.map((f) => `
+    <div class="motion-card">
+      <div class="mc-head">
+        <b>${f.name}</b>
+        <span class="mc-state${on(f.id) ? ' on' : ''}" data-fx-state="${f.id}">${on(f.id) ? '已开' : '已关'}</span>
+      </div>
+      ${motionDemo(f.id)}
+      <div class="mc-desc"><b>${f.where}</b> · ${f.short}</div>
+    </div>`).join('');
+
+  return `<div class="appbar">
+      <button class="icon-btn" data-back>${ic('back', 22)}</button>
+      <div><div class="h1">动效研究</div><div class="sub">六条候选 · 逐条取舍</div></div>
+    </div>
+    <div class="scroll">
+      <div class="motion-intro">这一轮新增的六条动效，默认全开。每张卡自己循环播放；到
+        <b>player.html</b> 右侧「动效」里逐条开关，就能在完整链路里比对。
+        应用侧尚未实现 —— 先定取舍，再按选定那一档写进 Flutter。</div>
+      <div class="motion-presets">
+        <button data-fx-preset="all">全部开启</button>
+        <button data-fx-preset="rec">推荐组合</button>
+        <button data-fx-preset="none">全部关闭</button>
+      </div>
+      <div class="list-note" style="padding:0 var(--s5) var(--s3)">
+        推荐组合留下错开、回弹、按压与歌词四件；横向推移与托盘落位每次换屏都出现，
+        留久了容易读成噪音。关掉之后就是今天的原型，可以来回比。
+      </div>
+      <div class="motion-grid">${cards}</div>
+    </div>`;
+}
+
 /* ---------------- 视图表 ---------------- */
 
 const sheets = { quality: sheetQuality, queue: sheetQueue, routes: sheetRoutes, menu: sheetMenu, sort: sheetSort, cache: sheetCache, exportConfig: sheetExportConfig, songInfo: sheetSongInfo, scan: sheetScan, resume: sheetResume, playlistPicker: sheetPlaylistPicker };
@@ -2404,6 +2511,8 @@ const VIEWS = {
   about:          () => shell(withOverlay(screenAbout()), { rail: 'settings' }),
   /* 设计交付物,不对应应用里的一屏 —— 见 BOARD 的最后一条 */
   icon:           () => shell(withOverlay(screenIcon())),
+  /* 设计交付物:动效候选。同样不在应用的页面表里,见 BOARD 的「动效研究」 */
+  motion:         () => shell(withOverlay(screenMotion())),
 };
 
 /* ============================================================
@@ -2475,6 +2584,9 @@ const BOARD = [
   ['播放页 · 宽屏',   '封面居左 · 控制居右',  () => shell(screenPlayer(), { frame: 'wide', home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['歌词 · 宽屏',     '正文收成一栏',         () => shell(screenLyrics(), { frame: 'wide', home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['设置 · 宽屏',     '正文限宽',             () => shell(screenSettings(), { frame: 'wide', rail: 'settings' })],
+  /* 动效候选 —— 与图标同一类:不是应用里的一屏,是「挑」的交付物。
+     卡片自己循环播放,所以设计板上也看得出「错开」与「直接切」的差别。 */
+  ['动效研究',        '六条候选 · 逐条取舍',    () => shell(screenMotion())],
   /* 最后一格不是应用里的页面,是**设计交付物**:图标的候选与定稿。
      放最后是因为它不参与上面那条「服务器 → 首页 → 库 → 详情 → 播放」的链路
      —— 它回答的是「这个应用在启动器里长什么样」,跟界面结构无关。 */
@@ -2560,6 +2672,25 @@ function toastMarkup(override = '') {
 function renderStage(root) {
   const slot = () => root.querySelector('#phone-slot');
 
+  /* ---- 动效开关 ----
+     落在 <html data-fx> 上,CSS 按属性匹配 [data-fx~="id"];开关本身**不重绘整屏**
+     (重绘会把正在演的动画拦腰截断)。默认全开;presets 见 FX_PRESETS。 */
+  const applyFx = () => {
+    document.documentElement.dataset.fx =
+      FX_ITEMS.filter((f) => STATE.fx[f.id]).map((f) => f.id).join(' ');
+  };
+  /* 侧栏与「动效研究」里的状态签一起对齐 —— 两边都能按,不能只改一边。 */
+  const syncFxUI = () => {
+    root.querySelectorAll('[data-fx-toggle]').forEach((b) =>
+      b.setAttribute('aria-selected', String(!!STATE.fx[b.dataset.fxToggle])));
+    root.querySelectorAll('[data-fx-state]').forEach((el) => {
+      const on = !!STATE.fx[el.dataset.fxState];
+      el.classList.toggle('on', on);
+      el.textContent = on ? '已开' : '已关';
+    });
+  };
+  applyFx();
+
   /* 舞台的尺寸选择跨重绘存续(<html> 上的属性不会被 render 清掉),进来时对齐一次;
      切换见下面 data-set-frame 那一条。设计板不走这里。 */
   if (STATE.frame && STATE.frame !== 'phone') document.documentElement.dataset.setframe = STATE.frame;
@@ -2600,7 +2731,7 @@ function renderStage(root) {
     return nav;
   };
 
-  const render = (morph = false, nav = '') => {
+  const render = (morph = false, nav = '', enter = false) => {
     const view = VIEWS[STATE.view];
     if (!view) return;
     const paint = () => {
@@ -2608,15 +2739,27 @@ function renderStage(root) {
       /* 推入 / 返回时新页**不自己淡入** —— 那件事改由整格承担(滑动或淡入,见 navKind)。
          写成行内样式而不是类:行内跟着这次 paint 的节点一起生灭,
          撤标记时不会把淡入动画重新启动一遍。 */
-      if (nav) {
-        const screen = slot().querySelector('.screen');
-        if (screen) screen.style.animation = 'none';
+      const screen = slot().querySelector('.screen');
+      if (nav && screen) screen.style.animation = 'none';
+      /* 入场那一下的两条(CSS 只管「怎么动」,这里只管「这一次要不要动」):
+         - fx-stagger 给 .scroll 的每一块排延迟,见 styles.css「动效候选」;
+         - fx-dock 让托盘从下方落位。
+         类挂在这次 paint 的节点上,下次重绘自然消失 —— 不必手动摘。 */
+      if (enter && screen) {
+        if (STATE.fx.stagger) screen.classList.add('fx-stagger');
+        if (STATE.fx.dock) screen.classList.add('fx-dock');
       }
       /* 网格列数跟着这一屏的设备宽度走 —— 每次重绘都同步一遍。 */
       syncGrids(slot());
     };
 
-    if ((!morph && !nav) || !supportsVT) { clearMorph(); return paint(); }
+    if ((!morph && !nav) || !supportsVT) {
+      clearMorph();
+      /* 没有 View Transition 时那条「切 tab 的方向」没人清 —— 顺手在这儿摘掉,
+         免得留在 <html> 上(macOS Safari 之外的老引擎会走这一支)。 */
+      if (nav === 'tab') delete document.documentElement.dataset.tabdir;
+      return paint();
+    }
 
     /* 起名必须在快照之前，撤名必须在快照之后，否则两端拿不到同一对元素。 */
     const named = [];
@@ -2642,6 +2785,7 @@ function renderStage(root) {
       if (nav) {
         slot().style.viewTransitionName = '';
         delete document.documentElement.dataset.nav;
+        delete document.documentElement.dataset.tabdir;
       }
     });
     /* 起点是一次性的，用完就丢，免得下一次 back() 把它当成起点再点一次名。 */
@@ -2661,14 +2805,16 @@ function renderStage(root) {
   const go = (name, params, nav = 'push') => {
     const morph = name === 'player' || name === 'album';
     const leaving = STATE.view;
-    if (name !== STATE.view) STATE.history.push({ view: STATE.view, params: STATE.params });
+    const changed = name !== leaving;
+    if (changed) STATE.history.push({ view: STATE.view, params: STATE.params });
     STATE.view = name;
     STATE.params = params || {};
     STATE.overlay = '';
     /* 歌词那层「待跳转」只在一趟里算数 —— 离开这一屏(含从别处再进来)就清掉,
        免得回来时行尾还挂着一颗上一趟留下的胶囊。 */
     if (name !== 'lyrics') STATE.pendingLine = -1;
-    render(morph, navKind(nav, name, leaving));
+    /* 换屏才演入场;同一屏的重绘(点心、开关)不演 —— 否则每点一下都抖一次。 */
+    render(morph, changed ? navKind(nav, name, leaving) : '', changed);
   };
 
   const back = () => {
@@ -2683,7 +2829,7 @@ function renderStage(root) {
     }
     STATE.overlay = '';
     STATE.pendingLine = -1;
-    render(true, navKind('back', STATE.view, leaving));
+    render(true, navKind('back', STATE.view, leaving), true);
   };
 
   root.innerHTML = `
@@ -2698,6 +2844,7 @@ function renderStage(root) {
           <li>播放页里拖动进度条；歌词随进度逐句走高亮</li>
           <li>设置里的开关都能点，主题能在深色 / 浅色之间切</li>
           <li>设置里的「扫码同步 / 导出配置」把服务器与线路变成一张二维码(密码默认不带)</li>
+          <li>右侧「动效」逐条开关六条候选 —— 交互流里立刻生效，开关旁能进「动效研究」看说明</li>
         </ol>
         <div style="border-top:1px solid var(--line);padding-top:16px">
           <h2 style="margin-bottom:8px">主题</h2>
@@ -2713,6 +2860,25 @@ function renderStage(root) {
           </div>
           <div style="font-size:11px;color:var(--fg-3);line-height:1.7">
             宽屏（>= 840）换左竖栏 + 播放横条 + 多列网格 + 两栏播放页；平板档形态不变，网格放宽。与应用同一套分级。
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--line);padding-top:16px">
+          <h2 style="margin-bottom:8px">动效</h2>
+          <div class="fx-list">
+            ${FX_ITEMS.map((f) => `
+              <button class="fx-toggle" data-fx-toggle="${f.id}" aria-selected="${!!STATE.fx[f.id]}" title="出现于：${f.where}">
+                <span class="fx-tick">${ic('check', 12)}</span>
+                <span class="fx-text"><b>${f.name}</b><i>${f.short}</i></span>
+              </button>`).join('')}
+          </div>
+          <div class="fx-actions">
+            <button data-fx-preset="all">全开</button>
+            <button data-fx-preset="rec">推荐</button>
+            <button data-fx-preset="none">全关</button>
+          </div>
+          <button class="btn ghost" data-go="motion" style="height:38px;margin-top:10px;font-size:12px">看动效说明</button>
+          <div style="font-size:11px;color:var(--fg-3);line-height:1.7;margin-top:8px">
+            逐条开关，交互流里立刻生效。应用侧还没实现 —— 先定取舍。
           </div>
         </div>
         <div style="border-top:1px solid var(--line);padding-top:16px">
@@ -2800,11 +2966,27 @@ function renderStage(root) {
        <body> 上，而 body 是所有点击的祖先。closest() 在没命中更近的 [data-*] 元素时
        会一路匹配到 body，于是「点遮罩关闭弹层」这条分支永远走不到（点遮罩会变成
        重新应用一次主题）。所以主题按钮改用独立属性 data-set-theme。 */
-    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-seek-line],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-set-frame],[data-rail-tab],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-playlist],[data-dl-del],[data-hue],[data-route-tag],[data-sync-mode],[data-sort-for],[data-sort],[data-cache]');
+    const t = e.target.closest('[data-back],[data-tab],[data-go],[data-seek-line],[data-lib],[data-song],[data-album],[data-artist],[data-route],[data-quality],[data-set-theme],[data-set-frame],[data-rail-tab],[data-sheet],[data-act],[data-scope],[data-pick-kind],[data-toggle],[data-kind-cfg],[data-menu-for],[data-menu-go],[data-playlist],[data-dl-del],[data-hue],[data-route-tag],[data-sync-mode],[data-sort-for],[data-sort],[data-cache],[data-fx-toggle],[data-fx-preset]');
     if (t) {
       const d = t.dataset;
       if (d.back !== undefined) return back();
-      if (d.tab || d.railTab) { STATE.history = []; return go(d.tab || d.railTab, null, ''); }
+      if (d.tab || d.railTab) {
+        const next = d.tab || d.railTab;
+        STATE.history = [];
+        const order = TABS.map((tab) => tab[0]);
+        const from = order.indexOf(STATE.view);
+        const to = order.indexOf(next);
+        /* 横向推移只在开着这一档时演;关掉就走原来的直接切。
+           方向按 tab 的先后,不是按「点了哪边」—— 设置 → 首页与音乐库 → 首页
+           都该往右退,读起来才是同一条轴。样式那一侧也认这个词
+           (见 styles.css 的「切 tab:横向共享轴」),两处同一个开关。 */
+        if (STATE.fx.tabx && from >= 0 && to >= 0 && next !== STATE.view) {
+          document.documentElement.dataset.tabdir = to < from ? 'back' : 'fwd';
+          return go(next, null, 'tab');
+        }
+        delete document.documentElement.dataset.tabdir;
+        return go(next, null, '');
+      }
       if (d.lib) { STATE.params = { lib: d.lib }; return render(); }
       if (d.song) {
         /* 从顶部播放坞点进播放页时，坞里也有同一张封面 —— 但那块的尺寸太小，
@@ -2843,6 +3025,23 @@ function renderStage(root) {
           STATE.syncRead = false;
         }
         return render();
+      }
+      /* 动效逐条开关:只改 <html data-fx> 与两处按钮态,不整屏重绘 ——
+         重绘会把当前正在演的入场打断,也就没法在同一屏里比对「开 / 关」。 */
+      if (d.fxToggle) {
+        STATE.fx[d.fxToggle] = !STATE.fx[d.fxToggle];
+        applyFx();
+        syncFxUI();
+        return;
+      }
+      /* 三档预设:换的是同一张 STATE.fx。在「动效研究」里按的时候重绘一次,
+         让每张卡右上角那颗状态签跟上;在侧栏按就没必要动整屏。 */
+      if (d.fxPreset) {
+        STATE.fx = { ...FX_PRESETS[d.fxPreset] };
+        applyFx();
+        syncFxUI();
+        if (STATE.view === 'motion') return render();
+        return;
       }
       if (d.setTheme) { applyTheme(d.setTheme); return render(); }
       /* 舞台的尺寸切换:只改 <html data-setframe> 与按钮选中态,**不整屏重绘** ——
@@ -3304,7 +3503,7 @@ function renderStage(root) {
     render();
   }, 1200);
 
-  render();
+  render(false, '', true);
 }
 
 /* ---------------- 启动 ---------------- */

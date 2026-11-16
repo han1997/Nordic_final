@@ -1856,6 +1856,12 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
 }
 .stage-side {
   width: 296px;
+  /* 侧栏只放说明与开关,但条目会越加越长。超过视口就自己滚 ——
+     不能把整块 stage 撑高:stage 是居中布局,内容一高手机上下两头都被裁掉。
+     手机那一台的高度是固定的(844),它才是布局的基准。 */
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   color: var(--fg-2);
   font-size: var(--fs-sm);
   line-height: 1.8;
@@ -1934,6 +1940,10 @@ h1, h2, h3, h4 { margin: 0; font-weight: 680; }
   ::view-transition-group(*),
   ::view-transition-old(*),
   ::view-transition-new(*) { animation: none !important; }
+
+  /* 动效研究的样片是**无限循环**:压成 0.01ms 会变成每帧跳一次,比动起来更糟。
+     直接停掉,留静态帧 —— 卡片上的文字本来就说明了它在演什么。 */
+  .fx-demo, .fx-demo * { animation: none !important; }
 }
 
 /* ============================================================
@@ -2025,6 +2035,40 @@ html[data-nav="fade-out"]::view-transition-group(phone) { animation-duration: 0.
 html[data-nav="flip"]::view-transition-group(*),
 html[data-nav="flip"]::view-transition-old(*),
 html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
+
+/* ============================================================
+   切 tab:横向共享轴(动效候选 tabx)
+   ============================================================
+
+   两条一级 tab 之间不是「进下一页」,而是同一条轴上的左右邻页 ——
+   所以只错开 16px 并交叉淡出,不做整屏滑动。方向按 tab 先后:
+   data-tabdir="fwd" 时新页从右来,`back` 时反过来(见 app.js 的点击分发)。
+   与推入 / 返回同一套:动的是手机那一格,root 的默认交叉淡出要停掉。
+
+   **`[data-fx~="tabx"]` 这一节不是多余的**:走不走这条过渡由 app.js 决定
+   (它得先算出方向),但样式也认同一个词 —— 这样「关掉 tabx」与
+   「样式里没人认这条候选」两种毛病各只有一处判据,`prototype_parity_test`
+   里那条「每一条候选都在样式里有选择器」不必为它开例外。 */
+@keyframes vt-tab-in-fwd  { from { opacity: 0; transform: translateX(16px); }  to { opacity: 1; transform: none; } }
+@keyframes vt-tab-out-fwd { from { opacity: 1; transform: none; }              to { opacity: 0; transform: translateX(-12px); } }
+@keyframes vt-tab-in-back  { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
+@keyframes vt-tab-out-back { from { opacity: 1; transform: none; }              to { opacity: 0; transform: translateX(12px); } }
+
+html[data-fx~="tabx"][data-nav="tab"]::view-transition-group(phone) { animation-duration: 0.24s; }
+html[data-fx~="tabx"][data-nav="tab"]::view-transition-old(phone) {
+  animation: vt-tab-out-fwd 0.24s var(--ease) both;
+  z-index: 1;
+}
+html[data-fx~="tabx"][data-nav="tab"]::view-transition-new(phone) {
+  animation: vt-tab-in-fwd 0.24s var(--ease) both;
+  z-index: 0;
+}
+html[data-fx~="tabx"][data-nav="tab"][data-tabdir="back"]::view-transition-old(phone) {
+  animation-name: vt-tab-out-back;
+}
+html[data-fx~="tabx"][data-nav="tab"][data-tabdir="back"]::view-transition-new(phone) {
+  animation-name: vt-tab-in-back;
+}
 
 /* 封面本身不做淡入淡出,只做位移与缩放 —— 两个快照叠加会在半途发灰。
    overflow:clip 让缩放的快照被裁在圆角框内(封面现在是纯渐变,没有子元素,
@@ -2251,8 +2295,371 @@ html[data-nav="flip"]::view-transition-new(*) { animation: none !important; }
 .about-ver { margin-top: 9px; font-size: var(--fs-sm); font-weight: 620; color: var(--fg-2); }
 
 /* ============================================================
-   宽屏 / 平板(第二十六轮)
+   动效候选(2026-11-15)
    ============================================================
+
+   六条彼此独立,`<html data-fx>` 上是它们的词(空格分隔),交互流侧栏逐条开关。
+   **开关只切属性,不重绘** —— 重绘会把正在演的动画拦腰截断,也就没法同屏比对。
+   哪一条该在**换屏那一下**演、哪一条在**持续交互**里演,见下面各段与 app.js 的
+   applyFx / render。
+
+   一条硬约束:入场类只在 `.screen.fx-stagger` / `.fx-dock` 上生效,而这两个类
+   只挂在「这一次 paint 是换屏」的节点上(见 render 的 enter 参数)。直接挂在
+   .screen 上的话,每秒一次的进度更新、每次点心都会重演一遍入场。 */
+
+/* ---- 1. 列表错开入场 ---- */
+@keyframes fx-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > * {
+  /* **backwards,不是 both**:both 会在动画结束后继续压着 transform,
+     于是「按压回弹」那一条永远抬不起头(动画优先级高于普通声明)。
+     backwards 只在延迟的那一小段里保持起点态,演完就把声明还给正常样式。 */
+  animation: fx-rise 0.34s var(--ease) backwards;
+}
+/* 24ms 一格,十格封顶;第 11 块之后**一起**在 0.24s 落位 ——
+   逐格无限延后的话,长列表末尾要等一秒才出现,反而像卡住。 */
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(1)  { animation-delay: 0s; }
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(2)  { animation-delay: 0.024s; }
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(3)  { animation-delay: 0.048s; }
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(4)  { animation-delay: 0.072s; }
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(5)  { animation-delay: 0.096s; }
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(6)  { animation-delay: 0.12s; }
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(7)  { animation-delay: 0.144s; }
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(8)  { animation-delay: 0.168s; }
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(9)  { animation-delay: 0.192s; }
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(10) { animation-delay: 0.216s; }
+html[data-fx~="stagger"] .screen.fx-stagger .scroll > :nth-child(n+11) { animation-delay: 0.24s; }
+/* 网格那一栏(.grid-covers)在 .scroll 里是**一个**孩子,整块浮起来看不出「依次」——
+   所以它自己那一排格子也各排一次延迟。行列表不需要这一段:那些行本来就是
+   .scroll 的孩子。 */
+html[data-fx~="stagger"] .screen.fx-stagger .grid-covers > * {
+  animation: fx-rise 0.34s var(--ease) backwards;
+}
+html[data-fx~="stagger"] .screen.fx-stagger .grid-covers > :nth-child(1)  { animation-delay: 0.024s; }
+html[data-fx~="stagger"] .screen.fx-stagger .grid-covers > :nth-child(2)  { animation-delay: 0.048s; }
+html[data-fx~="stagger"] .screen.fx-stagger .grid-covers > :nth-child(3)  { animation-delay: 0.072s; }
+html[data-fx~="stagger"] .screen.fx-stagger .grid-covers > :nth-child(4)  { animation-delay: 0.096s; }
+html[data-fx~="stagger"] .screen.fx-stagger .grid-covers > :nth-child(5)  { animation-delay: 0.12s; }
+html[data-fx~="stagger"] .screen.fx-stagger .grid-covers > :nth-child(6)  { animation-delay: 0.144s; }
+html[data-fx~="stagger"] .screen.fx-stagger .grid-covers > :nth-child(7)  { animation-delay: 0.168s; }
+html[data-fx~="stagger"] .screen.fx-stagger .grid-covers > :nth-child(8)  { animation-delay: 0.192s; }
+html[data-fx~="stagger"] .screen.fx-stagger .grid-covers > :nth-child(n+9) { animation-delay: 0.216s; }
+
+/* ---- 2. 弹层回弹 ---- */
+@keyframes fx-sheet-spring {
+  0%   { transform: translateY(30%); opacity: 0.25; }
+  66%  { transform: translateY(-1.4%); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+html[data-fx~="spring"] .sheet { animation: fx-sheet-spring 0.46s var(--ease) backwards; }
+@keyframes fx-scrim-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+html[data-fx~="spring"] .sheet-scrim { animation: fx-scrim-in 0.24s var(--ease) backwards; }
+
+/* ---- 3. 按压回弹 ---- */
+/* 只在**按下那一刻**缩一点;抬起按各自已有的 transition 回去。
+   行 / 歌单 / 选项的 transition 里原有的 background 要一起留着,所以分行写。 */
+html[data-fx~="press"] .row {
+  transition: background 0.16s var(--ease), transform 0.16s var(--ease);
+}
+html[data-fx~="press"] .pl-chip,
+html[data-fx~="press"] .qopt {
+  transition: background 0.16s var(--ease), transform 0.16s var(--ease);
+}
+html[data-fx~="press"] .album-tile,
+html[data-fx~="press"] .rail-item,
+html[data-fx~="press"] .artist-tile,
+html[data-fx~="press"] .hero-card {
+  transition: transform 0.16s var(--ease);
+}
+html[data-fx~="pressx"] .row:active { transform: scale(0.985); }
+html[data-fx~="press"] .pl-chip:active,
+html[data-fx~="press"] .qopt:active,
+html[data-fx~="press"] .album-tile:active,
+html[data-fx~="press"] .rail-item:active,
+html[data-fx~="press"] .artist-tile:active,
+html[data-fx~="press"] .hero-card:active { transform: scale(0.97); }
+
+/* ---- 4. 托盘落位 ---- */
+@keyframes fx-dock-in {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: none; }
+}
+html[data-fx~="dock"] .screen.fx-dock .bottomstack {
+  animation: fx-dock-in 0.42s var(--ease) backwards;
+}
+
+/* ---- 5. 歌词换行浮起 ---- */
+/* 只动文字那一截,不动整行 —— 整行在 .on 上还有右缘辉光与滚动定位,
+   一起做 transform 会推到跳转胶囊的位置。 */
+@keyframes fx-lyric-in {
+  from { opacity: 0.35; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+html[data-fx~="lyric"] .lyric-line.on .txt {
+  animation: fx-lyric-in 0.42s var(--ease) backwards;
+}
+
+/* ---- 交互流侧栏:六条开关 + 三档预设 ---- */
+.fx-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.fx-toggle {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: var(--fill-1);
+  border: 1px solid transparent;
+  color: var(--fg-2);
+  text-align: left;
+  cursor: pointer;
+}
+.fx-toggle[aria-selected="true"] {
+  color: var(--fg);
+  border-color: var(--line-2);
+  background: var(--fill-2);
+}
+.fx-tick {
+  width: 18px; height: 18px;
+  border-radius: 6px;
+  display: grid; place-items: center;
+  flex: 0 0 auto;
+  background: var(--fill-2);
+  color: transparent;
+  transition: background 0.16s var(--ease), color 0.16s var(--ease);
+}
+.fx-toggle[aria-selected="true"] .fx-tick {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.fx-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.fx-text b { font-size: 12px; font-weight: 640; letter-spacing: -0.01em; }
+.fx-text i { font-style: normal; font-size: 10px; color: var(--fg-3); }
+.fx-actions { display: flex; gap: 6px; margin-top: 6px; }
+.fx-actions button {
+  flex: 1;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--fill-1);
+  border: 1px solid var(--line-2);
+  color: var(--fg-2);
+  font-size: 11px; font-weight: 620;
+  cursor: pointer;
+}
+.fx-actions button:active { transform: scale(0.97); }
+
+/* ---- 动效研究(设计交付物) ---- */
+.motion-intro {
+  padding: 0 var(--s5) var(--s3);
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  line-height: 1.7;
+}
+.motion-intro b { color: var(--fg); }
+.motion-presets { display: flex; gap: 8px; padding: 0 var(--s5) var(--s3); }
+.motion-presets button {
+  flex: 1;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--fill-1);
+  border: 1px solid var(--line-2);
+  color: var(--fg-2);
+  font-size: 12px; font-weight: 620;
+  cursor: pointer;
+}
+.motion-presets button:active { transform: scale(0.97); }
+
+.motion-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 var(--s5);
+}
+.motion-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--fill-1);
+  overflow: hidden;
+}
+.mc-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 9px 6px;
+}
+.mc-head b { font-size: 11.5px; font-weight: 660; letter-spacing: -0.01em; line-height: 1.3; }
+.mc-state {
+  font-size: 8.5px; font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--fill-2);
+  color: var(--fg-3);
+  white-space: nowrap;
+}
+.mc-state.on {
+  color: var(--accent-safe);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.mc-desc {
+  padding: 0 9px 9px;
+  font-size: 9px;
+  color: var(--fg-3);
+  line-height: 1.45;
+}
+.mc-desc b { color: var(--fg-2); font-weight: 620; }
+
+/* 样片舞台:每一张卡自己循环,不依赖点按 —— 设计板是静态截图的地方。
+   两张一行是**为了整页装进 844 的手机**:六张竖排会超出壳子,
+   设计板上就只能看见前两张,那等于没铺。 */
+.fx-demo {
+  position: relative;
+  height: 80px;
+  margin: 0 7px 7px;
+  border-radius: 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+/* 样片 1:列表错开 */
+.fxd-list { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; }
+.fxd-row {
+  display: flex; align-items: center; gap: 5px;
+  height: 14px;
+  animation: fxd-row-in 3.6s var(--ease) infinite both;
+}
+.fxd-row .fxd-sq {
+  width: 15px; height: 15px;
+  border-radius: 4px;
+  flex: 0 0 auto;
+  background: linear-gradient(145deg, var(--accent), var(--fill-3));
+}
+.fxd-row b { font-size: 9px; font-weight: 620; color: var(--fg-2); white-space: nowrap; }
+.fxd-row i { margin-left: auto; font-style: normal; font-size: 8px; color: var(--fg-4); font-variant-numeric: tabular-nums; }
+@keyframes fxd-row-in {
+  0%        { opacity: 0; transform: translateY(6px); }
+  8%, 82%   { opacity: 1; transform: none; }
+  100%      { opacity: 0; transform: translateY(6px); }
+}
+
+/* 样片 2:切 tab 横向推移 */
+.fxd-tabpage {
+  position: absolute; inset: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+}
+.fxd-tabbar { width: 28px; height: 3px; border-radius: 2px; background: var(--fill-3); }
+.fxd-tabpage b { font-size: 11px; font-weight: 640; color: var(--fg-2); }
+.fxd-tabpage i { font-style: normal; font-size: 8px; color: var(--fg-4); }
+.fxd-tab-a { animation: fxd-tab-a 4.6s var(--ease) infinite both; }
+.fxd-tab-b { opacity: 0; animation: fxd-tab-b 4.6s var(--ease) infinite both; }
+@keyframes fxd-tab-a {
+  0%, 38%   { opacity: 1; transform: none; }
+  50%, 100% { opacity: 0; transform: translateX(-14px); }
+}
+@keyframes fxd-tab-b {
+  0%, 46%   { opacity: 0; transform: translateX(14px); }
+  56%, 92%  { opacity: 1; transform: none; }
+  100%      { opacity: 0; transform: translateX(14px); }
+}
+
+/* 样片 3:弹层回弹 */
+.fxd-under {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font-size: 10px; color: var(--fg-4);
+}
+.fxd-sheet {
+  position: absolute; left: 6px; right: 6px; bottom: 0;
+  height: 50px;
+  padding: 5px 9px;
+  display: flex; flex-direction: column; gap: 4px;
+  border-radius: 8px 8px 0 0;
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  border-bottom: none;
+  animation: fxd-sheet 4.4s var(--ease) infinite both;
+}
+.fxd-sheet .fxd-handle { width: 18px; height: 3px; border-radius: 2px; background: var(--fill-3); align-self: center; }
+.fxd-sheet b { font-size: 9px; font-weight: 640; color: var(--fg-2); }
+.fxd-sheet i { display: block; height: 4px; border-radius: 2px; background: var(--fill-2); }
+.fxd-sheet i:last-child { width: 60%; }
+@keyframes fxd-sheet {
+  0%, 8%    { transform: translateY(105%); }
+  26%       { transform: translateY(-4%); }
+  32%, 82%  { transform: translateY(0); }
+  94%, 100% { transform: translateY(105%); }
+}
+
+/* 样片 4:按压回弹 */
+.fxd-presswrap { display: grid; place-items: center; }
+.fxd-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  animation: fxd-press 3.2s var(--ease) infinite both;
+}
+.fxd-tile .fxd-cover {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(150deg, var(--accent), var(--bg-3));
+  box-shadow: 0 8px 16px -10px var(--depth);
+}
+.fxd-tile b { font-size: 9px; font-weight: 620; color: var(--fg-2); }
+.fxd-tile i { font-style: normal; font-size: 7.5px; color: var(--fg-4); }
+@keyframes fxd-press {
+  0%, 30%   { transform: scale(1); }
+  42%, 54%  { transform: scale(0.94); }
+  68%, 100% { transform: scale(1); }
+}
+
+/* 样片 5:托盘落位 */
+.fxd-page { position: absolute; inset: 8px 8px 30px; display: flex; flex-direction: column; gap: 4px; }
+.fxd-page i { height: 8px; border-radius: 3px; background: var(--fill-1); }
+.fxd-tray {
+  position: absolute; left: 8px; right: 8px; bottom: 6px;
+  height: 28px;
+  padding: 0 7px;
+  display: flex; align-items: center; gap: 6px;
+  border-radius: 10px;
+  background: var(--glass);
+  border: 1px solid var(--line-2);
+  animation: fxd-dock 4s var(--ease) infinite both;
+}
+.fxd-mini { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(150deg, var(--accent), var(--bg-3)); }
+.fxd-tray b { font-size: 9px; font-weight: 620; color: var(--fg); }
+.fxd-eq { margin-left: auto; display: flex; align-items: flex-end; gap: 2px; height: 9px; }
+.fxd-eq i { width: 2px; border-radius: 1px; background: var(--accent); transform-origin: bottom; animation: fxd-eq 0.9s ease-in-out infinite; }
+.fxd-eq i:nth-child(1) { height: 40%; animation-delay: -0.3s; }
+.fxd-eq i:nth-child(2) { height: 90%; animation-delay: -0.7s; }
+.fxd-eq i:nth-child(3) { height: 60%; animation-delay: -0.1s; }
+@keyframes fxd-eq { 0%, 100% { transform: scaleY(0.4); } 50% { transform: scaleY(1); } }
+@keyframes fxd-dock {
+  0%, 6%    { transform: translateY(44px); opacity: 0; }
+  24%       { transform: translateY(-2px); opacity: 1; }
+  30%, 86%  { transform: none; opacity: 1; }
+  96%, 100% { transform: translateY(44px); opacity: 0; }
+}
+
+/* 样片 6:歌词换行 */
+.fxd-lyricwrap { display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 10px; }
+.fxd-lyric {
+  font-size: 10.5px; font-weight: 640; letter-spacing: -0.02em;
+  color: var(--fg-4);
+  animation: fxd-lyric 4.5s var(--ease) infinite both;
+}
+@keyframes fxd-lyric {
+  0%        { color: var(--fg-4); transform: none; text-shadow: none; }
+  8%, 30%   { color: var(--fg); transform: translateY(-1px); text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent); }
+  42%, 100% { color: var(--fg-4); transform: none; text-shadow: none; }
+}
+
+/* ============================================================
+   宽屏 / 平板(第二十六轮)
+   ============================================================ */
 
    此前原型只有一种形态:390×844 的手机竖屏,尺寸全部写死。从这一版起
    `.phone` 是一台「任意尺寸的设备」,外壳宽度决定内部走哪套形态 ——

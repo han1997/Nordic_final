@@ -301,6 +301,59 @@ void main() {
     });
   });
 
+  group('动效候选：表、样式、两个入口三处对得上', () {
+    /// `FX_ITEMS` 里那六个 id —— 侧栏开关、`<html data-fx>` 上的词、样式里的
+    /// `[data-fx~="…"]` 都用它。**表里加一条而样式里没人认**,开关就成了
+    /// 「点了没反应」,而它长得跟正常那条一模一样。
+    final itemsBlock =
+        js.substring(js.indexOf('const FX_ITEMS = ['), js.indexOf('const FX_ALL_ON'));
+    final ids = [
+      for (final m in RegExp(r"\{ id: '([a-z]+)',\s+name:").allMatches(itemsBlock)) m.group(1)!,
+    ];
+    final css = File('prototype/styles.css').readAsStringSync();
+
+    test('FX_ITEMS 列了六条候选', () {
+      expect(ids.length, 6, reason: '候选表是唯一口径，少了 / 多了都要在这里对齐');
+      expect(ids.toSet().length, ids.length, reason: 'id 不能重 —— 重了样式与状态会互相覆盖');
+    });
+
+    test('每一条都在样式里有对应的 [data-fx~] 选择器', () {
+      final orphan = [for (final id in ids) if (!css.contains('data-fx~="$id"')) id];
+      expect(orphan, isEmpty,
+          reason: '这些候选在 FX_ITEMS 里、样式里却没人认 —— 开关会「点了没反应」:\n'
+              '${orphan.join('\n')}');
+    });
+
+    test('推荐组合对每一条都明写了取舍', () {
+      // `all` / `none` 是按 FX_ITEMS 派生的,不可能漏;`rec` 是逐个手写的 ——
+      // 新加一条候选而没在推荐组合里表态,这一条就会红。
+      final rec = js.substring(js.indexOf('rec:  {'), js.indexOf('none: FX_ALL_OFF'));
+      final missing = [for (final id in ids) if (!rec.contains('$id:')) id];
+      expect(missing, isEmpty,
+          reason: '这些候选没在「推荐组合」里写明留或不留 —— '
+              '默认值随便落一个，取舍就没人真的做过：\n${missing.join('\n')}');
+    });
+
+    test('由 app.js 决定「这一次演不演」的三条真的被读', () {
+      // 其余几条装在样式里就够了;这三条由 app.js 决定「这一次要不要演」,
+      // 所以它们必须在 renderStage 里被读一次 —— 只写在表里等于没接上。
+      for (final id in ['stagger', 'dock', 'tabx']) {
+        expect(js, contains('STATE.fx.$id'), reason: '$id 要在 app.js 里真的被读');
+      }
+    });
+
+    test('设计交付物在两个入口里都有入口', () {
+      // 与图标那一格同一类:不是应用里的一屏,所以走不到「应用有没有」那条守卫,
+      // 但它同样必须**同时进 VIEWS 与 BOARD** —— 否则侧栏那颗按钮点不动,
+      // 或者设计板上看不见。
+      final views = js.substring(js.indexOf('const VIEWS = {'), js.indexOf('const BOARD = ['));
+      final board = js.substring(js.indexOf('const BOARD = ['), js.indexOf('function boardFrames'));
+      expect(views, contains('screenMotion()'),
+          reason: 'VIEWS 里要有 motion 这一支，不然侧栏那颗「看动效说明」走不进去');
+      expect(board, contains('screenMotion()'), reason: 'BOARD 里要有「动效研究」那一格');
+    });
+  });
+
   group('两处硬编码的值不许漂', () {
     test('关于页的版本号 == pubspec.yaml', () {
       final proto = RegExp(r"ABOUT_VERSION = '([^']+)'").firstMatch(js)?.group(1);
