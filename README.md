@@ -168,7 +168,7 @@ M2 收口时留下的、**只剩真机走查**的几条:
 ```bash
 tool/build.sh            # debug APK
 tool/build.sh release    # release APK(按 ABI 三个包)
-tool/build.sh windows    # Windows release(整目录打成标准名的 zip)
+tool/build.sh windows    # Windows release(zip + 安装包两份,同一次构建)
 tool/build.sh web        # Web release(整目录打成标准名的 zip)
 tool/build.sh run        # 在设备上跑
 ```
@@ -201,7 +201,35 @@ Windows 侧同理:`tool/build.sh windows` 落成
 所以整目录打包、解压出来就能双击;脚本同样校验 exe 里的版本与 pubspec 一致
 (Windows 没有签名那一套,不假装有)。
 
-**Windows 构建有两条系统前置**(都不是仓库能替你解决的):
+**同一批文件还会再出一份安装包**:`build/dist/Nordic-<版本>-windows-x64-setup.exe`。
+zip 是「绿色、解压即用」,但解压出来不落任何「装了什么、哪一版」的地方 —— 用户从
+「添加或删除程序」里看到的是一片空白,出了新版也只能自己找地方解压覆盖。安装包补上
+这三件:按用户装进 `%LOCALAPPDATA%\Programs\Nordic`(**不弹 UAC、不需要管理员**)、
+写进卸载项(面板里显示的就是 `pubspec.yaml` 里那个版本)、开始菜单快捷方式(桌面那份
+在组件页里可取消)。卸载会把程序目录、快捷方式与注册表项一起收干净,**但故意留下
+`%APPDATA%\Nordic` 的用户数据**(歌单缓存、服务器地址、设置)—— 卸一个播放器不该顺手
+把「听过的歌」清掉。
+
+两份产物吃的是**同一次 `flutter build windows`**,所以构建只发生一遍。安装包本体是
+`tool/windows_installer.nsi`(NSIS 脚本,中文界面),**里面不写版本号** —— 版本由脚本
+从 `pubspec.yaml` 读出来、经 `/D` 注进去,与 apk / zip 的产物名同一条口径。
+
+安装包这一支需要 **NSIS**(`makensis`)。脚本按 PATH →
+`%LOCALAPPDATA%\Programs\NSIS` → `Program Files` 依次找;**找不到就是构建失败**,
+不会静默跳过 —— 少出一个产物却报成功是最糟的结果。装法:
+
+```
+winget install --id NSIS.NSIS -e
+```
+
+`tool/build.sh windows` 在出安装包之前还会跑一遍**安装目录守闸自测**
+(`tool/windows_installer_guard_test.nsi`):把安装器拦「盘符根」与「目录里有别人的
+东西」这两道闸编译成 exe 真跑,逐条比对退出码。之所以要单独测,是因为那两道闸拦的
+路径(`C:\`、`X:`)恰好**是 `/D=` 表达不出来的** —— NSIS 对 `/D=X:\` 这种写法一声不响地
+忽略、退回默认目录,退出码还是 0,拿安装包加 `/D=` 去指个盘符根根本走不到那两行,
+测了等于没测。自测红了就是构建失败。
+
+**Windows 构建有三条系统前置**(都不是仓库能替你解决的):
 
 1. **开开发者模式** —— Flutter 给插件建符号链接要它,不然 `flutter build windows`
    会直接停在 `Building with plugins requires symlink support`
@@ -209,6 +237,8 @@ Windows 侧同理:`tool/build.sh windows` 落成
 2. **装 ATL 组件** —— `flutter_secure_storage_windows`(存服务器密码用的那个)要
    `atlstr.h`,它属于 VS 安装器里的「C++ ATL for latest v143 Build Tools (x86 & x64)」。
    没装就在这里报 `error C1083: 无法打开包括文件: "atlstr.h"`。
+3. **装 NSIS** —— 出安装包要 `makensis`(见上)。只想要 zip 的话不装也行,但那样
+   `tool/build.sh windows` 会直接失败,不会少出一份还报成功。
 
 Web 侧:`tool/build.sh web` 落成 `build/dist/Nordic-<版本>-web.zip`(同样整目录打包),
 脚本会校验入口文件齐不齐、**产物里的 `version.json` 与 pubspec 是否一致**,以及

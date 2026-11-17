@@ -9,7 +9,7 @@
 # 用法:
 #   tool/build.sh                  # 打 debug APK
 #   tool/build.sh release         # 打 release APK(按 ABI 三个包,落成标准化名字,见下)
-#   tool/build.sh windows         # 打 Windows release(整目录打成标准名的 zip)
+#   tool/build.sh windows         # 打 Windows release(整目录打成标准名的 zip,并出安装包)
 #   tool/build.sh web             # 打 Web release(整目录打成标准名的 zip)
 #   tool/build.sh run -d windows  # 在桌面跑
 #   tool/build.sh run -d chrome   # 在浏览器里跑(会自动补 --no-web-resources-cdn)
@@ -44,7 +44,11 @@ export FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL:-https://storage.flu
 # 抽成一个函数是因为产物不止一个了(APK 与 Windows 的 zip 都从这儿取名),
 # 别让第二个产物把「从哪儿读版本」抄第二遍。
 read_version() {
-  sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -1
+  # `tr -d '\r'` 不是多余的:这台机器上 `core.autocrlf=true`,checkout 出来的
+  # pubspec.yaml 是 CRLF,sed 会把行尾那个 CR 一起带出来 —— 版本串变成
+  # `1.0.69+70\r`,于是产物名里多一个不可见字符、与 exe 里的版本资源也对不上
+  # (本地实测:windows 那一支因此报「对不上」)。回车不是版本的一部分,在这儿切掉。
+  sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -1 | tr -d '\r'
 }
 
 standardize_apks() {
@@ -173,6 +177,139 @@ standardize_windows() {
   echo "  (flutter 默认那个 $built 照旧保留,flutter run -d windows 认的是它)"
 }
 
+# 找 makensis.exe。**不写死路径**:第一次真跑这一支时 NSIS 的安装目录还在
+# `%LOCALAPPDATA%\Programs\NSIS`(那个 setup 是用 UAC 提权装的),而这一条的
+# 本意是「装了就能用」。所以按可能性从高到低试几处常见的:
+#   1. 在 PATH 里(用户自己装过、或绿色包解压后加过路径)
+#   2. winget 默认的按用户安装位置
+#   3. Program Files 下的系统级安装
+# 找不到不是「跳过校验」,是**失败** —— 少出一个安装包而脚本报成功,是这一轮
+# 最该避免的那种沉默。
+find_makensis() {
+  if command -v makensis >/dev/null 2>&1; then
+    command -v makensis
+    return 0
+  fi
+  local c
+  for c in \
+    "${LOCALAPPDATA:-}/Programs/NSIS/makensis.exe" \
+    "/c/Program Files (x86)/NSIS/makensis.exe" \
+    "/c/Program Files/NSIS/makensis.exe"; do
+    if [ -n "$c" ] && [ -x "$c" ]; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# 跑安装目录守闸的自测。**必须在真出安装包之前跑** —— 它测的是安装包里那句
+# `RMDir /r` 会不会落到别人的目录上,这种事不该等装完才发现。
+#
+# 为什么要专门做个自测:守闸拦的是「盘符根」这类路径,而这类路径**恰好是 `/D=`
+# 表达不出来的**。实测(makensis 3.13)`setup.exe /S /D=X:\`、`/S /D=X:` 被 NSIS
+# 一声不响地忽略,`$INSTDIR` 退回默认值、退出码还是 0 —— 也就是说「拿安装包加
+# `/D=` 指个根试试」这句话本身就走不到守闸那两行,那种测法会一路绿着放行。自测
+# 直接摆 `$INSTDIR`,调的是**同一个** `windows_installer_guard.nsh`(不是副本)。
+#
+# 红了就**失败**,不是警告:守闸失效意味着一次手滑能删掉用户整块盘。
+guard_test_windows() {
+  local makensis dir out
+  makensis="$(find_makensis)" || {
+    echo "找不到 makensis.exe —— 安装目录守闸的自测跑不了" >&2
+    return 1
+  }
+  dir="build/tmp-guard-test"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  out="$(cygpath -w "$PWD/$dir/guard_test.exe")"
+
+  "$makensis" -INPUTCHARSET UTF8 \
+    -DGUARD_TEST_OUTFILE="$out" \
+    tool/windows_installer_guard_test.nsi >/dev/null || return 1
+
+  # 外层 exe 的退出码 = 失败的用例条数。它在自己旁边写 guard_test.log,
+  # 里面是「目录 | 期望 | 实测」的逐条对照 —— 红了照那张表看是哪一条。
+  local rc=0
+  "$dir/guard_test.exe" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "安装目录守闸自测失败 $rc 条:" >&2
+    cat "$dir/guard_test.log" >&2
+    return 1
+  fi
+  echo "✓ 安装目录守闸自测通过($dir/guard_test.log)"
+}
+
+# 把 Windows 的 Release 目录打成安装包:`Nordic-<版本>-windows-x64-setup.exe`。
+# 与 zip 那份是**同一批文件**,差别只在「怎么交付」:zip 解压出来就能用(绿色、
+# 可带走),安装包进「添加或删除程序」、有开始菜单项、卸载有得点。播放器的用户
+# 大概率是后者;而且面板里显示版本号这件事,**只有安装包有** —— zip 那边
+# 「我装的是哪一版」只能自己翻文件夹。
+#
+# `tool/windows_installer.nsi` 是脚本本体(中文界面、按用户装、不弹 UAC)。
+# 版本**不写进 .nsi**,构建期从 pubspec 注进去,理由同 apk / zip 的名字。
+#
+# 校验两条,都要能真查出东西:
+#  1. 产物落了、且不是空壳(几百 KB 起 —— 少了说明 File 段没吃到东西);
+#  2. **setup.exe 自己的版本资源 = pubspec 版本**。这条与 apk 的
+#     `aapt dump badging`、windows zip 的 exe VersionInfo 同一个理由:
+#     「名字是新版、内容是旧版」的包装出去才会被发现。`VIProductVersion` 用的是
+#     四段数字(`1.0.68.69`),所以两种呈现都认。
+standardize_windows_setup() {
+  local built="$1"
+  local version four setup_name out out_abs makensis size vinfo alt
+  version="$(read_version)"
+  if [ -z "$version" ]; then
+    echo "读不出 pubspec.yaml 里的 version,安装包名没法标准化" >&2
+    return 1
+  fi
+
+  makensis="$(find_makensis)" || {
+    echo "找不到 makensis.exe —— Windows 安装包出不来" >&2
+    echo "  装一个:winget install --id NSIS.NSIS -e(或把绿色包的目录加进 PATH)" >&2
+    return 1
+  }
+
+  # 四段数字。`1.0.68+69` -> `1.0.68.69`;`+` 前缺了一段的(不该有)补 0。
+  four="${version%%+*}.${version##*+}"
+
+  setup_name="Nordic-${version}-windows-x64-setup.exe"
+  out="$PWD/build/dist/${setup_name}"
+  mkdir -p build/dist
+
+  # `$PWD/$built` 必须拼成绝对路径再 cygpath —— cygpath 对相对路径给的是相对路径,
+  # 而 makensis 解析 `File /r` 是**相对 .nsi 所在目录**(即 `tool/`),于是
+  # `build\windows\...` 会被找成 `tool\build\windows\...`,报「no files found」。
+  # 实测踩过:zip 那一份已经出来了,安装包这一份才在 File 段炸掉。
+  "$makensis" \
+    -INPUTCHARSET UTF8 \
+    -DVERSION="$version" \
+    -DVERSION4="$four" \
+    -DAPPDIR="$(cygpath -w "$PWD/$built")" \
+    -DOUTFILE="$(cygpath -w "$out")" \
+    -DAPP_SIZE_KB="$(du -sk "$built" | cut -f1)" \
+    tool/windows_installer.nsi >/dev/null || return 1
+
+  size=$(stat -c %s "$out")
+  if [ "$size" -lt 300000 ]; then
+    echo "安装包只有 $((size / 1024)) KB —— 多半是 File 段没吃到 $built" >&2
+    return 1
+  fi
+
+  vinfo="$(powershell -NoProfile -Command \
+    "(Get-Item '$(cygpath -w "$out")').VersionInfo.FileVersion" | tr -d '\r')"
+  alt="${version%%+*}"
+  if [ "$vinfo" != "$version" ] && [ "$vinfo" != "$four" ] && [ "$vinfo" != "$alt" ]; then
+    echo "安装包里的版本 '$vinfo' 与 pubspec 的 '$version' 对不上" >&2
+    return 1
+  fi
+
+  echo "✓ build/dist/${setup_name}"
+  echo "  版本 ${version} · 按用户装(不弹 UAC)· 开始菜单 + 可选桌面快捷方式"
+  echo "  卸载项写进注册表:面板里显示的就是这个版本"
+  echo "  脚本 tool/windows_installer.nsi(只存逻辑,版本由 pubspec 注进来)"
+}
+
 # 标准化 Web 产物:`Nordic-<版本>-web.zip`。
 #
 # 与 Windows 同构:产物**也是一整个目录**(`index.html` + `main.dart.js` +
@@ -289,8 +426,14 @@ case "${1:-debug}" in
     ;;
   windows|win)
     shift
+    # 一次出两份:zip(绿色、解压即用)+ 安装包(进「添加或删除程序」、带版本)。
+    # 两份吃的是同一批文件,所以先构建、再分别标准化 —— 别让第二份把构建再来一遍。
+    # 守闸自测跟着安装包一起走:它只依赖 NSIS,不依赖这次构建出来的东西,
+    # 但坏了的话安装包就不该发出去。
     flutter build windows --release "$@"
+    guard_test_windows
     standardize_windows build/windows/x64/runner/Release
+    standardize_windows_setup build/windows/x64/runner/Release
     ;;
   web)
     shift
