@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 电视桌面那一张 320x180 的横幅(android:banner)。
+     电视启动器只画这一张,不画 ic_launcher —— 没有它,LEANBACK_LAUNCHER 认得出来
+     也显示成一块空白。
+
+     图形直接复用自适应图标的前景层(mipmap-*/ic_launcher_foreground,
+     与手机 / Web / Windows 同一个矢量源,见 tool/app_icon.py),底色用应用自己的
+     #07070C 加一层很淡的冷紫。不在这里重画图形,也不写字:图形会跟着图标脚本走,
+     而文字一进静态 XML 就又多了一处「名字」的字面量。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="315"
+                android:startColor="#1A1730"
+                android:endColor="@color/nordic_bg"/>
+        </shape>
+    </item>
+    <item
+        android:drawable="@mipmap/ic_launcher_foreground"
+        android:gravity="center"
+        android:width="144dp"
+        android:height="144dp"/>
+</layer-list>

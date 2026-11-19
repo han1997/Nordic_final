@@ -1,5 +1,162 @@
 # 更新历史
 
+## 第四十五轮:Windows 有安装包了 —— 以及为什么改完不会自动发版(2026-11-17)
+
+### 一、为什么改完没有自动发版
+
+没有自动发版,是因为**这条链上根本没有自动的部分**:仓库里没有 CI(没有 `.github/`),
+没有 git hook,`tool/build.sh` 是手动执行的入口。第四十四轮只跑了 `flutter analyze`
+与测试,**没有跑构建** —— 所以 `build/dist/` 里躺着的还是 `1.0.58+59` 那一批产物,
+最新一版应用从来没被编译成包。这一轮的改动因此不是「修好自动发版」,而是「把发的
+东西补齐,再把发它的那条命令跑通」:`tool/build.sh windows`。
+
+### 二、Windows 安装包
+
+zip 能用,但解压出来不落任何「装了什么、哪一版」的地方:卸载列表里一片空白,出了
+新版只能自己找地方解压覆盖。这一轮补 `Nordic-<版本>-windows-x64-setup.exe`:
+
+- **按用户装**(`$LOCALAPPDATA\Programs\Nordic`,清单里 `RequestExecutionLevel user`)
+  —— 不弹 UAC、不需要管理员、卸载也不要。一个播放器没有理由要系统级权限,而
+  「装不上,因为管理员密码想不起来」是真实会发生的。
+- **卸载项**里写全 `DisplayName` / `DisplayVersion` / `Publisher` / `DisplayIcon` /
+  `UninstallString` / `QuietUninstallString` / `InstallLocation` / `EstimatedSize` ——
+  「面板里显示的是哪一版」这件事只有安装包做得到。
+- **开始菜单 + 可选桌面快捷方式**;卸载把程序目录、快捷方式、注册表项一起收干净,
+  **但故意留下 `%APPDATA%\Nordic`** 的用户数据。
+- **版本不写进 `.nsi`**:由 `tool/build.sh` 从 `pubspec.yaml` 读出,经 `/DVERSION` /
+  `/DVERSION4` 注进去 —— 与 apk / zip 的产物名同一条口径。
+
+选 NSIS 而不是 Inno Setup,是因为 Inno 不带简体中文(那份 `ChineseSimplified.isl`
+不在官方包里,而这台机器取不到),NSIS 自带 `SimpChinese.nlf`。
+
+### 三、两道守闸,以及它们为什么会是「测不到」的
+
+安装包里有唯一一处会删东西的语句 `RMDir /r "$INSTDIR"`(覆盖安装前清旧版)。它要是
+落在别人的目录上,删的是别人的东西。所以两道闸:
+
+1. **目录不能是盘符根**(`C:\`、`X:`、`c:/` 都得拒)—— 判据不是「够不够深」,
+   深度一层(`D:\Nordic`)是正常选择;要命的是根与非根那一线。
+2. **既有目录得认得出是我们的**(有 `uninstall.exe` / `nordic.exe` /
+   `flutter_windows.dll` 三者之一才清)—— 手滑点到「文档」时停下来,而不是清完再装。
+
+**这一轮踩的坑在于:这两道闸用安装包本身几乎测不到。** 先是发现 `/S /D=X:\` 与
+`/S /D=X:` 都被 NSIS **一声不响地忽略** —— `$INSTDIR` 退回默认目录,退出码还是 0
+(用探针把 `$INSTDIR` 与 `${GetRoot}` / `${GetParent}` 的量打出来才看清)。也就是说
+「拿安装包加 `/D=` 指个盘符根试试」这句话本身就碰不到守闸那两行,而它**每次都报
+成功**,和「守闸是对的」长得一模一样。更早一版还因此把结论写反过:以为「浅路径被拒」
+是因为守卫生效,其实根因是 `/D=` 没被接受。
+
+所以守闸本体拆成了 `tool/windows_installer_guard.nsh`,并配一份
+**编译成 exe 真跑**的自测 `tool/windows_installer_guard_test.nsi`:外层摆用例表
+(根的各种写法 / 正常路径 / 外来的非空目录 / 认得出来的旧安装),逐个子进程
+`ExecWait` 跑,子进程读自己那条目录、摆进 `$INSTDIR`、调**同一个**函数,比对退出码。
+`tool/build.sh windows` 在出安装包之前跑它,**红了就构建失败**。
+
+自测本身也修过两处,都是「看起来绿、其实没测到」:
+
+- **裸 `Quit` 的退出码是 2**(与 `Abort` 同值)。第一版靠「走到末尾就 `Quit`」表示
+  放行,于是所有「该放行」的用例都被读成拒绝 —— 改成显式 `SetErrorLevel 0`。
+- 变异测试暴露了守闸的**冗余**:单独拆掉 `父目录为空` / `等于 GetRoot` /
+  `等于根+反斜杠` 三条件里的任何一个,自测仍然全绿。这不是自测漏了,是三条判据
+  本来就互为兜底(每种根写法至少被其中一条咬住);要让它红得把三条一起拆。这一段
+  按实情记下来,免得以后有人以为「拆一条还绿 = 测试没用」。
+
+### 四、构建脚本里顺手抓到的两个真 bug
+
+两个都是「只在 Windows 上、只在真跑构建时」才会现形的:
+
+1. **`read_version` 把 CRLF 的回车带进了版本串**。这台机器 `core.autocrlf=true`,
+   checkout 出来的 `pubspec.yaml` 是 CRLF,`sed` 把行尾那个 `\r` 一起带出来,版本
+   变成 `1.0.69+70\r` —— 产物名里多一个不可见字符,与 exe 版本资源比对时直接
+   「对不上」。加 `tr -d '\r'`。(apk / web 两条支路早就有这个问题,只是没在这台机器上
+   跑过。)
+2. **`cygpath -w` 对相对路径给的是相对路径**,而 `makensis` 解析 `File /r` 是相对
+   `.nsi` 所在目录(即 `tool/`),于是 `build\windows\...` 被找成
+   `tool\build\windows\...`,报 `no files found`。zip 那一份已经出来了,安装包这一份
+   才在 `File` 段炸掉。改成 `cygpath -w "$PWD/$built"`。
+
+另外 `.nsi` 是 UTF-8 无 BOM 且含中文,makensis 必须带 `-INPUTCHARSET UTF8`,否则
+中文全是乱码 —— 这一条写在 `standardize_windows_setup` 的调用里。
+
+### 五、验证
+
+`tool/build.sh windows` 真跑(不是「应该能跑」):flutter 构建 → 守闸自测 10 条全过
+→ `build/dist/Nordic-1.0.69+70-windows-x64.zip` + `Nordic-1.0.69+70-windows-x64-setup.exe`
+(10.4 MB),setup.exe 的 `FileVersion` / `ProductVersion` 读回来都是 `1.0.69+70`。
+
+拿**这个** setup.exe 做的端到端:
+
+| 场景 | 期望 | 实测 |
+| --- | --- | --- |
+| 静默装进干净目录 | 0 | 0,文件齐、卸载项版本 `1.0.69+70`、开始菜单与桌面快捷方式都在 |
+| 装进有别人文件的目录 | 非 0 | 4,**那个文件没被动过** |
+| 装进盘符根 | 非 0 | 守闸自测里逐条验(见上,`/D=` 到不了这行) |
+| `nordic.exe` 被占着时静默装 | 非 0、不弹框 | 5,立即返回(改之前会挂在没人点的对话框上) |
+| 静默卸载 | 0 | 0;目录、两个注册表键、两处快捷方式全部消失,`%APPDATA%` 保留 |
+
+卸载是**异步**的(NSIS 把自己复制到临时目录再返回),所以核对得等它跑完 —— 第一版
+批处理只等了 `timeout 10`,读到的还是「全都在」。
+
+`flutter analyze` 0 issue,全量 582 passed / 18 skipped。版本 1.0.69+70。
+
+## 第四十六轮:TV 终于能用遥控器走了(2026-11-19)
+
+第二十六轮留下的 TV 待办这次收口:宽屏那套形态本来已经能铺在电视逻辑宽上,
+缺的是三件电视特有的东西——电视桌面认不出应用、没有焦点就没法用方向键、
+4K 电视上同一档 dp 读起来偏小。
+
+### 一、原型先行
+
+- `player.html` 侧栏尺寸新增 **TV**;960×540 是 1080p 电视在 density 2 下的逻辑
+  尺寸,自然落进 `>= 840` 的宽屏档,不另造第三套页面形态。
+- `styles.css` 新增 `.phone.tv` 与 `.tv-focus`:无岛、无状态栏、左竖栏、播放横条、
+  多列网格、播放页两栏都与宽屏同源;第一张专辑卡画出 2px 强调色焦点环与淡光。
+- `BOARD` 新增「音乐库 · TV」与「播放页 · TV」两格,前者明确摆焦点环;`VIEWS` 的
+  页面函数不重复造一份,因为 TV 是同一屏的设备形态而不是新页面。`index.html` 与
+  `player.html` 继续逐行一致。
+
+### 二、应用
+
+- `Pressable` 改用 `FocusableActionDetector`:方向键走 Flutter 默认的
+  `DirectionalFocusIntent`, Enter / Space / gameButtonA / 遥控器 `select` 走
+  `ActivateIntent`;焦点出现时画 2px 强调色环,鼠标点击不留下键盘焦点环。
+- 焦点进入滚动列表外时,用 `Scrollable.ensureVisible` 居中带回;第一项从冷启动根焦点
+  也能被方向键选中。专辑格、艺人货架、播放页歌名 / 艺人 / 专辑链接、底部 tab
+  全部接回这条共用路径,不再有「看得见但遥控器够不到」的裸 `GestureDetector`。
+- Android 清单声明可选 `android.software.leanback` 与可选触摸屏,加入
+  `LEANBACK_LAUNCHER` 与 `tv_banner`;banner 复用图标前景层,不另养一套图形。
+- `MainActivity` 通过 `Configuration.UI_MODE_TYPE_TELEVISION` 暴露一次设备判定;
+  非 Android / 通道不可用按非电视启动。电视字号是**系统字号 × 1.15**,不会抹掉
+  无障碍缩放;形态仍由 `NordicWindow` 的宽度断点决定。
+
+### 三、用例与验证
+
+- `focus_navigation_test.dart`:冷启动方向键进第一格、Enter / select 激活、焦点环、
+  disabled 控件不进焦点链、列表自动滚动,共 4 条;
+- `tv_support_test.dart`:清单 feature / launcher / banner、原型 TV 变体与设计板、
+  1.15 倍字号叠加系统缩放,共 5 条;
+- `flutter analyze`:0 issue;
+- 全量 `flutter test`:**591 passed / 18 skipped / 0 failed**。18 条仍是本机连不到
+  Navidrome 的 live 用例。
+- `aapt dump badging` 读回 arm64 APK:包名 `fun.han1997.nordic`、`versionName`
+  `1.0.70`、`versionCode` `2071`、`leanback-launchable-activity` 与
+  `android.software.leanback` 都在。
+
+### 四、产物
+
+版本 `1.0.69+70` → `1.0.70+71`。
+
+- `build/dist/Nordic-1.0.70+71-arm64-v8a-release.apk` (26.4 MB)
+- `build/dist/Nordic-1.0.70+71-armeabi-v7a-release.apk` (22.5 MB)
+- `build/dist/Nordic-1.0.70+71-x86_64-release.apk` (28.8 MB)
+- `build/dist/Nordic-1.0.70+71-windows-x64.zip`
+- `build/dist/Nordic-1.0.70+71-windows-x64-setup.exe`
+- `build/dist/Nordic-1.0.70+71-web.zip`
+
+Windows 安装包守闸自测照旧通过;Web 产物的 `version.json`、本地 CanvasKit 与 CDN
+守卫也通过。只有人或真机能补的仍是**真实 Android TV 遥控器走查与 10 尺观感**;
+本机没有 TV AVD,本轮用 Flutter 焦点用例与 APK 清单验完可自动验的部分。
+
 Nordic 每一轮改动的原始记录。**从早到晚往下排**(第三轮在最上面,最新的一轮在最下面),
 新的一轮**接在本文件末尾** —— 不要新开文件,也不要往 README 里加(README 的
 「更新历史」一节只有一句指路)。
@@ -3575,102 +3732,3 @@ bbox 横跨整页的正常交叉淡出混色,不是空页);推入 300ms 到 9.4 
 长了一节,改用 `scrollUntilVisible` 找那一行(原来是硬拖 800)。
 
 `flutter analyze` 0 issue,全量 582 passed / 18 skipped。版本 1.0.68+69。
-
-## 第四十五轮:Windows 有安装包了 —— 以及为什么改完不会自动发版(2026-11-17)
-
-### 一、为什么改完没有自动发版
-
-没有自动发版,是因为**这条链上根本没有自动的部分**:仓库里没有 CI(没有 `.github/`),
-没有 git hook,`tool/build.sh` 是手动执行的入口。第四十四轮只跑了 `flutter analyze`
-与测试,**没有跑构建** —— 所以 `build/dist/` 里躺着的还是 `1.0.58+59` 那一批产物,
-最新一版应用从来没被编译成包。这一轮的改动因此不是「修好自动发版」,而是「把发的
-东西补齐,再把发它的那条命令跑通」:`tool/build.sh windows`。
-
-### 二、Windows 安装包
-
-zip 能用,但解压出来不落任何「装了什么、哪一版」的地方:卸载列表里一片空白,出了
-新版只能自己找地方解压覆盖。这一轮补 `Nordic-<版本>-windows-x64-setup.exe`:
-
-- **按用户装**(`$LOCALAPPDATA\Programs\Nordic`,清单里 `RequestExecutionLevel user`)
-  —— 不弹 UAC、不需要管理员、卸载也不要。一个播放器没有理由要系统级权限,而
-  「装不上,因为管理员密码想不起来」是真实会发生的。
-- **卸载项**里写全 `DisplayName` / `DisplayVersion` / `Publisher` / `DisplayIcon` /
-  `UninstallString` / `QuietUninstallString` / `InstallLocation` / `EstimatedSize` ——
-  「面板里显示的是哪一版」这件事只有安装包做得到。
-- **开始菜单 + 可选桌面快捷方式**;卸载把程序目录、快捷方式、注册表项一起收干净,
-  **但故意留下 `%APPDATA%\Nordic`** 的用户数据。
-- **版本不写进 `.nsi`**:由 `tool/build.sh` 从 `pubspec.yaml` 读出,经 `/DVERSION` /
-  `/DVERSION4` 注进去 —— 与 apk / zip 的产物名同一条口径。
-
-选 NSIS 而不是 Inno Setup,是因为 Inno 不带简体中文(那份 `ChineseSimplified.isl`
-不在官方包里,而这台机器取不到),NSIS 自带 `SimpChinese.nlf`。
-
-### 三、两道守闸,以及它们为什么会是「测不到」的
-
-安装包里有唯一一处会删东西的语句 `RMDir /r "$INSTDIR"`(覆盖安装前清旧版)。它要是
-落在别人的目录上,删的是别人的东西。所以两道闸:
-
-1. **目录不能是盘符根**(`C:\`、`X:`、`c:/` 都得拒)—— 判据不是「够不够深」,
-   深度一层(`D:\Nordic`)是正常选择;要命的是根与非根那一线。
-2. **既有目录得认得出是我们的**(有 `uninstall.exe` / `nordic.exe` /
-   `flutter_windows.dll` 三者之一才清)—— 手滑点到「文档」时停下来,而不是清完再装。
-
-**这一轮踩的坑在于:这两道闸用安装包本身几乎测不到。** 先是发现 `/S /D=X:\` 与
-`/S /D=X:` 都被 NSIS **一声不响地忽略** —— `$INSTDIR` 退回默认目录,退出码还是 0
-(用探针把 `$INSTDIR` 与 `${GetRoot}` / `${GetParent}` 的量打出来才看清)。也就是说
-「拿安装包加 `/D=` 指个盘符根试试」这句话本身就碰不到守闸那两行,而它**每次都报
-成功**,和「守闸是对的」长得一模一样。更早一版还因此把结论写反过:以为「浅路径被拒」
-是因为守卫生效,其实根因是 `/D=` 没被接受。
-
-所以守闸本体拆成了 `tool/windows_installer_guard.nsh`,并配一份
-**编译成 exe 真跑**的自测 `tool/windows_installer_guard_test.nsi`:外层摆用例表
-(根的各种写法 / 正常路径 / 外来的非空目录 / 认得出来的旧安装),逐个子进程
-`ExecWait` 跑,子进程读自己那条目录、摆进 `$INSTDIR`、调**同一个**函数,比对退出码。
-`tool/build.sh windows` 在出安装包之前跑它,**红了就构建失败**。
-
-自测本身也修过两处,都是「看起来绿、其实没测到」:
-
-- **裸 `Quit` 的退出码是 2**(与 `Abort` 同值)。第一版靠「走到末尾就 `Quit`」表示
-  放行,于是所有「该放行」的用例都被读成拒绝 —— 改成显式 `SetErrorLevel 0`。
-- 变异测试暴露了守闸的**冗余**:单独拆掉 `父目录为空` / `等于 GetRoot` /
-  `等于根+反斜杠` 三条件里的任何一个,自测仍然全绿。这不是自测漏了,是三条判据
-  本来就互为兜底(每种根写法至少被其中一条咬住);要让它红得把三条一起拆。这一段
-  按实情记下来,免得以后有人以为「拆一条还绿 = 测试没用」。
-
-### 四、构建脚本里顺手抓到的两个真 bug
-
-两个都是「只在 Windows 上、只在真跑构建时」才会现形的:
-
-1. **`read_version` 把 CRLF 的回车带进了版本串**。这台机器 `core.autocrlf=true`,
-   checkout 出来的 `pubspec.yaml` 是 CRLF,`sed` 把行尾那个 `\r` 一起带出来,版本
-   变成 `1.0.69+70\r` —— 产物名里多一个不可见字符,与 exe 版本资源比对时直接
-   「对不上」。加 `tr -d '\r'`。(apk / web 两条支路早就有这个问题,只是没在这台机器上
-   跑过。)
-2. **`cygpath -w` 对相对路径给的是相对路径**,而 `makensis` 解析 `File /r` 是相对
-   `.nsi` 所在目录(即 `tool/`),于是 `build\windows\...` 被找成
-   `tool\build\windows\...`,报 `no files found`。zip 那一份已经出来了,安装包这一份
-   才在 `File` 段炸掉。改成 `cygpath -w "$PWD/$built"`。
-
-另外 `.nsi` 是 UTF-8 无 BOM 且含中文,makensis 必须带 `-INPUTCHARSET UTF8`,否则
-中文全是乱码 —— 这一条写在 `standardize_windows_setup` 的调用里。
-
-### 五、验证
-
-`tool/build.sh windows` 真跑(不是「应该能跑」):flutter 构建 → 守闸自测 10 条全过
-→ `build/dist/Nordic-1.0.69+70-windows-x64.zip` + `Nordic-1.0.69+70-windows-x64-setup.exe`
-(10.4 MB),setup.exe 的 `FileVersion` / `ProductVersion` 读回来都是 `1.0.69+70`。
-
-拿**这个** setup.exe 做的端到端:
-
-| 场景 | 期望 | 实测 |
-| --- | --- | --- |
-| 静默装进干净目录 | 0 | 0,文件齐、卸载项版本 `1.0.69+70`、开始菜单与桌面快捷方式都在 |
-| 装进有别人文件的目录 | 非 0 | 4,**那个文件没被动过** |
-| 装进盘符根 | 非 0 | 守闸自测里逐条验(见上,`/D=` 到不了这行) |
-| `nordic.exe` 被占着时静默装 | 非 0、不弹框 | 5,立即返回(改之前会挂在没人点的对话框上) |
-| 静默卸载 | 0 | 0;目录、两个注册表键、两处快捷方式全部消失,`%APPDATA%` 保留 |
-
-卸载是**异步**的(NSIS 把自己复制到临时目录再返回),所以核对得等它跑完 —— 第一版
-批处理只等了 `timeout 10`,读到的还是「全都在」。
-
-`flutter analyze` 0 issue,全量 582 passed / 18 skipped。版本 1.0.69+70。

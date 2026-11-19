@@ -402,8 +402,10 @@ class _AlbumHead extends StatelessWidget {
               // 艺人名可点才挂手势;库里没这位艺人时保持纯文字 ——
               // 点了跳到别人页比不能点更糟。
               if (artistId != null && artistId.isNotEmpty)
-                GestureDetector(
+                Pressable(
                   onTap: () => AppRoutes.openArtist(context, artistId),
+                  scale: 1,
+                  focusRadius: 6,
                   child: Text(
                     album.artist,
                     textAlign: align,

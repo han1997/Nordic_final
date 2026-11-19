@@ -417,8 +417,10 @@ class _SongInfo extends StatelessWidget {
                     // 歌名也是入口 —— 与封面区同一件事的两处来路(原型里 `.player-info .t`
                     // 同样挂着 `data-go="lyrics"`)。它原先谁都不指向,而下面那两条
                     // 艺人 / 专辑链接各有各的去处,这里别动它们。
-                    GestureDetector(
+                    Pressable(
                       onTap: () => AppRoutes.openLyrics(context),
+                      scale: 1,
+                      focusRadius: 8,
                       child: Text(
                         song.title,
                         maxLines: 2,
@@ -436,8 +438,10 @@ class _SongInfo extends StatelessWidget {
                       children: [
                         Flexible(
                           child: artistId != null
-                              ? GestureDetector(
+                              ? Pressable(
                                   onTap: () => AppRoutes.openArtist(context, artistId),
+                                  scale: 1,
+                                  focusRadius: 6,
                                   child: Text(
                                     song.artist,
                                     maxLines: 1,
@@ -463,8 +467,10 @@ class _SongInfo extends StatelessWidget {
                           style: TextStyle(color: t.fg2),
                         ),
                         Flexible(
-                          child: GestureDetector(
+                          child: Pressable(
                             onTap: () => AppRoutes.openAlbum(context, song.albumId),
+                            scale: 1,
+                            focusRadius: 6,
                             child: Text(
                               song.album,
                               maxLines: 1,

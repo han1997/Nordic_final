@@ -502,8 +502,11 @@ class _ArtistsTab extends StatelessWidget {
               final artist = top[index];
               return FxRise(
                 index: index,
-                child: GestureDetector(
+                child: Pressable(
                   onTap: () => AppRoutes.openArtist(context, artist.id),
+                  // 与专辑网格同一档:原先没有按压反馈,只借 Pressable 的焦点。
+                  scale: 1,
+                  focusRadius: 26,
                   child: SizedBox(
                     width: 152,
                     child: Column(

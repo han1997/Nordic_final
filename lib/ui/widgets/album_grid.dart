@@ -6,6 +6,7 @@ import '../../theme/context_ext.dart';
 import '../../theme/tokens.dart';
 import '../adaptive/window.dart';
 import '../routes.dart';
+import 'components.dart';
 import 'cover.dart';
 import 'fx.dart';
 
@@ -90,9 +91,12 @@ class AlbumTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nordic;
-    return GestureDetector(
+    return Pressable(
       onTap: () => AppRoutes.openAlbum(context, album.id),
-      behavior: HitTestBehavior.opaque,
+      // 网格卡原先没有按压反馈,这一轮只借它拿到键盘 / 遥控器焦点,
+      // 所以缩放留 1(零变化);焦点环的圆角跟封面的 22 走。
+      scale: 1,
+      focusRadius: 26,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

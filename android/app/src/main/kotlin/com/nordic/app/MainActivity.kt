@@ -1,6 +1,7 @@
 package com.nordic.app
 
 import android.content.Context
+import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.ryanheise.audioservice.AudioServiceActivity
@@ -23,6 +24,23 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DEVICE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isTelevision" -> result.success(isTelevision())
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /// 这台机器是不是电视。**由系统回答,不看屏幕尺寸** —— 1080p 电视的逻辑宽
+    /// 与平板横屏同宽,靠分辨率 / 宽高比都会误判。
+    ///
+    /// Dart 侧只在启动时问一次(见 `lib/data/device_profile.dart`),用来决定
+    /// 字号倍率;形态另有宽屏断点。
+    private fun isTelevision(): Boolean {
+        val mode = resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK
+        return mode == Configuration.UI_MODE_TYPE_TELEVISION
     }
 
     /// 现在是什么网络 —— **按「是否计费」回答,不是按 Wi-Fi / 蜂窝**。
@@ -42,5 +60,6 @@ class MainActivity : AudioServiceActivity() {
 
     companion object {
         private const val NETWORK_CHANNEL = "fun.han1997.nordic/network"
+        private const val DEVICE_CHANNEL = "fun.han1997.nordic/device"
     }
 }
