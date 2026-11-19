@@ -2724,6 +2724,37 @@ html[data-fx~="lyric"] .lyric-line.on .txt {
 .phone.wide .statusbar,
 .phone.wide .home-ind { display: none; }
 
+/* ---- TV(第四十六轮)----
+   960×540 = 1080p 电视在 density 2 下的逻辑尺寸。它落在宽屏档(>= 840),
+   形态与宽屏同一套;TV 多出来的只有**遥控焦点**这一件 ——
+   电视没有鼠标,「当前选中哪一个」必须自己画出来。
+
+   为什么不在这里另做一套「10 尺字号」:Android TV 的 density 把 1dp 画成
+   2 个物理像素,14dp 正文在 1080p 上就是 28px —— 与主流电视 UI 同一个量级。
+   应用侧只再乘 1.15 兜住 4K(density 2 时逻辑宽 1920,同样的 dp 会显得偏小)。 */
+.phone.tv {
+  width: 960px;
+  height: 540px;
+  border-radius: 14px;
+}
+.phone.tv .island,
+.phone.tv .statusbar,
+.phone.tv .home-ind { display: none; }
+
+/* 遥控器焦点环:2px 强调色 + 一圈很淡的外光。
+   画在元素外 4px(与应用侧 Pressable 的 ring 同一档),absolute 定位,不占布局。 */
+.phone.tv .screen.tv-focus .album-tile:first-child { position: relative; }
+.phone.tv .screen.tv-focus .album-tile:first-child::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 2px solid var(--accent-safe);
+  border-radius: 26px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+  pointer-events: none;
+  z-index: 3;
+}
+
 /* ---- 左竖栏 —— 宽屏的常驻导航 ----
    默认 display:none(不占布局);>= 840 的容器查询把它翻出来。
    铺不铺由 app.js 的 shell(opts.rail) 点名 —— 播放 / 歌词 / 表单页连节点都没有。
@@ -2876,15 +2907,21 @@ html[data-fx~="lyric"] .lyric-line.on .txt {
    容器查询量到的仍是 834 / 1280,判级不受影响。 */
 html[data-setframe="tablet"] #phone-slot { zoom: 0.8; }
 html[data-setframe="wide"] #phone-slot { zoom: 0.62; }
+html[data-setframe="tv"] #phone-slot { zoom: 0.8; }
 html[data-setframe="tablet"] #phone-slot .phone { width: 834px; height: 1112px; border-radius: 40px; }
 html[data-setframe="tablet"] #phone-slot .phone .island { display: none; }
 html[data-setframe="wide"] #phone-slot .phone { width: 1280px; height: 800px; border-radius: 22px; }
+html[data-setframe="tv"] #phone-slot .phone { width: 960px; height: 540px; border-radius: 14px; }
 html[data-setframe="wide"] #phone-slot .phone .island,
 html[data-setframe="wide"] #phone-slot .phone .statusbar,
 html[data-setframe="wide"] #phone-slot .phone .home-ind { display: none; }
+html[data-setframe="tv"] #phone-slot .phone .island,
+html[data-setframe="tv"] #phone-slot .phone .statusbar,
+html[data-setframe="tv"] #phone-slot .phone .home-ind { display: none; }
 
-/* 设计板上那几格宽屏:同样缩到能一眼看全,其余格子不动。 */
+/* 设计板上那几格宽屏 / TV:同样缩到能一眼看全,其余格子不动。 */
 .board .phone.wide { zoom: 0.62; }
+.board .phone.tv { zoom: 0.83; }
 
 /* 设计板越来越长(76 格,其中 12 格是 1280×800、各自带一层玻璃模糊),
    在一个高视口里整板同绘会让渲染进程撑不住(实测 Target crashed)。

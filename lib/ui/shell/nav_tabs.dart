@@ -115,9 +115,12 @@ class NavTabButton extends StatelessWidget {
         child: pill,
       );
     }
-    return GestureDetector(
+    return Pressable(
       onTap: () => onSelected(tab),
-      behavior: HitTestBehavior.opaque,
+      // 托盘那颗保持「按下不换底、不缩」的历史手感;走 Pressable 只为拿到
+      // 键盘 / 遥控器焦点(电视上没有鼠标,焦点必须能落在 tab 上)。
+      scale: 1,
+      focusRadius: NordicRadius.full,
       child: pill,
     );
   }

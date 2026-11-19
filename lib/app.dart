@@ -17,7 +17,26 @@ import 'ui/shell/shell.dart';
 /// 主题档位读自 [AppState](用户的选择已落盘),所以切完主题重启应用
 /// 仍是那一个 —— 不会每次回到默认。
 class NordicApp extends StatelessWidget {
-  const NordicApp({super.key});
+  const NordicApp({super.key, this.isTelevision = false});
+
+  /// 这台设备是电视(`AndroidManifest` 的 leanback 身份 + `UiModeManager` 判定)。
+  ///
+  /// 电视比桌面多一步:**1.15 倍字号**。1080p 电视在 density 2 下逻辑宽 960,
+  /// 14dp 正文已经是 28 个物理像素,与主流电视 UI 同一个量级;4K 电视的逻辑宽
+  /// 到 1920,同样的 dp 会偏小,所以统一再乘一档。形态(宽屏 / 两栏 / 竖栏)
+  /// 不靠这个标记 —— 那由 `NordicWindow` 按宽判定,电视本来就落在 expanded。
+  final bool isTelevision;
+
+  /// 电视字号倍率。**与原型 styles.css「TV」那一节的注释同一个数**。
+  static const tvTextScale = 1.15;
+
+  /// 电视上的字号 = 系统缩放 × [tvTextScale]。
+  ///
+  /// 不能直接 `TextScaler.linear(1.15)` —— 那会把用户的无障碍字号抹掉。
+  /// 用 `scale(10)/10` 取线性倍率(电视上的系统缩放本来就是线性的);
+  /// 提取成静态函数是为了能在用例里验「是乘上去的」。
+  static TextScaler scalerFor(TextScaler base) =>
+      TextScaler.linear(base.scale(10) / 10 * tvTextScale);
 
   @override
   Widget build(BuildContext context) {
@@ -46,11 +65,22 @@ class NordicApp extends StatelessWidget {
       scaffoldMessengerKey: scaffoldMessengerKey,
       // 生命周期规则挂在 MaterialApp 的 builder 上而不是各页面里 ——
       // 它是应用级的一条,页面来去都不该影响它。
-      builder: (context, child) => _BackgroundPlayGuard(
-        child: PlaybackInterruptionEcho(
-          child: child ?? const SizedBox.shrink(),
-        ),
-      ),
+      builder: (context, child) {
+        final content = _BackgroundPlayGuard(
+          child: PlaybackInterruptionEcho(
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+        final media = MediaQuery.maybeOf(context);
+        if (!isTelevision || media == null) return content;
+        // 乘在系统字号上而不是覆盖它 —— 电视也吃无障碍字号。
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: scalerFor(media.textScaler),
+          ),
+          child: content,
+        );
+      },
       // 全部页面(含三个 tab 的主壳)都由 AppRoutes 出路由 —— 那里统一了
       // 过渡,见 AppRoutes.generate 的说明。
       onGenerateRoute: AppRoutes.generate,

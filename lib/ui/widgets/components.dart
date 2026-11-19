@@ -22,6 +22,7 @@ class Pressable extends StatefulWidget {
     this.scale = 0.97,
     this.behavior = HitTestBehavior.opaque,
     this.pressedDecoration,
+    this.focusRadius = 14,
   });
 
   final Widget child;
@@ -40,6 +41,10 @@ class Pressable extends StatefulWidget {
   /// 而「底下亮了一层」既明显又不动布局。
   final Decoration? pressedDecoration;
 
+  /// 键盘 / 遥控器焦点环的圆角。默认 14;卡片、胶囊、圆钮各自传自己的半径,
+  /// 让环贴着那个形状走(见原型 `.tv-focus` 的 26)。
+  final double focusRadius;
+
   @override
   State<Pressable> createState() => _PressableState();
 }
@@ -47,9 +52,31 @@ class Pressable extends StatefulWidget {
 class _PressableState extends State<Pressable> {
   bool _down = false;
 
+  /// 键盘 / 遥控器焦点。**不跟鼠标悬停走** —— `onShowFocusHighlight` 只在
+  /// 系统判定「现在是键盘导航」时为真,所以鼠标点过之后不会留下一圈环。
+  bool _focused = false;
+
   void _set(bool value) {
     if (!mounted || _down == value) return;
     setState(() => _down = value);
+  }
+
+  /// 焦点进了屏幕外的格子就把列表滚到它 —— 否则遥控器一路按下去,
+  /// 选中项在可见区外,屏幕上什么都不动。
+  ///
+  /// 居中(0.5)而不是贴边:上一格 / 下一格都还看得见,才不会读成「跳了一下」。
+  void _reveal() {
+    if (!mounted) return;
+    if (Scrollable.maybeOf(context) == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_focused) return;
+      Scrollable.ensureVisible(
+        context,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   @override
@@ -62,8 +89,9 @@ class _PressableState extends State<Pressable> {
     final scaleFx = MotionScope.of(context).isOn(FxId.press);
 
     final decoration = widget.pressedDecoration;
+    final Widget core;
     if (decoration != null) {
-      return GestureDetector(
+      core = GestureDetector(
         behavior: widget.behavior,
         onTap: widget.onTap,
         onTapDown: (_) => _set(true),
@@ -74,23 +102,71 @@ class _PressableState extends State<Pressable> {
           child: widget.child,
         ),
       );
+    } else {
+      core = GestureDetector(
+        behavior: widget.behavior,
+        onTap: widget.onTap,
+        onTapDown: (_) => _set(true),
+        onTapUp: (_) => _set(false),
+        onTapCancel: () => _set(false),
+        child: scaleFx
+            ? AnimatedScale(
+                scale: _down ? widget.scale : 1,
+                // 按下要立刻、回弹可以慢一点 —— 与原型 `0.14s var(--ease)` 一致。
+                duration: Duration(milliseconds: _down ? 70 : 140),
+                curve: Curves.easeOut,
+                child: widget.child,
+              )
+            : widget.child,
+      );
     }
 
-    return GestureDetector(
-      behavior: widget.behavior,
-      onTap: widget.onTap,
-      onTapDown: (_) => _set(true),
-      onTapUp: (_) => _set(false),
-      onTapCancel: () => _set(false),
-      child: scaleFx
-          ? AnimatedScale(
-              scale: _down ? widget.scale : 1,
-              // 按下要立刻、回弹可以慢一点 —— 与原型 `0.14s var(--ease)` 一致。
-              duration: Duration(milliseconds: _down ? 70 : 140),
-              curve: Curves.easeOut,
-              child: widget.child,
-            )
-          : widget.child,
+    return FocusableActionDetector(
+      // 方向键的遍历由 Flutter 默认的 Shortcuts 提供(→ DirectionalFocusIntent),
+      // 确认键 / 遥控器 OK 键都是 ActivateIntent —— 这里只补「按下去做什么」。
+      // Enter / Space / gameButtonA / select 都在 `WidgetsApp.defaultShortcuts` 里。
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap?.call();
+            return null;
+          },
+        ),
+      },
+      mouseCursor: SystemMouseCursors.click,
+      onShowFocusHighlight: (value) {
+        if (!mounted || _focused == value) return;
+        setState(() => _focused = value);
+        if (value) _reveal();
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          core,
+          if (_focused)
+            Positioned(
+              left: -4,
+              top: -4,
+              right: -4,
+              bottom: -4,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(widget.focusRadius),
+                    border: Border.all(color: context.accentSafe, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: context.accent.accent.withValues(alpha: 0.22),
+                        blurRadius: 8,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -150,6 +226,7 @@ class PrimaryButton extends StatelessWidget {
       child: Pressable(
         onTap: onPressed,
         scale: 0.975,
+        focusRadius: height / 2,
         child: Container(
           height: height,
           width: fillMaxWidth ? double.infinity : null,
@@ -209,6 +286,7 @@ class GhostButton extends StatelessWidget {
     return Pressable(
       onTap: onPressed,
       scale: 0.975,
+      focusRadius: height / 2,
       child: Container(
         height: height,
         width: double.infinity,
@@ -266,6 +344,7 @@ class PillButton extends StatelessWidget {
       child: Pressable(
         onTap: onPressed,
         scale: 0.97,
+        focusRadius: 18,
         child: Container(
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -393,6 +472,7 @@ class IconButtonRound extends StatelessWidget {
       // 图标键照原型的 `.icon-btn:active` 缩 0.92 —— 比按钮明显一档。
       onTap: onPressed,
       scale: 0.92,
+      focusRadius: size / 2,
       child: Opacity(
         // 不可点就压暗。**代表「到头了」的那两颗键**(上一首 / 下一首)全靠这一个
         // 记号 —— 不压暗的话它跟能点的一模一样,点下去什么也不发生,
@@ -516,6 +596,7 @@ class SortButton extends StatelessWidget {
     return Pressable(
       onTap: busy ? null : onTap,
       scale: 0.97,
+      focusRadius: 8,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         child: Row(

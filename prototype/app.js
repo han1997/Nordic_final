@@ -514,19 +514,21 @@ function statusbar() {
    选中胶囊都在氛围层的兄弟节点上,变量挂在氛围层上的话它们一个也继承不到,
    会退回 :root 的默认紫。这正是「随封面取色」看上去只对了一半的原因。
 
-   第二十六轮起它也能组装**平板 / 宽屏**那一台:
-   - `opts.frame`(tablet / wide)换外壳尺寸(样式见 styles.css 尾部的「宽屏 / 平板」);
+   第二十六轮起它也能组装**平板 / 宽屏 / TV**那一台:
+   - `opts.frame`(tablet / wide / tv)换外壳尺寸(样式见 styles.css 尾部的「宽屏 / 平板」);
    - `opts.rail` 决定铺不铺左侧竖栏,值 = 选中的 tab,'' = 谁都不选中;
-   两个都不传 = 今天的手机形态,逐像素不变。 */
+   - `opts.focus` 把第一张专辑卡画成「遥控器焦点」的样子(见 styles.css 的 `.tv-focus`);
+   都不传 = 今天的手机形态,逐像素不变。 */
 function shell(inner, opts = {}) {
   const accent = opts.accent ? accentVars(opts.accent) : '';
   const c1 = opts.c1 ? `--c1:${opts.c1};` : '';
   const home = opts.home ? '<div class="home-ind"></div>' : '';
   const frame = opts.frame ? ` ${opts.frame}` : '';
+  const focus = opts.focus ? ' tv-focus' : '';
   const rail = opts.rail === undefined ? '' : navRail(opts.rail);
   return `<div class="phone${frame}">
     <div class="island"></div>
-    <div class="screen" style="${accent}${c1}">${statusbar()}${rail}${inner}</div>
+    <div class="screen${focus}" style="${accent}${c1}">${statusbar()}${rail}${inner}</div>
     ${home}
   </div>`;
 }
@@ -2291,7 +2293,7 @@ function screenSettings() {
    同源策略挡掉,而「零外链」是这一份原型的硬约束(见 index.html / player.html
    的注释)。所以它靠**用例**跟住 `pubspec.yaml` —— `test/ui/prototype_parity_test.dart`
    在两边不一致时直接红。改版本号时要么改这里,要么让那条用例红一次提醒你。 */
-const ABOUT_VERSION = '1.0.69+70';
+const ABOUT_VERSION = '1.0.70+71';
 
 function screenAbout() {
   return `<div class="appbar nav">
@@ -2611,6 +2613,13 @@ const BOARD = [
   ['播放页 · 宽屏',   '封面居左 · 控制居右',  () => shell(screenPlayer(), { frame: 'wide', home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['歌词 · 宽屏',     '正文收成一栏',         () => shell(screenLyrics(), { frame: 'wide', home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   ['设置 · 宽屏',     '正文限宽',             () => shell(screenSettings(), { frame: 'wide', rail: 'settings' })],
+  /* ---- TV(第四十六轮)----
+     960×540 = 1080p 电视在 density 2 下的逻辑尺寸,落在宽屏档。TV 与宽屏的差别
+     只有「焦点」:电视没有鼠标,遥控器停在哪儿必须画出来。这一格把焦点环摆在
+     第一张专辑卡上,与应用侧 Pressable 的 ring 同形;字号按 1.15 倍在应用里另调,
+     原型不必伪造(原型里的 px 就是应用的 dp,电视的 density 会把它们放大)。 */
+  ['音乐库 · TV',     '遥控焦点 + 多列网格',  () => shell(screenLibrary('albums'), { frame: 'tv', rail: 'library', focus: true })],
+  ['播放页 · TV',     '两栏 · 宽横条',        () => shell(screenPlayer(), { frame: 'tv', home: true, accent: currentAlbum().accent, c1: currentAlbum().c1 })],
   /* 动效候选 —— 与图标同一类:不是应用里的一屏,是「挑」的交付物。
      卡片自己循环播放,所以设计板上也看得出「错开」与「直接切」的差别。 */
   ['动效研究',        '六条候选 · 逐条取舍',    () => shell(screenMotion())],
@@ -2911,11 +2920,11 @@ function renderStage(root) {
         <div style="border-top:1px solid var(--line);padding-top:16px">
           <h2 style="margin-bottom:8px">尺寸</h2>
           <div class="segmented" style="margin-bottom:10px">
-            ${[['phone', '手机'], ['tablet', '平板'], ['wide', '宽屏']].map(([id, label]) =>
+            ${[['phone', '手机'], ['tablet', '平板'], ['wide', '宽屏'], ['tv', 'TV']].map(([id, label]) =>
               `<button data-set-frame="${id}" aria-selected="${(STATE.frame || 'phone') === id}">${label}</button>`).join('')}
           </div>
           <div style="font-size:11px;color:var(--fg-3);line-height:1.7">
-            宽屏（>= 840）换左竖栏 + 播放横条 + 多列网格 + 两栏播放页；平板档形态不变，网格放宽。与应用同一套分级。
+            宽屏（>= 840）换左竖栏 + 播放横条 + 多列网格 + 两栏播放页；平板档形态不变，网格放宽；TV 是 1080p 电视的逻辑尺寸（960×540），形态同宽屏，另画一圈遥控焦点。与应用同一套分级。
           </div>
         </div>
         <div style="border-top:1px solid var(--line);padding-top:16px">

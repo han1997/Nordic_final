@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'app.dart';
 import 'data/download_manager.dart';
 import 'data/download_store.dart';
+import 'data/device_profile.dart';
 import 'data/library_cache.dart';
 import 'data/media_cache.dart';
 import 'data/scrobble_store.dart';
@@ -31,13 +32,15 @@ Future<void> main() async {
   //
   // 三条兜底:下载的与缓存的存储建不出来时各自退化成「用不了」(照常起);
   // 密码读不出来就等于「没配过」(见 server_config 的说明),不该把启动拖塌。
-  final (configStore, downloads, libraryCache, scrobbles, savedPassword) = await (
+  final (configStore, downloads, libraryCache, scrobbles, savedPassword, isTelevision) = await (
     ConfigStore.open(),
     DownloadStore.open(),
     LibraryCache.open(),
     // 「听过一次」发不出去时先落在这里,下次有机会补报(见 scrobble_store)。
     ScrobbleStore.open(),
     credentialStore.readPassword().catchError((Object _) => null),
+    // 电视判定只问一次;通道不在 / 调用失败都按「不是电视」走(见 DeviceProfile)。
+    DeviceProfile.isTelevision(),
   ).wait;
 
   // 歌曲缓存要等偏好读出来才知道上限(「不缓存」时它连目录都不必扫)。
@@ -133,7 +136,7 @@ Future<void> main() async {
       // (见 MotionScope 的说明 —— 没挂上时各条按全开处理,不是静默关掉)。
       child: MotionScope(
         prefs: MotionPrefs.fromStore(configStore),
-        child: const NordicApp(),
+        child: NordicApp(isTelevision: isTelevision),
       ),
     ),
   );
